@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useUserRole } from '../hooks/useUserRole';
 import { Button } from './ui/enhanced-button';
 import { 
   Home, 
@@ -12,7 +13,8 @@ import {
   Settings,
   Receipt,
   Menu,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,6 +24,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, userProfile, logout } = useAuth();
+  const { isAdmin } = useUserRole();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -37,9 +40,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/history', icon: History, label: 'History' },
     { path: '/rewards', icon: Gift, label: 'Rewards' },
     { path: '/profile', icon: User, label: 'Profile' },
+    ...(isAdmin ? [{ path: '/admin', icon: Shield, label: 'Admin Panel' }] : [])
   ];
-
-  // Note: Admin role checking will be implemented with proper RLS policies
 
   return (
     <div className="min-h-screen bg-background">

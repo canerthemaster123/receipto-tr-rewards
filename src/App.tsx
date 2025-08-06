@@ -15,10 +15,7 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ 
-  children, 
-  adminOnly = false 
-}) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
   
   if (isLoading) {
@@ -31,10 +28,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
   
   if (!user) {
     return <Navigate to="/auth" replace />;
-  }
-  
-  if (adminOnly && user.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
   }
   
   return <Layout>{children}</Layout>;
@@ -110,7 +103,7 @@ const App = () => (
             <Route 
               path="/admin" 
               element={
-                <ProtectedRoute adminOnly>
+                <ProtectedRoute>
                   <AdminPanel />
                 </ProtectedRoute>
               } 

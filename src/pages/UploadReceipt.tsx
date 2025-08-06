@@ -6,6 +6,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
+import { supabase } from '@/integrations/supabase/client';
+import { validateImageFile, generateSecureFileName } from '../utils/fileValidation';
+import { validateReceiptData } from '../utils/inputSanitization';
 import { 
   Upload, 
   Camera, 
@@ -15,7 +18,8 @@ import {
   Store,
   Calendar,
   DollarSign,
-  Receipt
+  Receipt,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -43,6 +47,17 @@ const UploadReceipt: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (selectedFile: File) => {
+    // Validate file before processing
+    const validation = validateImageFile(selectedFile);
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid File",
+        description: validation.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setFile(selectedFile);
     setIsProcessed(false);
     
@@ -54,7 +69,7 @@ const UploadReceipt: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type.startsWith('image/')) {
+    if (droppedFile) {
       handleFileSelect(droppedFile);
     }
   };
@@ -86,28 +101,81 @@ const UploadReceipt: React.FC = () => {
   };
 
   const submitReceipt = async () => {
-    if (!receiptData.storeName || !receiptData.totalAmount) {
+    if (!file || !user) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in the store name and total amount.",
+        title: "Error",
+        description: "Missing file or user authentication.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate and sanitize input data
+    const validation = validateReceiptData(receiptData);
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid Data",
+        description: validation.errors.join(', '),
         variant: "destructive",
       });
       return;
     }
 
     setIsProcessing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Award points
-    const pointsEarned = 100;
-    updatePoints((userProfile?.total_points || 0) + pointsEarned);
-    
-    toast({
-      title: "Receipt Submitted!",
-      description: `You earned ${pointsEarned} points! 🎉`,
-    });
-    
-    navigate('/dashboard');
+    try {
+      // Upload image to Supabase Storage
+      const fileName = generateSecureFileName(file.name, user.id);
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('receipts')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('receipts')
+        .getPublicUrl(fileName);
+
+      // Save receipt data to database
+      const { error: dbError } = await supabase
+        .from('receipts')
+        .insert({
+          user_id: user.id,
+          merchant: validation.sanitizedData.storeName,
+          total: validation.sanitizedData.totalAmount,
+          purchase_date: validation.sanitizedData.date,
+          items: validation.sanitizedData.items,
+          image_url: publicUrl,
+          status: 'pending',
+          points: 100 // Points awarded upon approval
+        });
+
+      if (dbError) {
+        throw new Error(`Database error: ${dbError.message}`);
+      }
+
+      toast({
+        title: "Receipt Submitted!",
+        description: "Your receipt is being reviewed. Points will be awarded upon approval.",
+      });
+      
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error submitting receipt:', error);
+      toast({
+        title: "Submission Failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -310,11 +378,11 @@ const UploadReceipt: React.FC = () => {
               {isProcessed && (
                 <div className="bg-secondary-light p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle className="h-5 w-5 text-secondary" />
-                    <span className="font-medium text-secondary-dark">Ready to Submit</span>
+                    <AlertTriangle className="h-5 w-5 text-warning" />
+                    <span className="font-medium">Ready to Submit</span>
                   </div>
-                  <p className="text-sm text-secondary-dark mb-3">
-                    You'll earn 100 points for this receipt!
+                  <p className="text-sm mb-3">
+                    Your receipt will be reviewed by our team. Points will be awarded upon approval.
                   </p>
                   <Button
                     onClick={submitReceipt}

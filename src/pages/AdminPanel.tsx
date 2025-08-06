@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/enhanced-button';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { useToast } from '../hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import AdminRoute from '../components/AdminRoute';
 import { 
   Users, 
   Receipt, 
@@ -13,7 +16,8 @@ import {
   Eye,
   BarChart,
   DollarSign,
-  Calendar
+  Calendar,
+  Loader2
 } from 'lucide-react';
 
 interface ReceiptSubmission {
@@ -39,85 +43,152 @@ interface UserStats {
 
 const AdminPanel: React.FC = () => {
   const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
+  const [pendingReceipts, setPendingReceipts] = useState<ReceiptSubmission[]>([]);
+  const [users, setUsers] = useState<UserStats[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Mock data
-  const pendingReceipts: ReceiptSubmission[] = [
-    {
-      id: '1',
-      userId: 'user1',
-      userName: 'Mehmet Yılmaz',
-      storeName: 'Migros',
-      amount: 124.50,
-      date: '2024-01-15',
-      status: 'pending',
-      submitDate: '2024-01-15T10:30:00'
-    },
-    {
-      id: '2',
-      userId: 'user2',
-      userName: 'Ayşe Demir',
-      storeName: 'CarrefourSA',
-      amount: 89.75,
-      date: '2024-01-14',
-      status: 'pending',
-      submitDate: '2024-01-14T15:45:00'
-    },
-    {
-      id: '3',
-      userId: 'user3',
-      userName: 'Ali Kaya',
-      storeName: 'BIM',
-      amount: 45.20,
-      date: '2024-01-13',
-      status: 'pending',
-      submitDate: '2024-01-13T09:15:00'
+  // Fetch real data from database
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Fetch pending receipts
+      const { data: receiptsData, error: receiptsError } = await supabase
+        .from('receipts')
+        .select(`
+          id,
+          user_id,
+          merchant,
+          total,
+          purchase_date,
+          status,
+          created_at,
+          points,
+          users_profile!inner(display_name)
+        `)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (receiptsError) throw receiptsError;
+
+      // Transform data
+      const transformedReceipts: ReceiptSubmission[] = (receiptsData || []).map(receipt => ({
+        id: receipt.id,
+        userId: receipt.user_id,
+        userName: (receipt.users_profile as any)?.display_name || 'Unknown User',
+        storeName: receipt.merchant || 'Unknown Store',
+        amount: receipt.total || 0,
+        date: receipt.purchase_date || receipt.created_at.split('T')[0],
+        status: receipt.status as 'pending',
+        submitDate: receipt.created_at
+      }));
+
+      setPendingReceipts(transformedReceipts);
+
+      // Fetch user stats
+      const { data: usersData, error: usersError } = await supabase
+        .from('users_profile')
+        .select(`
+          id,
+          display_name,
+          total_points,
+          created_at,
+          receipts:receipts(count)
+        `)
+        .order('total_points', { ascending: false })
+        .limit(50);
+
+      if (usersError) throw usersError;
+
+      const transformedUsers: UserStats[] = (usersData || []).map(user => ({
+        id: user.id,
+        name: user.display_name || 'Unknown User',
+        email: '', // Email not available in profiles table for privacy
+        totalReceipts: user.receipts?.[0]?.count || 0,
+        totalPoints: user.total_points || 0,
+        joinDate: user.created_at.split('T')[0],
+        status: 'active' as const
+      }));
+
+      setUsers(transformedUsers);
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load admin data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
 
-  const users: UserStats[] = [
-    {
-      id: '1',
-      name: 'Mehmet Yılmaz',
-      email: 'mehmet@example.com',
-      totalReceipts: 23,
-      totalPoints: 2300,
-      joinDate: '2024-01-01',
-      status: 'active'
-    },
-    {
-      id: '2',
-      name: 'Ayşe Demir',
-      email: 'ayse@example.com',
-      totalReceipts: 18,
-      totalPoints: 1800,
-      joinDate: '2024-01-05',
-      status: 'active'
-    },
-    {
-      id: '3',
-      name: 'Ali Kaya',
-      email: 'ali@example.com',
-      totalReceipts: 31,
-      totalPoints: 3100,
-      joinDate: '2023-12-15',
-      status: 'active'
-    }
-  ];
-
+  // Replace mock data with actual stats calculation
   const stats = {
-    totalUsers: 1250,
+    totalUsers: users.length,
     pendingReceipts: pendingReceipts.length,
-    totalPointsIssued: 125000,
-    thisMonthRevenue: 45280
+    totalPointsIssued: users.reduce((sum, user) => sum + user.totalPoints, 0),
+    thisMonthRevenue: 0 // Would need additional calculation
   };
 
-  const handleReceiptAction = (receiptId: string, action: 'approve' | 'reject') => {
-    // Mock action - in real app would update database
-    console.log(`${action}ing receipt ${receiptId}`);
+  const handleReceiptAction = async (receiptId: string, action: 'approve' | 'reject') => {
+    try {
+      const oldStatus = pendingReceipts.find(r => r.id === receiptId)?.status;
+      const newStatus = action === 'approve' ? 'approved' : 'rejected';
+      
+      const { error } = await supabase
+        .from('receipts')
+        .update({ status: newStatus })
+        .eq('id', receiptId);
+
+      if (error) throw error;
+
+      // Log admin action
+      await supabase.rpc('log_admin_action', {
+        _action: `${action}_receipt`,
+        _table_name: 'receipts',
+        _record_id: receiptId,
+        _old_values: { status: oldStatus },
+        _new_values: { status: newStatus }
+      });
+
+      // Update local state
+      setPendingReceipts(prev => prev.filter(r => r.id !== receiptId));
+
+      toast({
+        title: "Success",
+        description: `Receipt ${action}ed successfully.`,
+      });
+    } catch (error) {
+      console.error(`Error ${action}ing receipt:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to ${action} receipt. Please try again.`,
+        variant: "destructive",
+      });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-64">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Loading admin data...</p>
+        </div>
+      </div>
+    );
+  }
+
 
   return (
-    <div className="space-y-6">
+    <AdminRoute>
+      <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
@@ -396,7 +467,8 @@ const AdminPanel: React.FC = () => {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </AdminRoute>
   );
 };
 
