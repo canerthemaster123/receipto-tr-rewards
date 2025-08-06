@@ -1,174 +1,117 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
 
-interface UserProfile {
+interface User {
   id: string;
-  display_name: string;
-  total_points: number;
-  referral_code: string;
+  email: string;
+  name: string;
+  points: number;
+  role: 'user' | 'admin';
+  joinedAt: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  session: Session | null;
-  userProfile: UserProfile | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string, name: string, referralCode?: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (email: string, password: string, name: string) => Promise<boolean>;
+  logout: () => void;
+  updatePoints: (points: number) => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Mock user data
+const mockUsers: User[] = [
+  {
+    id: '1',
+    email: 'admin@receipto.com',
+    name: 'Admin User',
+    points: 5000,
+    role: 'admin',
+    joinedAt: '2024-01-01'
+  },
+  {
+    id: '2', 
+    email: 'user@example.com',
+    name: 'Demo User',
+    points: 1250,
+    role: 'user',
+    joinedAt: '2024-02-15'
+  }
+];
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
-
-  const refreshProfile = async () => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('users_profile')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching profile:', error);
-        return;
-      }
-      
-      setUserProfile(data);
-    } catch (error) {
-      console.error('Error refreshing profile:', error);
-    }
-  };
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Defer profile fetching to avoid blocking auth state changes
-          setTimeout(() => {
-            refreshProfile();
-          }, 0);
-        } else {
-          setUserProfile(null);
-        }
-        
-        setIsLoading(false);
-      }
-    );
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        setTimeout(() => {
-          refreshProfile();
-        }, 0);
-      }
-      
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    // Check for stored auth
+    const storedUser = localStorage.getItem('receipto_user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        setIsLoading(false);
-        return { success: false, error: error.message };
-      }
-
+    // Mock authentication
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    const foundUser = mockUsers.find(u => u.email === email);
+    if (foundUser && password.length > 0) {
+      setUser(foundUser);
+      localStorage.setItem('receipto_user', JSON.stringify(foundUser));
       setIsLoading(false);
-      return { success: true };
-    } catch (error) {
-      setIsLoading(false);
-      return { success: false, error: 'An unexpected error occurred' };
+      return true;
     }
+    
+    setIsLoading(false);
+    return false;
   };
 
-  const register = async (email: string, password: string, name: string, referralCode?: string) => {
+  const register = async (email: string, password: string, name: string): Promise<boolean> => {
     setIsLoading(true);
     
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            display_name: name,
-          },
-        },
-      });
-
-      if (error) {
-        setIsLoading(false);
-        return { success: false, error: error.message };
-      }
-
-      // Process referral code if provided
-      if (referralCode && data.user) {
-        try {
-          const { data: referralResult } = await supabase.rpc('process_referral', {
-            referral_code: referralCode
-          });
-          
-          if (referralResult && typeof referralResult === 'object' && 'success' in referralResult && referralResult.success) {
-            toast({
-              title: "Referral Applied!",
-              description: "You and your referrer both earned 200 bonus points!",
-            });
-          }
-        } catch (referralError) {
-          console.error('Referral processing error:', referralError);
-        }
-      }
-
-      setIsLoading(false);
-      return { success: true };
-    } catch (error) {
-      setIsLoading(false);
-      return { success: false, error: 'An unexpected error occurred' };
-    }
+    // Mock registration
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    const newUser: User = {
+      id: Date.now().toString(),
+      email,
+      name,
+      points: 100, // Welcome bonus
+      role: 'user',
+      joinedAt: new Date().toISOString().split('T')[0]
+    };
+    
+    setUser(newUser);
+    localStorage.setItem('receipto_user', JSON.stringify(newUser));
+    setIsLoading(false);
+    return true;
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('receipto_user');
+  };
+
+  const updatePoints = (newPoints: number) => {
+    if (user) {
+      const updatedUser = { ...user, points: newPoints };
+      setUser(updatedUser);
+      localStorage.setItem('receipto_user', JSON.stringify(updatedUser));
+    }
   };
 
   return (
     <AuthContext.Provider value={{
       user,
-      session,
-      userProfile,
       login,
       register, 
       logout,
-      refreshProfile,
+      updatePoints,
       isLoading
     }}>
       {children}

@@ -11,7 +11,6 @@ import UploadReceipt from "./pages/UploadReceipt";
 import ReceiptHistory from "./pages/ReceiptHistory";
 import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
-import BrandDashboard from "./pages/BrandDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,7 +33,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
     return <Navigate to="/auth" replace />;
   }
   
-  if (adminOnly && !user.email?.endsWith('@receipto.com')) {
+  if (adminOnly && user.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -121,14 +120,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Dashboard />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/brand" 
-              element={
-                <ProtectedRoute>
-                  <BrandDashboard />
                 </ProtectedRoute>
               } 
             />
