@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../components/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/enhanced-button';
 import { Badge } from '../components/ui/badge';
@@ -30,7 +31,7 @@ interface Reward {
 }
 
 const Rewards: React.FC = () => {
-  const { user, updatePoints } = useAuth();
+  const { user, userProfile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -113,17 +114,37 @@ const Rewards: React.FC = () => {
   const handleRedeem = async (reward: Reward) => {
     if (!user) return;
 
-    if (user.points < reward.points) {
+    const currentPoints = userProfile?.total_points || 0;
+    if (currentPoints < reward.points) {
       toast({
         title: "Insufficient Points",
-        description: `You need ${reward.points - user.points} more points to redeem this reward.`,
+        description: `You need ${reward.points - currentPoints} more points to redeem this reward.`,
         variant: "destructive",
       });
       return;
     }
 
-    // Mock redemption process
-    updatePoints(user.points - reward.points);
+    // Use Supabase function for redemption
+    try {
+      const { data } = await supabase.rpc('redeem_reward', {
+        reward_name: reward.title,
+        points_cost: reward.points
+      });
+      
+      if (data && typeof data === 'object' && 'success' in data && data.success) {
+        refreshProfile();
+        toast({
+          title: "Reward Redeemed!",
+          description: `${reward.title} has been sent to your email!`,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to redeem reward. Please try again.",
+        variant: "destructive",
+      });
+    }
     
     toast({
       title: "Reward Redeemed!",
@@ -131,7 +152,7 @@ const Rewards: React.FC = () => {
     });
   };
 
-  const canAfford = (points: number) => user ? user.points >= points : false;
+  const canAfford = (points: number) => userProfile ? userProfile.total_points >= points : false;
 
   return (
     <div className="space-y-6">
@@ -151,7 +172,7 @@ const Rewards: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-white/80 text-sm">Your Points Balance</p>
-              <p className="text-3xl font-bold">{user?.points.toLocaleString()}</p>
+              <p className="text-3xl font-bold">{userProfile?.total_points?.toLocaleString() || 0}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
               <Coins className="h-8 w-8" />
@@ -240,7 +261,7 @@ const Rewards: React.FC = () => {
                       Redeem Now
                     </>
                   ) : (
-                    `Need ${(reward.points - (user?.points || 0)).toLocaleString()} more points`
+                    `Need ${(reward.points - (userProfile?.total_points || 0)).toLocaleString()} more points`
                   )}
                 </Button>
               </CardContent>

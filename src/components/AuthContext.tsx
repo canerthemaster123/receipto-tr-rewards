@@ -1,194 +1,174 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '../integrations/supabase/client';
-import { useToast } from '../hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface UserProfile {
   id: string;
   display_name: string;
-  points: number;
-  role: 'user' | 'admin' | 'brand';
+  total_points: number;
   referral_code: string;
-  // Add computed property for backward compatibility
-  name?: string;
 }
 
 interface AuthContextType {
-  user: UserProfile | null;
+  user: User | null;
   session: Session | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name: string, referralCode?: string) => Promise<boolean>;
-  logout: () => void;
-  updatePoints: (points: number) => void;
+  userProfile: UserProfile | null;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (email: string, password: string, name: string, referralCode?: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
+  const refreshProfile = async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('users_profile')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+      
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+    }
+  };
+
   useEffect(() => {
-    // Set up auth state listener first
+    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
+        setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Defer profile fetch to avoid deadlock
+          // Defer profile fetching to avoid blocking auth state changes
           setTimeout(() => {
-            fetchUserProfile(session.user.id);
+            refreshProfile();
           }, 0);
         } else {
-          setUser(null);
+          setUserProfile(null);
         }
+        
+        setIsLoading(false);
       }
     );
 
-    // Then check for existing session
+    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setUser(session?.user ?? null);
+      
       if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
-        setIsLoading(false);
+        setTimeout(() => {
+          refreshProfile();
+        }, 0);
       }
+      
+      setIsLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      // Temporary type assertion until Supabase types are updated
-      const { data, error } = await (supabase as any)
-        .from('users_profile')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        // Add name property for backward compatibility
-        setUser({ ...data, name: data.display_name });
-      }
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true);
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       });
 
-      if (error) throw error;
-      
-      toast({
-        title: "Welcome back!",
-        description: "Successfully logged in."
-      });
-      
-      return true;
-    } catch (error: any) {
-      console.error('Login error:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Invalid credentials.",
-        variant: "destructive"
-      });
+      if (error) {
+        setIsLoading(false);
+        return { success: false, error: error.message };
+      }
+
       setIsLoading(false);
-      return false;
+      return { success: true };
+    } catch (error) {
+      setIsLoading(false);
+      return { success: false, error: 'An unexpected error occurred' };
     }
   };
 
-  const register = async (email: string, password: string, name: string, referralCode?: string): Promise<boolean> => {
+  const register = async (email: string, password: string, name: string, referralCode?: string) => {
     setIsLoading(true);
     
     try {
-      const redirectUrl = `${window.location.origin}/dashboard`;
-      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
+          emailRedirectTo: `${window.location.origin}/`,
           data: {
             display_name: name,
-            referral_code: referralCode
-          }
-        }
+          },
+        },
       });
 
-      if (error) throw error;
-
-      if (data.user) {
-        toast({
-          title: "Account created!",
-          description: "Welcome to Receipto! You've earned 100 welcome points."
-        });
-        return true;
+      if (error) {
+        setIsLoading(false);
+        return { success: false, error: error.message };
       }
-      
-      return false;
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Registration failed.",
-        variant: "destructive"
-      });
+
+      // Process referral code if provided
+      if (referralCode && data.user) {
+        try {
+          const { data: referralResult } = await supabase.rpc('process_referral', {
+            referral_code: referralCode
+          });
+          
+          if (referralResult && typeof referralResult === 'object' && 'success' in referralResult && referralResult.success) {
+            toast({
+              title: "Referral Applied!",
+              description: "You and your referrer both earned 200 bonus points!",
+            });
+          }
+        } catch (referralError) {
+          console.error('Referral processing error:', referralError);
+        }
+      }
+
       setIsLoading(false);
-      return false;
+      return { success: true };
+    } catch (error) {
+      setIsLoading(false);
+      return { success: false, error: 'An unexpected error occurred' };
     }
   };
 
   const logout = async () => {
-    try {
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
-  const updatePoints = async (newPoints: number) => {
-    if (user) {
-      try {
-        // Temporary type assertion until Supabase types are updated
-        const { error } = await (supabase as any).rpc('update_user_points', {
-          user_id: user.id,
-          new_points: newPoints
-        });
-
-        if (error) throw error;
-
-        setUser({ ...user, points: newPoints });
-      } catch (error) {
-        console.error('Error updating points:', error);
-      }
-    }
+    await supabase.auth.signOut();
   };
 
   return (
     <AuthContext.Provider value={{
       user,
       session,
+      userProfile,
       login,
       register, 
       logout,
-      updatePoints,
+      refreshProfile,
       isLoading
     }}>
       {children}

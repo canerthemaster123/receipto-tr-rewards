@@ -37,7 +37,7 @@ const UploadReceipt: React.FC = () => {
     totalAmount: '',
     items: ''
   });
-  const { user, updatePoints } = useAuth();
+  const { user, userProfile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,9 +98,9 @@ const UploadReceipt: React.FC = () => {
     setIsProcessing(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Award points
+    // Submit to Supabase (points will be awarded automatically)
     const pointsEarned = 100;
-    updatePoints((user?.points || 0) + pointsEarned);
+    refreshProfile();
     
     toast({
       title: "Receipt Submitted!",

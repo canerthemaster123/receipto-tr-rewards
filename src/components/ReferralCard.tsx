@@ -8,15 +8,15 @@ import { useTranslation } from 'react-i18next';
 import { useToast } from '../hooks/use-toast';
 
 const ReferralCard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const { t } = useTranslation();
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
   const copyReferralCode = async () => {
-    if (user?.referral_code) {
+    if (userProfile?.referral_code) {
       try {
-        await navigator.clipboard.writeText(user.referral_code);
+        await navigator.clipboard.writeText(userProfile.referral_code);
         setCopied(true);
         toast({
           title: "Copied!",
@@ -47,7 +47,7 @@ const ReferralCard: React.FC = () => {
           <label className="text-sm font-medium">{t('yourReferralCode')}</label>
           <div className="flex gap-2">
             <Input 
-              value={user.referral_code}
+              value={userProfile?.referral_code || 'Loading...'}
               readOnly
               className="font-mono"
             />

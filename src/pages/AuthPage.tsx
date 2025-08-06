@@ -20,23 +20,23 @@ const AuthPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    let success = false;
+    let result;
     if (isLogin) {
-      success = await login(email, password);
+      result = await login(email, password);
     } else {
-      success = await register(email, password, name);
+      result = await register(email, password, name);
     }
 
-    if (success) {
+    if (result.success) {
       toast({
         title: isLogin ? "Welcome back!" : "Account created!",
-        description: isLogin ? "Successfully logged in." : "Welcome to Receipto! You've earned 100 welcome points.",
+        description: isLogin ? "Successfully logged in." : "Welcome to Receipto!",
       });
       navigate('/dashboard');
     } else {
       toast({
         title: "Error",
-        description: isLogin ? "Invalid credentials." : "Registration failed.",
+        description: result.error || (isLogin ? "Invalid credentials." : "Registration failed."),
         variant: "destructive",
       });
     }
