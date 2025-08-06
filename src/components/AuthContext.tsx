@@ -1,18 +1,23 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '../integrations/supabase/client';
+import { useToast } from '../hooks/use-toast';
 
-interface User {
+interface UserProfile {
   id: string;
-  email: string;
-  name: string;
+  display_name: string;
   points: number;
-  role: 'user' | 'admin';
-  joinedAt: string;
+  role: 'user' | 'admin' | 'brand';
+  referral_code: string;
+  // Add computed property for backward compatibility
+  name?: string;
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: UserProfile | null;
+  session: Session | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name: string) => Promise<boolean>;
+  register: (email: string, password: string, name: string, referralCode?: string) => Promise<boolean>;
   logout: () => void;
   updatePoints: (points: number) => void;
   isLoading: boolean;
@@ -20,94 +25,166 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock user data
-const mockUsers: User[] = [
-  {
-    id: '1',
-    email: 'admin@receipto.com',
-    name: 'Admin User',
-    points: 5000,
-    role: 'admin',
-    joinedAt: '2024-01-01'
-  },
-  {
-    id: '2', 
-    email: 'user@example.com',
-    name: 'Demo User',
-    points: 1250,
-    role: 'user',
-    joinedAt: '2024-02-15'
-  }
-];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Check for stored auth
-    const storedUser = localStorage.getItem('receipto_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        
+        if (session?.user) {
+          // Defer profile fetch to avoid deadlock
+          setTimeout(() => {
+            fetchUserProfile(session.user.id);
+          }, 0);
+        } else {
+          setUser(null);
+        }
+      }
+    );
+
+    // Then check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      // Temporary type assertion until Supabase types are updated
+      const { data, error } = await (supabase as any)
+        .from('users_profile')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        // Add name property for backward compatibility
+        setUser({ ...data, name: data.display_name });
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Mock authentication
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    const foundUser = mockUsers.find(u => u.email === email);
-    if (foundUser && password.length > 0) {
-      setUser(foundUser);
-      localStorage.setItem('receipto_user', JSON.stringify(foundUser));
-      setIsLoading(false);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) throw error;
+      
+      toast({
+        title: "Welcome back!",
+        description: "Successfully logged in."
+      });
+      
       return true;
+    } catch (error: any) {
+      console.error('Login error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Invalid credentials.",
+        variant: "destructive"
+      });
+      setIsLoading(false);
+      return false;
     }
-    
-    setIsLoading(false);
-    return false;
   };
 
-  const register = async (email: string, password: string, name: string): Promise<boolean> => {
+  const register = async (email: string, password: string, name: string, referralCode?: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Mock registration
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      name,
-      points: 100, // Welcome bonus
-      role: 'user',
-      joinedAt: new Date().toISOString().split('T')[0]
-    };
-    
-    setUser(newUser);
-    localStorage.setItem('receipto_user', JSON.stringify(newUser));
-    setIsLoading(false);
-    return true;
+    try {
+      const redirectUrl = `${window.location.origin}/dashboard`;
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            display_name: name,
+            referral_code: referralCode
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        toast({
+          title: "Account created!",
+          description: "Welcome to Receipto! You've earned 100 welcome points."
+        });
+        return true;
+      }
+      
+      return false;
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Registration failed.",
+        variant: "destructive"
+      });
+      setIsLoading(false);
+      return false;
+    }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('receipto_user');
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
-  const updatePoints = (newPoints: number) => {
+  const updatePoints = async (newPoints: number) => {
     if (user) {
-      const updatedUser = { ...user, points: newPoints };
-      setUser(updatedUser);
-      localStorage.setItem('receipto_user', JSON.stringify(updatedUser));
+      try {
+        // Temporary type assertion until Supabase types are updated
+        const { error } = await (supabase as any).rpc('update_user_points', {
+          user_id: user.id,
+          new_points: newPoints
+        });
+
+        if (error) throw error;
+
+        setUser({ ...user, points: newPoints });
+      } catch (error) {
+        console.error('Error updating points:', error);
+      }
     }
   };
 
   return (
     <AuthContext.Provider value={{
       user,
+      session,
       login,
       register, 
       logout,

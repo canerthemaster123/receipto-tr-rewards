@@ -2,6 +2,8 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { Button } from './ui/enhanced-button';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useTranslation } from 'react-i18next';
 import { 
   Home, 
   Upload, 
@@ -12,7 +14,8 @@ import {
   Settings,
   Receipt,
   Menu,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,6 +25,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -32,15 +36,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   const navItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard' },
-    { path: '/upload', icon: Upload, label: 'Upload Receipt' },
-    { path: '/history', icon: History, label: 'History' },
-    { path: '/rewards', icon: Gift, label: 'Rewards' },
-    { path: '/profile', icon: User, label: 'Profile' },
+    { path: '/dashboard', icon: Home, label: t('dashboard') },
+    { path: '/upload', icon: Upload, label: t('upload') },
+    { path: '/history', icon: History, label: t('history') },
+    { path: '/rewards', icon: Gift, label: t('rewards') },
+    { path: '/profile', icon: User, label: t('profile') },
   ];
 
   if (user?.role === 'admin') {
-    navItems.push({ path: '/admin', icon: Settings, label: 'Admin Panel' });
+    navItems.push({ path: '/admin', icon: Shield, label: t('admin') });
+  }
+  
+  if (user?.role === 'brand') {
+    navItems.push({ path: '/brand', icon: Settings, label: 'Brand Analytics' });
   }
 
   return (
@@ -81,10 +89,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* User Menu */}
             <div className="flex items-center gap-4">
+              <LanguageSwitcher />
               <div className="hidden sm:flex items-center gap-2 bg-secondary-light px-3 py-1 rounded-full">
                 <Gift className="h-4 w-4 text-secondary" />
                 <span className="text-sm font-medium text-secondary-dark">
-                  {user?.points.toLocaleString()} pts
+                  {user?.points?.toLocaleString()} pts
                 </span>
               </div>
               
