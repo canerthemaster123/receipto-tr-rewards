@@ -14,13 +14,139 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      receipts: {
+        Row: {
+          created_at: string | null
+          id: string
+          image_url: string | null
+          items: string | null
+          merchant: string | null
+          points: number | null
+          purchase_date: string | null
+          status: string | null
+          total: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          image_url?: string | null
+          items?: string | null
+          merchant?: string | null
+          points?: number | null
+          purchase_date?: string | null
+          status?: string | null
+          total?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          image_url?: string | null
+          items?: string | null
+          merchant?: string | null
+          points?: number | null
+          purchase_date?: string | null
+          status?: string | null
+          total?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      redemptions: {
+        Row: {
+          created_at: string | null
+          id: string
+          points_cost: number
+          reward_name: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          points_cost: number
+          reward_name: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          points_cost?: number
+          reward_name?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          created_at: string | null
+          id: string
+          points_awarded: number | null
+          referred_id: string
+          referrer_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          points_awarded?: number | null
+          referred_id: string
+          referrer_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          points_awarded?: number | null
+          referred_id?: string
+          referrer_id?: string
+        }
+        Relationships: []
+      }
+      users_profile: {
+        Row: {
+          created_at: string | null
+          display_name: string | null
+          id: string
+          referral_code: string | null
+          total_points: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          display_name?: string | null
+          id: string
+          referral_code?: string | null
+          total_points?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          referral_code?: string | null
+          total_points?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      process_referral: {
+        Args: { referral_code: string }
+        Returns: Json
+      }
+      redeem_reward: {
+        Args: { reward_name: string; points_cost: number }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
