@@ -15,13 +15,13 @@ import {
 } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
 
   // Mock data for dashboard
   const stats = {
     totalReceipts: 23,
     thisMonth: 8,
-    totalEarned: user?.points || 0,
+    totalEarned: userProfile?.total_points || 0,
     nextReward: 2000,
   };
 
@@ -40,7 +40,7 @@ const Dashboard: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold mb-2">
-              Welcome back, {user?.name}! 👋
+              Welcome back, {userProfile?.display_name || user?.email}! 👋
             </h1>
             <p className="text-white/80 mb-4 md:mb-0">
               Ready to turn more receipts into rewards?

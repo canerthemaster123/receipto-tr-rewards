@@ -37,7 +37,7 @@ const UploadReceipt: React.FC = () => {
     totalAmount: '',
     items: ''
   });
-  const { user, updatePoints } = useAuth();
+  const { user, userProfile, updatePoints } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +100,7 @@ const UploadReceipt: React.FC = () => {
     
     // Award points
     const pointsEarned = 100;
-    updatePoints((user?.points || 0) + pointsEarned);
+    updatePoints((userProfile?.total_points || 0) + pointsEarned);
     
     toast({
       title: "Receipt Submitted!",

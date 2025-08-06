@@ -21,7 +21,7 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, logout } = useAuth();
+  const { user, userProfile, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -39,9 +39,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/profile', icon: User, label: 'Profile' },
   ];
 
-  if (user?.role === 'admin') {
-    navItems.push({ path: '/admin', icon: Settings, label: 'Admin Panel' });
-  }
+  // Note: Admin role checking will be implemented with proper RLS policies
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,7 +82,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <div className="hidden sm:flex items-center gap-2 bg-secondary-light px-3 py-1 rounded-full">
                 <Gift className="h-4 w-4 text-secondary" />
                 <span className="text-sm font-medium text-secondary-dark">
-                  {user?.points.toLocaleString()} pts
+                  {userProfile?.total_points?.toLocaleString() || 0} pts
                 </span>
               </div>
               

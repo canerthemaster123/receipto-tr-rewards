@@ -20,23 +20,43 @@ const AuthPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    let success = false;
-    if (isLogin) {
-      success = await login(email, password);
-    } else {
-      success = await register(email, password, name);
+    if (!email || !password || (!isLogin && !name)) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    if (success) {
+    let result;
+    if (isLogin) {
+      result = await login(email, password);
+    } else {
+      result = await register(email, password, name);
+    }
+
+    if (result.success) {
       toast({
         title: isLogin ? "Welcome back!" : "Account created!",
-        description: isLogin ? "Successfully logged in." : "Welcome to Receipto! You've earned 100 welcome points.",
+        description: isLogin 
+          ? "Successfully logged in." 
+          : "Please check your email to verify your account.",
       });
-      navigate('/dashboard');
+      
+      if (isLogin) {
+        navigate('/dashboard');
+      } else {
+        // For registration, user needs to verify email first
+        toast({
+          title: "Check your email",
+          description: "We've sent you a verification link. Please check your email and click the link to activate your account.",
+        });
+      }
     } else {
       toast({
         title: "Error",
-        description: isLogin ? "Invalid credentials." : "Registration failed.",
+        description: result.error || (isLogin ? "Invalid credentials." : "Registration failed."),
         variant: "destructive",
       });
     }
@@ -55,18 +75,6 @@ const AuthPage: React.FC = () => {
           <h1 className="text-3xl font-bold text-white mb-2">Receipto</h1>
           <p className="text-white/80">Turn your receipts into rewards</p>
         </div>
-
-        {/* Demo Credentials */}
-        <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-          <CardContent className="p-4">
-            <h3 className="text-sm font-medium text-white mb-2">Demo Credentials:</h3>
-            <div className="space-y-1 text-xs text-white/80">
-              <p><strong>User:</strong> user@example.com</p>
-              <p><strong>Admin:</strong> admin@receipto.com</p>
-              <p><strong>Password:</strong> any password</p>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Auth Form */}
         <Card className="bg-white/95 backdrop-blur-sm border-white/20 shadow-elegant">
@@ -129,6 +137,7 @@ const AuthPage: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10"
                     required
+                    minLength={6}
                   />
                 </div>
               </div>
