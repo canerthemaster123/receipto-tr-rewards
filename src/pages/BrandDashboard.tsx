@@ -40,7 +40,7 @@ const BrandDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   // Check if user has brand role
-  if (!user || user.role !== 'brand') {
+  if (!user || user.user_metadata?.role !== 'brand') {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -34,7 +34,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
     return <Navigate to="/auth" replace />;
   }
   
-  if (adminOnly && user.role !== 'admin') {
+  if (adminOnly && !user.email?.endsWith('@receipto.com')) {
     return <Navigate to="/dashboard" replace />;
   }
   
