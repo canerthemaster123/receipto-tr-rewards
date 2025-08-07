@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { supabase } from '../integrations/supabase/client';
+import { useToast } from '../hooks/use-toast';
 import { 
   Upload, 
   Gift, 
@@ -11,25 +14,106 @@ import {
   Coins, 
   Calendar,
   ArrowRight,
-  Star
+  Star,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Eye
 } from 'lucide-react';
+
+interface ReceiptData {
+  id: string;
+  merchant: string;
+  total: number;
+  purchase_date: string;
+  status: string;
+  points: number;
+  created_at: string;
+}
 
 const Dashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
-
-  // Mock data for dashboard
-  const stats = {
-    totalReceipts: 23,
-    thisMonth: 8,
+  const { toast } = useToast();
+  const [receipts, setReceipts] = useState<ReceiptData[]>([]);
+  const [stats, setStats] = useState({
+    totalReceipts: 0,
+    thisMonth: 0,
     totalEarned: userProfile?.total_points || 0,
     nextReward: 2000,
+    pendingReceipts: 0,
+    approvedReceipts: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      fetchReceiptsData();
+    }
+  }, [user, userProfile]);
+
+  const fetchReceiptsData = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      
+      // Fetch user's receipts
+      const { data: receiptsData, error } = await supabase
+        .from('receipts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setReceipts(receiptsData || []);
+
+      // Calculate stats
+      const now = new Date();
+      const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      const thisMonthReceipts = receiptsData?.filter(receipt => 
+        new Date(receipt.created_at) >= thisMonth
+      ) || [];
+
+      const pendingCount = receiptsData?.filter(r => r.status === 'pending').length || 0;
+      const approvedCount = receiptsData?.filter(r => r.status === 'approved').length || 0;
+
+      setStats({
+        totalReceipts: receiptsData?.length || 0,
+        thisMonth: thisMonthReceipts.length,
+        totalEarned: userProfile?.total_points || 0,
+        nextReward: 2000,
+        pendingReceipts: pendingCount,
+        approvedReceipts: approvedCount,
+      });
+
+    } catch (error) {
+      console.error('Error fetching receipts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load receipt data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recentReceipts = [
-    { id: 1, store: 'Migros', amount: 124.50, points: 100, date: '2024-01-15' },
-    { id: 2, store: 'CarrefourSA', amount: 89.75, points: 100, date: '2024-01-14' },
-    { id: 3, store: 'BIM', amount: 45.20, points: 100, date: '2024-01-13' },
-  ];
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
+      case 'pending':
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+      case 'rejected':
+        return <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   const pointsToNextReward = stats.nextReward - stats.totalEarned;
 
@@ -124,7 +208,10 @@ const Dashboard: React.FC = () => {
             Progress to Next Reward
           </CardTitle>
           <CardDescription>
-            Earn {pointsToNextReward} more points to unlock a ₺20 gift card
+            {pointsToNextReward > 0 
+              ? `Earn ${pointsToNextReward} more points to unlock a ₺20 gift card`
+              : "Congratulations! You can redeem a ₺20 gift card"
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -136,9 +223,19 @@ const Dashboard: React.FC = () => {
             <div className="w-full bg-muted rounded-full h-3">
               <div 
                 className="bg-gradient-reward h-3 rounded-full transition-all duration-500 animate-glow"
-                style={{ width: `${(stats.totalEarned / stats.nextReward) * 100}%` }}
+                style={{ width: `${Math.min((stats.totalEarned / stats.nextReward) * 100, 100)}%` }}
               />
             </div>
+            {pointsToNextReward <= 0 && (
+              <div className="text-center pt-2">
+                <Link to="/rewards">
+                  <Button size="sm" className="bg-gradient-reward text-white">
+                    <Gift className="h-4 w-4 mr-2" />
+                    Claim Your Reward
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -158,27 +255,75 @@ const Dashboard: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentReceipts.map((receipt) => (
-                <div key={receipt.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Receipt className="h-4 w-4 text-primary" />
+            {loading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-muted rounded-lg w-8 h-8"></div>
+                      <div>
+                        <div className="h-4 bg-muted rounded w-20 mb-1"></div>
+                        <div className="h-3 bg-muted rounded w-16"></div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{receipt.store}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(receipt.date).toLocaleDateString('tr-TR')}
+                    <div className="text-right">
+                      <div className="h-4 bg-muted rounded w-12 mb-1"></div>
+                      <div className="h-3 bg-muted rounded w-10"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : receipts.length === 0 ? (
+              <div className="text-center py-8">
+                <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">No receipts uploaded yet</p>
+                <Link to="/upload">
+                  <Button>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Your First Receipt
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {receipts.slice(0, 5).map((receipt) => (
+                  <div key={receipt.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <Receipt className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{receipt.merchant}</p>
+                          {getStatusBadge(receipt.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(receipt.purchase_date).toLocaleDateString('tr-TR')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">₺{parseFloat(receipt.total.toString()).toFixed(2)}</p>
+                      <p className="text-sm text-secondary">
+                        {receipt.status === 'approved' ? `+${receipt.points} pts` : 
+                         receipt.status === 'pending' ? 'Reviewing...' : 
+                         '0 pts'}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium">₺{receipt.amount}</p>
-                    <p className="text-sm text-secondary">+{receipt.points} pts</p>
+                ))}
+                {receipts.length > 5 && (
+                  <div className="text-center pt-2">
+                    <Link to="/history">
+                      <Button variant="ghost" size="sm">
+                        <Eye className="h-4 w-4 mr-2" />
+                        View {receipts.length - 5} more receipts
+                      </Button>
+                    </Link>
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -197,7 +342,9 @@ const Dashboard: React.FC = () => {
                   <Upload className="h-5 w-5" />
                   <div className="text-left">
                     <div className="font-medium">Upload New Receipt</div>
-                    <div className="text-sm text-muted-foreground">Earn 100 points instantly</div>
+                    <div className="text-sm text-muted-foreground">
+                      Earn 100 points instantly • {stats.pendingReceipts} pending review
+                    </div>
                   </div>
                 </Button>
               </Link>
@@ -207,7 +354,9 @@ const Dashboard: React.FC = () => {
                   <Gift className="h-5 w-5" />
                   <div className="text-left">
                     <div className="font-medium">Browse Rewards</div>
-                    <div className="text-sm text-muted-foreground">Redeem your points</div>
+                    <div className="text-sm text-muted-foreground">
+                      Redeem your {stats.totalEarned} points
+                    </div>
                   </div>
                 </Button>
               </Link>
