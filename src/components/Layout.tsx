@@ -9,6 +9,7 @@ import {
   History, 
   Gift, 
   User, 
+  Users,
   LogOut, 
   Settings,
   Receipt,
@@ -39,6 +40,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/upload', icon: Upload, label: 'Upload Receipt' },
     { path: '/history', icon: History, label: 'History' },
     { path: '/rewards', icon: Gift, label: 'Rewards' },
+    { path: '/referrals', icon: Users, label: 'Referrals' },
     { path: '/profile', icon: User, label: 'Profile' },
     ...(isAdmin ? [{ path: '/admin', icon: Shield, label: 'Admin Panel' }] : [])
   ];
