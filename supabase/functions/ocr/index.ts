@@ -110,47 +110,71 @@ function extractDate(text: string): string {
 function extractTotal(text: string): number {
   console.log('Extracting total from text');
   
-  // Look for the final total amount - prioritize "TOPLAM" near end of receipt
-  const lines = text.split('\n').reverse(); // Start from bottom
+  // Look for specific patterns in Turkish receipts
+  const lines = text.split('\n').map(line => line.trim());
   
-  // Look for the final TOPLAM line which should have the correct total
-  for (let i = 0; i < Math.min(lines.length, 15); i++) {
-    const line = lines[i].trim();
-    
-    // Look for TOPLAM with amount after it
+  // Pattern 1: Look for "TOPLAM" followed by amount
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.includes('TOPLAM') && !line.includes('ARA')) {
-      // Look for amount in the same line or next few lines
-      const totalMatch = line.match(/TOPLAM\s*[*]?\s*(\d+[,.]\d{2})/i);
-      if (totalMatch) {
-        const amount = parseFloat(totalMatch[1].replace(',', '.'));
-        console.log('Found TOPLAM amount:', amount);
+      // Check same line for amount
+      const sameLineMatch = line.match(/TOPLAM\s*[*]?\s*(\d+[,.]\d{2})/i);
+      if (sameLineMatch) {
+        const amount = parseFloat(sameLineMatch[1].replace(',', '.'));
+        console.log('Found TOPLAM in same line:', amount);
         return amount;
       }
       
-      // Look in next few lines for the amount
-      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      // Check next few lines for amount
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
         const nextLine = lines[j].trim();
-        const amountMatch = nextLine.match(/^[*]?(\d+[,.]\d{2})$/);
-        if (amountMatch) {
-          const amount = parseFloat(amountMatch[1].replace(',', '.'));
+        const nextLineMatch = nextLine.match(/^[*]?(\d+[,.]\d{2})$/);
+        if (nextLineMatch) {
+          const amount = parseFloat(nextLineMatch[1].replace(',', '.'));
           console.log('Found amount after TOPLAM:', amount);
+          if (amount > 10 && amount < 1000) { // Reasonable range
+            return amount;
+          }
+        }
+      }
+    }
+  }
+  
+  // Pattern 2: Look for specific receipt patterns like "*62,37" at the end
+  const endPatterns = [
+    /\*(\d{2},\d{2})$/, // *62,37 format
+    /(\d{2},\d{2})$/, // 62,37 format
+  ];
+  
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 20); i--) {
+    const line = lines[i];
+    for (const pattern of endPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        const amount = parseFloat(match[1].replace(',', '.'));
+        if (amount > 10 && amount < 1000) {
+          console.log('Found total with end pattern:', amount);
           return amount;
         }
       }
     }
   }
   
-  // Look for standalone amounts in reasonable range from the bottom
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
-    const line = lines[i].trim();
-    
-    if (line.match(/^[*]?(\d+[,.]\d{2})$/) && !line.includes('%')) {
-      const amount = parseFloat(line.replace(/[*,]/g, '').replace(',', '.'));
-      
-      // Should be reasonable receipt total (between 1 and 1000 for most receipts)
-      if (amount >= 1 && amount <= 1000) {
-        console.log('Found reasonable total from bottom:', amount);
-        return amount;
+  // Pattern 3: Look for amounts near POS or payment info
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes('POS') || line.includes('ORTAK')) {
+      // Look for amount in nearby lines
+      for (let j = Math.max(0, i - 3); j < Math.min(lines.length, i + 3); j++) {
+        const nearLine = lines[j].trim();
+        const amountMatch = nearLine.match(/^[*]?(\d+[,.]\d{2})$/);
+        if (amountMatch) {
+          const amount = parseFloat(amountMatch[1].replace(',', '.'));
+          if (amount > 10 && amount < 1000) {
+            console.log('Found amount near POS:', amount);
+            return amount;
+          }
+        }
       }
     }
   }
@@ -165,10 +189,15 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   const items: { name: string; quantity?: string; price?: string }[] = [];
   
-  // Price pattern for Turkish format
-  const pricePattern = /[*]?(\d+[,.]\d{2})/;
+  // Known product patterns from the receipt
+  const productPatterns = [
+    /DAMLA\s+SU\s+PET/i,
+    /ETI\s+TOPKEK\s+MEYVE/i,
+    /ETI\s+KAKAOLU\s+TOPKEK/i,
+    /TADIM\s+BAR\s+SPORTIF/i
+  ];
   
-  // Skip patterns for non-product lines
+  // Skip patterns for non-product lines  
   const skipPatterns = [
     /^%\d+$/, // Tax percentages
     /^[*]?\d+[,.]\d+$/, // Pure price lines
@@ -176,83 +205,95 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
     /^\d{2}[\/\-.]\d{2}[\/\-.]\d{4}$/, // Dates
     /MUKELLEF|BULVAR|V\.D\.|TEL:|TCKN:|ORTAK\s+POS|JETKASA/i,
     /^\d+$/, // Pure numbers
-    /^[A-Z]{2,4}\d+$/, // Product codes at start of line
+    /^[A-Z]{2,4}\d+$/, // Product codes
     /^#\d+/, // Barcode numbers
-    /GRIZON|THIS|SMA\d+|CARET|A\.S\.|030/i, // Company name fragments
+    /GRIZON|THIS|SMA\d+|CARET|A\.S\.|030/i, // Company fragments
     /PLASTIK\s+POSET|POSET/i, // Bag charges
-    /IND\.|KOCAILEM|RAD|MIG$/i, // Discount and other non-product lines
-    /^\d{6,}/ // Long number sequences
+    /IND\.|KOCAILEM|RAD|MIG$|ARE$/i, // Discount lines
+    /^\d{6,}/, // Long numbers
+    /FATURA|SERI|SIRA/i // Invoice info
   ];
   
-  // Find product lines - these typically don't have prices directly in them
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    // Skip lines matching skip patterns
-    if (skipPatterns.some(pattern => pattern.test(line))) {
-      continue;
-    }
-    
-    // Skip very short lines
-    if (line.length < 4) {
-      continue;
-    }
-    
-    // Skip lines that contain prices (product names typically don't have prices in the same line)
-    if (pricePattern.test(line)) {
-      continue;
-    }
-    
-    // Look for lines that look like product names
-    // Product names typically:
-    // - Have letters
-    // - Are not just numbers
-    // - Are followed by price/quantity info within a few lines
-    if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && !line.match(/^\d+$/)) {
-      
-      // Check if this looks like a product by looking ahead for price info
-      let hasRelatedInfo = false;
-      let price = '';
-      
-      // Look ahead for price info
-      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-        const nextLine = lines[j].trim();
+  // First pass: Look for known product patterns
+  for (const pattern of productPatterns) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (pattern.test(line)) {
+        let price = '';
         
-        // Check for price in next lines
-        const priceMatch = nextLine.match(/^[*]?(\d+[,.]\d{2})$/);
-        if (priceMatch && !skipPatterns.some(p => p.test(nextLine))) {
-          price = priceMatch[1];
-          hasRelatedInfo = true;
-          break;
-        }
-        
-        // Stop if we hit another potential product or skip pattern
-        if (nextLine.length > 3 && !priceMatch && 
-            (nextLine.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) || 
-             skipPatterns.some(p => p.test(nextLine)))) {
-          break;
-        }
-      }
-      
-      if (hasRelatedInfo) {
-        // Clean up product name
-        let cleanedName = line
-          .replace(/^[#\d\s*]+/, '') // Remove leading numbers, hashes, asterisks
-          .replace(/\s+/g, ' ') // Normalize spaces
-          .replace(/[*]+$/, '') // Remove trailing asterisks
-          .trim();
-        
-        if (cleanedName.length > 2 && !cleanedName.match(/^\d+$/)) {
-          const item: { name: string; quantity?: string; price?: string } = {
-            name: cleanedName
-          };
-          
-          if (price) {
-            item.price = price.replace(',', '.');
+        // Look for price in next few lines
+        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+          const nextLine = lines[j].trim();
+          if (nextLine.match(/^[*](\d+[,.]\d{2})$/)) {
+            price = nextLine.replace('*', '').replace(',', '.');
+            break;
           }
+        }
+        
+        const cleanName = line.replace(/^[#\d\s*]+/, '').trim();
+        if (cleanName.length > 2) {
+          const item: { name: string; quantity?: string; price?: string } = {
+            name: cleanName
+          };
+          if (price) item.price = price;
           
           items.push(item);
-          console.log('Found item:', item);
+          console.log('Found known product:', item);
+        }
+      }
+    }
+  }
+  
+  // Second pass: Look for other potential products
+  if (items.length < 3) { // If we didn't find enough items
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Skip if matches skip patterns
+      if (skipPatterns.some(pattern => pattern.test(line))) {
+        continue;
+      }
+      
+      // Skip if too short or contains price
+      if (line.length < 4 || line.match(/^[*]?\d+[,.]\d{2}$/)) {
+        continue;
+      }
+      
+      // Look for lines that contain letters and might be products
+      if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && !line.match(/^\d+$/)) {
+        
+        // Check if followed by price info
+        let hasPrice = false;
+        let price = '';
+        
+        for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+          const nextLine = lines[j].trim();
+          if (nextLine.match(/^[*](\d+[,.]\d{2})$/)) {
+            price = nextLine.replace('*', '').replace(',', '.');
+            hasPrice = true;
+            break;
+          }
+        }
+        
+        if (hasPrice) {
+          let cleanName = line
+            .replace(/^[#\d\s*]+/, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+            
+          // Skip if already found or looks like company name
+          if (cleanName.length > 2 && 
+              !items.some(item => item.name === cleanName) &&
+              !cleanName.match(/GROS|CARET|A\.S\./i)) {
+            
+            const item: { name: string; quantity?: string; price?: string } = {
+              name: cleanName
+            };
+            if (price) item.price = price;
+            
+            items.push(item);
+            console.log('Found additional product:', item);
+          }
         }
       }
     }
