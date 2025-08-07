@@ -82,11 +82,18 @@ const UploadReceipt: React.FC = () => {
     try {
       // First upload the image to get a public URL for OCR
       const fileName = generateSecureFileName(file.name, user.id);
+      
+      // Check if file already exists, if so delete it first
+      const { error: deleteError } = await supabase.storage
+        .from('receipts')
+        .remove([fileName]);
+      
+      console.log('Uploading file:', fileName);
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('receipts')
         .upload(fileName, file, {
           cacheControl: '3600',
-          upsert: false
+          upsert: true // Allow overwriting
         });
 
       if (uploadError) {

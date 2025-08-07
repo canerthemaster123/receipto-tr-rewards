@@ -84,6 +84,7 @@ serve(async (req) => {
 
     const googleVisionKey = Deno.env.get('GOOGLE_VISION_API_KEY');
     if (!googleVisionKey) {
+      console.error('Google Vision API key not found');
       return new Response(
         JSON.stringify({ error: 'Google Vision API key not configured' }),
         {
@@ -94,8 +95,28 @@ serve(async (req) => {
     }
 
     console.log('Processing OCR for image:', imageUrl);
+    console.log('Using API key (first 10 chars):', googleVisionKey.substring(0, 10) + '...');
+
+    // Test if the image URL is accessible
+    try {
+      const testResponse = await fetch(imageUrl, { method: 'HEAD' });
+      console.log('Image accessibility test - Status:', testResponse.status);
+      if (!testResponse.ok) {
+        throw new Error(`Image not accessible: ${testResponse.status} ${testResponse.statusText}`);
+      }
+    } catch (error) {
+      console.error('Image accessibility error:', error);
+      return new Response(
+        JSON.stringify({ error: `Image not accessible: ${error.message}` }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
 
     // Call Google Cloud Vision API
+    console.log('Calling Google Vision API...');
     const visionResponse = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${googleVisionKey}`,
       {
@@ -122,12 +143,24 @@ serve(async (req) => {
       }
     );
 
+    console.log('Vision API response status:', visionResponse.status);
+    console.log('Vision API response headers:', Object.fromEntries(visionResponse.headers.entries()));
+
     if (!visionResponse.ok) {
-      throw new Error(`Vision API error: ${visionResponse.status} ${visionResponse.statusText}`);
+      const errorText = await visionResponse.text();
+      console.error('Vision API error response:', errorText);
+      throw new Error(`Vision API error: ${visionResponse.status} ${visionResponse.statusText} - ${errorText}`);
     }
 
     const visionData = await visionResponse.json();
-    console.log('Vision API response:', JSON.stringify(visionData, null, 2));
+    console.log('Vision API response structure:', JSON.stringify(visionData, null, 2));
+
+    // Check for API errors in the response
+    if (visionData.responses?.[0]?.error) {
+      const apiError = visionData.responses[0].error;
+      console.error('Vision API returned error:', apiError);
+      throw new Error(`Vision API error: ${apiError.code} - ${apiError.message}`);
+    }
 
     // Extract text from the response
     const annotations = visionData.responses?.[0]?.textAnnotations;
