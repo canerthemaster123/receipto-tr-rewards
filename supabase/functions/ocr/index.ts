@@ -10,6 +10,7 @@ interface OCRResult {
   merchant: string;
   purchase_date: string;
   total: number;
+  items: string[];
   raw_text: string;
 }
 
@@ -48,19 +49,85 @@ function extractDate(text: string): string {
 }
 
 function extractTotal(text: string): number {
-  // Look for numbers with decimal separators (both . and ,)
+  // Look for total amount near "TOPLAM", "TOTAL", "ARA TOPLAM" keywords
+  const totalPatterns = [
+    /(?:TOPLAM|TOTAL)\s*[*]?(\d+[,.]\d+)/i,
+    /(?:ARA\s+TOPLAM)\s*[*]?(\d+[,.]\d+)/i
+  ];
+  
+  for (const pattern of totalPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const normalized = match[1].replace(',', '.');
+      return parseFloat(normalized);
+    }
+  }
+  
+  // Fallback: look for numbers with decimal separators
   const numberPattern = /\b\d+[,.]?\d*\b/g;
   const matches = text.match(numberPattern);
   
   if (!matches) return 0;
   
-  // Convert to numbers and find the biggest one
   const numbers = matches.map(match => {
     const normalized = match.replace(',', '.');
     return parseFloat(normalized);
-  }).filter(num => !isNaN(num));
+  }).filter(num => !isNaN(num) && num > 1); // Filter out small numbers like tax percentages
   
   return Math.max(...numbers, 0);
+}
+
+function extractItems(text: string): string[] {
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  const items: string[] = [];
+  
+  // Common product indicators and price patterns
+  const pricePattern = /[*]?\d+[,.]\d+/;
+  const skipPatterns = [
+    /^%\d+$/, // Tax percentages like %1, %20
+    /^[*]?\d+[,.]\d+$/, // Pure price lines
+    /TOPLAM|TOTAL|ARA\s+TOPLAM|TUTAR|KDV|KASA|FİŞ|SAAT|TARİH|MERKEZ|ADRESİ/i,
+    /^\d{2}[\/\-.]\d{2}[\/\-.]\d{4}$/, // Dates
+    /MUKELLEF|BULVAR|POSET|KOCAILEM|JETKASA|ORTAK\s+POS/i,
+    /^\d+$/, // Pure numbers
+    /^[A-Z]{2,4}\d+$/, // Codes like SMA98
+    /TEL:|TCKN:|V\.D\./i
+  ];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip if matches skip patterns
+    if (skipPatterns.some(pattern => pattern.test(line))) {
+      continue;
+    }
+    
+    // Look for product names - typically followed by price info
+    if (line.length > 3 && !pricePattern.test(line)) {
+      // Check if next few lines contain price info
+      let hasPrice = false;
+      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        if (pricePattern.test(lines[j])) {
+          hasPrice = true;
+          break;
+        }
+      }
+      
+      if (hasPrice) {
+        // Clean up product name
+        const cleanedName = line
+          .replace(/^[#\d\s]+/, '') // Remove leading numbers/symbols
+          .replace(/\s+/g, ' ') // Normalize spaces
+          .trim();
+          
+        if (cleanedName.length > 2) {
+          items.push(cleanedName);
+        }
+      }
+    }
+  }
+  
+  return items;
 }
 
 serve(async (req) => {
@@ -172,6 +239,7 @@ serve(async (req) => {
           merchant: '',
           purchase_date: new Date().toISOString().split('T')[0],
           total: 0,
+          items: [],
           raw_text: 'No text detected in image'
         }),
         {
@@ -185,6 +253,7 @@ serve(async (req) => {
       merchant: extractMerchant(fullText),
       purchase_date: extractDate(fullText),
       total: extractTotal(fullText),
+      items: extractItems(fullText),
       raw_text: fullText
     };
 
