@@ -75,29 +75,74 @@ const UploadReceipt: React.FC = () => {
   };
 
   const processReceipt = async () => {
-    if (!file) return;
+    if (!file || !user) return;
 
     setIsProcessing(true);
     
-    // Mock OCR processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Mock extracted data
-    const mockData: ReceiptData = {
-      storeName: 'Migros',
-      date: new Date().toISOString().split('T')[0],
-      totalAmount: '124.50',
-      items: 'Süt, Ekmek, Peynir, Domates, Makarna'
-    };
-    
-    setReceiptData(mockData);
-    setIsProcessing(false);
-    setIsProcessed(true);
-    
-    toast({
-      title: "Receipt Processed!",
-      description: "Information extracted successfully. Please review and submit.",
-    });
+    try {
+      // First upload the image to get a public URL for OCR
+      const fileName = generateSecureFileName(file.name, user.id);
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('receipts')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      // Get public URL for OCR processing
+      const { data: { publicUrl } } = supabase.storage
+        .from('receipts')
+        .getPublicUrl(fileName);
+
+      // Call OCR edge function
+      const { data: ocrResult, error: ocrError } = await supabase.functions.invoke('ocr', {
+        body: { imageUrl: publicUrl }
+      });
+
+      if (ocrError) {
+        throw new Error(`OCR failed: ${ocrError.message}`);
+      }
+
+      // Pre-fill form with OCR results
+      const extractedData: ReceiptData = {
+        storeName: ocrResult.merchant || '',
+        date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
+        totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
+        items: '' // We can add item extraction later if needed
+      };
+      
+      setReceiptData(extractedData);
+      setIsProcessed(true);
+      
+      toast({
+        title: "Receipt Processed!",
+        description: "Information extracted successfully. Please review and submit.",
+      });
+
+    } catch (error) {
+      console.error('OCR processing error:', error);
+      
+      // Fall back to manual entry
+      setReceiptData({
+        storeName: '',
+        date: new Date().toISOString().split('T')[0],
+        totalAmount: '',
+        items: ''
+      });
+      setIsProcessed(true);
+      
+      toast({
+        title: "OCR Failed",
+        description: error instanceof Error ? error.message : "Please enter receipt details manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const submitReceipt = async () => {
@@ -124,23 +169,36 @@ const UploadReceipt: React.FC = () => {
     setIsProcessing(true);
     
     try {
-      // Upload image to Supabase Storage
-      const fileName = generateSecureFileName(file.name, user.id);
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('receipts')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      // Use the already uploaded image from OCR processing
+      let imageUrl = '';
+      
+      // Check if we already have a processed image URL, if not upload it
+      if (isProcessed) {
+        // Image was already uploaded during OCR, get the URL
+        const fileName = generateSecureFileName(file.name, user.id);
+        const { data: { publicUrl } } = supabase.storage
+          .from('receipts')
+          .getPublicUrl(fileName);
+        imageUrl = publicUrl;
+      } else {
+        // Upload the image if OCR wasn't run
+        const fileName = generateSecureFileName(file.name, user.id);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
 
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`);
+        if (uploadError) {
+          throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('receipts')
+          .getPublicUrl(fileName);
+        imageUrl = publicUrl;
       }
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('receipts')
-        .getPublicUrl(fileName);
 
       // Save receipt data to database
       const { error: dbError } = await supabase
@@ -151,7 +209,7 @@ const UploadReceipt: React.FC = () => {
           total: validation.sanitizedData.totalAmount,
           purchase_date: validation.sanitizedData.date,
           items: validation.sanitizedData.items,
-          image_url: publicUrl,
+          image_url: imageUrl,
           status: 'pending',
           points: 100 // Points awarded upon approval
         });
@@ -274,7 +332,7 @@ const UploadReceipt: React.FC = () => {
                         {isProcessing ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            Processing...
+                            Running OCR...
                           </>
                         ) : (
                           'Process Receipt'
