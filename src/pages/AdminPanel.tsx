@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AdminRoute from '../components/AdminRoute';
+import UserRoleManager from '../components/UserRoleManager';
 import { 
   Users, 
   Receipt, 
@@ -39,6 +40,7 @@ interface UserStats {
   totalPoints: number;
   joinDate: string;
   status: 'active' | 'suspended';
+  current_role: 'admin' | 'moderator' | 'user';
 }
 
 const AdminPanel: React.FC = () => {
@@ -57,7 +59,7 @@ const AdminPanel: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Fetch pending receipts
+      // Fetch pending receipts with user info
       const { data: receiptsData, error: receiptsError } = await supabase
         .from('receipts')
         .select(`
@@ -68,19 +70,27 @@ const AdminPanel: React.FC = () => {
           purchase_date,
           status,
           created_at,
-          points,
-          users_profile!inner(display_name)
+          points
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
       if (receiptsError) throw receiptsError;
 
+      // Get user info for each receipt
+      const userIds = [...new Set(receiptsData?.map(r => r.user_id) || [])];
+      const { data: usersInfo } = await supabase
+        .from('users_profile')
+        .select('id, display_name')
+        .in('id', userIds);
+
+      const userMap = new Map(usersInfo?.map(u => [u.id, u.display_name]) || []);
+
       // Transform data
       const transformedReceipts: ReceiptSubmission[] = (receiptsData || []).map(receipt => ({
         id: receipt.id,
         userId: receipt.user_id,
-        userName: (receipt.users_profile as any)?.display_name || 'Unknown User',
+        userName: userMap.get(receipt.user_id) || 'Unknown User',
         storeName: receipt.merchant || 'Unknown Store',
         amount: receipt.total || 0,
         date: receipt.purchase_date || receipt.created_at.split('T')[0],
@@ -90,29 +100,45 @@ const AdminPanel: React.FC = () => {
 
       setPendingReceipts(transformedReceipts);
 
-      // Fetch user stats
+      // Fetch user stats  
       const { data: usersData, error: usersError } = await supabase
         .from('users_profile')
-        .select(`
-          id,
-          display_name,
-          total_points,
-          created_at,
-          receipts:receipts(count)
-        `)
+        .select('id, display_name, total_points, created_at')
         .order('total_points', { ascending: false })
         .limit(50);
 
       if (usersError) throw usersError;
 
+      // Get receipt counts for each user
+      const { data: receiptCounts } = await supabase
+        .from('receipts')
+        .select('user_id')
+        .in('user_id', usersData?.map(u => u.id) || []);
+
+      const receiptCountMap = new Map();
+      receiptCounts?.forEach(receipt => {
+        const count = receiptCountMap.get(receipt.user_id) || 0;
+        receiptCountMap.set(receipt.user_id, count + 1);
+      });
+
+
+      // Get user roles
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', usersData?.map(u => u.id) || []);
+
+      const roleMap = new Map(userRoles?.map(ur => [ur.user_id, ur.role]) || []);
+
       const transformedUsers: UserStats[] = (usersData || []).map(user => ({
         id: user.id,
         name: user.display_name || 'Unknown User',
         email: '', // Email not available in profiles table for privacy
-        totalReceipts: user.receipts?.[0]?.count || 0,
+        totalReceipts: receiptCountMap.get(user.id) || 0,
         totalPoints: user.total_points || 0,
         joinDate: user.created_at.split('T')[0],
-        status: 'active' as const
+        status: 'active' as const,
+        current_role: roleMap.get(user.id) || 'user'
       }));
 
       setUsers(transformedUsers);
@@ -138,9 +164,12 @@ const AdminPanel: React.FC = () => {
 
   const handleReceiptAction = async (receiptId: string, action: 'approve' | 'reject') => {
     try {
-      const oldStatus = pendingReceipts.find(r => r.id === receiptId)?.status;
+      const receipt = pendingReceipts.find(r => r.id === receiptId);
+      if (!receipt) return;
+
       const newStatus = action === 'approve' ? 'approved' : 'rejected';
       
+      // Update receipt status
       const { error } = await supabase
         .from('receipts')
         .update({ status: newStatus })
@@ -153,7 +182,7 @@ const AdminPanel: React.FC = () => {
         _action: `${action}_receipt`,
         _table_name: 'receipts',
         _record_id: receiptId,
-        _old_values: { status: oldStatus },
+        _old_values: { status: 'pending' },
         _new_values: { status: newStatus }
       });
 
@@ -352,8 +381,17 @@ const AdminPanel: React.FC = () => {
           </Card>
         </TabsContent>
 
-        {/* Users Tab */}
         <TabsContent value="users" className="space-y-4">
+          <UserRoleManager 
+            users={users.map(u => ({
+              id: u.id,
+              display_name: u.name,
+              total_points: u.totalPoints,
+              current_role: u.current_role
+            }))} 
+            onUserRoleChange={fetchData}
+          />
+          
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle>User Management</CardTitle>
