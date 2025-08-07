@@ -10,7 +10,7 @@ interface OCRResult {
   merchant: string;
   purchase_date: string;
   total: number;
-  items: { name: string; quantity?: string; price?: string }[];
+  items: string[];
   raw_text: string;
 }
 
@@ -183,11 +183,11 @@ function extractTotal(text: string): number {
   return 0;
 }
 
-function extractItems(text: string): { name: string; quantity?: string; price?: string }[] {
+function extractItems(text: string): string[] {
   console.log('Extracting items from text');
   
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const items: { name: string; quantity?: string; price?: string }[] = [];
+  const items: string[] = [];
   
   // Known product patterns from the receipt
   const productPatterns = [
@@ -219,26 +219,10 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (pattern.test(line)) {
-        let price = '';
-        
-        // Look for price in next few lines
-        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-          const nextLine = lines[j].trim();
-          if (nextLine.match(/^[*](\d+[,.]\d{2})$/)) {
-            price = nextLine.replace('*', '').replace(',', '.');
-            break;
-          }
-        }
-        
         const cleanName = line.replace(/^[#\d\s*]+/, '').trim();
-        if (cleanName.length > 2) {
-          const item: { name: string; quantity?: string; price?: string } = {
-            name: cleanName
-          };
-          if (price) item.price = price;
-          
-          items.push(item);
-          console.log('Found known product:', item);
+        if (cleanName.length > 2 && !items.includes(cleanName)) {
+          items.push(cleanName);
+          console.log('Found known product:', cleanName);
         }
       }
     }
@@ -264,12 +248,10 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
         
         // Check if followed by price info
         let hasPrice = false;
-        let price = '';
         
         for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
           const nextLine = lines[j].trim();
           if (nextLine.match(/^[*](\d+[,.]\d{2})$/)) {
-            price = nextLine.replace('*', '').replace(',', '.');
             hasPrice = true;
             break;
           }
@@ -283,16 +265,11 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
             
           // Skip if already found or looks like company name
           if (cleanName.length > 2 && 
-              !items.some(item => item.name === cleanName) &&
+              !items.includes(cleanName) &&
               !cleanName.match(/GROS|CARET|A\.S\./i)) {
             
-            const item: { name: string; quantity?: string; price?: string } = {
-              name: cleanName
-            };
-            if (price) item.price = price;
-            
-            items.push(item);
-            console.log('Found additional product:', item);
+            items.push(cleanName);
+            console.log('Found additional product:', cleanName);
           }
         }
       }
