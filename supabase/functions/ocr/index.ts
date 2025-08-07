@@ -18,38 +18,46 @@ interface OCRResult {
 function extractMerchant(text: string): string {
   const lines = text.split('\n').filter(line => line.trim().length > 0);
   
-  // Look for common Turkish store names first
+  // Look for common Turkish store names in the text
   const storePatterns = [
-    /MİGROS|MIGROS/i,
-    /BİM/i,
-    /A101/i,
-    /ŞOK/i,
-    /CARREFOUR/i,
-    /TEKNOSA/i,
-    /REAL/i,
-    /METRO/i
+    { pattern: /MİGROS|MIGROS/i, name: 'Migros' },
+    { pattern: /BİM/i, name: 'BİM' },
+    { pattern: /A101/i, name: 'A101' },
+    { pattern: /ŞOK/i, name: 'ŞOK' },
+    { pattern: /CARREFOUR/i, name: 'CarrefourSA' },
+    { pattern: /TEKNOSA/i, name: 'Teknosa' },
+    { pattern: /REAL/i, name: 'Real' },
+    { pattern: /METRO/i, name: 'Metro' }
   ];
   
-  for (const line of lines) {
-    for (const pattern of storePatterns) {
-      if (pattern.test(line)) {
-        const match = line.match(pattern);
-        return match ? match[0] : '';
-      }
+  // Check entire text for store patterns
+  for (const store of storePatterns) {
+    if (store.pattern.test(text)) {
+      return store.name;
     }
   }
   
-  // Fallback: look for company indicators
+  // Look for company indicators in lines
   for (const line of lines) {
-    if (line.includes('A.Ş.') || line.includes('A.S.') || line.includes('LTD') || line.includes('ŞTİ')) {
+    if ((line.includes('A.Ş.') || line.includes('A.S.') || line.includes('LTD') || line.includes('ŞTİ')) 
+        && line.length > 5 && line.length < 50) {
       return line.trim();
     }
   }
   
-  // Last resort: return first substantial line
-  for (const line of lines) {
-    if (line.trim().length > 3 && !line.match(/^\d+$/) && !line.includes('TEL:')) {
-      return line.trim();
+  // Look for lines that might contain store name (avoid receipt header junk)
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    const line = lines[i].trim();
+    
+    // Skip obvious non-store lines
+    if (line.match(/^\d+$/) || line.includes('TEL:') || line.includes('THIS') || 
+        line.includes('GRIZON') || line.length < 3 || line.length > 50) {
+      continue;
+    }
+    
+    // If it contains letters and is substantial, might be store name
+    if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && line.length > 3) {
+      return line;
     }
   }
   
@@ -100,47 +108,48 @@ function extractDate(text: string): string {
 }
 
 function extractTotal(text: string): number {
-  console.log('Extracting total from text:', text);
+  console.log('Extracting total from text');
   
-  // Look for Turkish total patterns with more precision
-  const totalPatterns = [
-    /TOPLAM\s*[*]?\s*(\d+[,.]\d{2})/i,
-    /TOPLAM\s*(\d+[,.]\d{2})/i,
-    /(?:^|\n)\s*[*]?(\d+[,.]\d{2})\s*(?:\n|$)/m, // Standalone price at end
-  ];
+  // Look for the final total amount - prioritize "TOPLAM" near end of receipt
+  const lines = text.split('\n').reverse(); // Start from bottom
   
-  for (const pattern of totalPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const normalized = match[1].replace(',', '.');
-      const total = parseFloat(normalized);
-      console.log('Found total with pattern:', pattern, 'value:', total);
-      if (total > 0 && total < 10000) { // Reasonable range for most receipts
-        return total;
+  // Look for the final TOPLAM line which should have the correct total
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+    const line = lines[i].trim();
+    
+    // Look for TOPLAM with amount after it
+    if (line.includes('TOPLAM') && !line.includes('ARA')) {
+      // Look for amount in the same line or next few lines
+      const totalMatch = line.match(/TOPLAM\s*[*]?\s*(\d+[,.]\d{2})/i);
+      if (totalMatch) {
+        const amount = parseFloat(totalMatch[1].replace(',', '.'));
+        console.log('Found TOPLAM amount:', amount);
+        return amount;
+      }
+      
+      // Look in next few lines for the amount
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const nextLine = lines[j].trim();
+        const amountMatch = nextLine.match(/^[*]?(\d+[,.]\d{2})$/);
+        if (amountMatch) {
+          const amount = parseFloat(amountMatch[1].replace(',', '.'));
+          console.log('Found amount after TOPLAM:', amount);
+          return amount;
+        }
       }
     }
   }
   
-  // Look for the last reasonable price amount in the text
-  const lines = text.split('\n');
-  const pricePattern = /[*]?(\d+[,.]\d{2})/;
-  
-  for (let i = lines.length - 1; i >= 0; i--) {
+  // Look for standalone amounts in reasonable range from the bottom
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
     const line = lines[i].trim();
     
-    // Skip lines that are clearly not totals
-    if (line.includes('%') || line.includes('KDV') || line.includes('KASA') || line.length < 3) {
-      continue;
-    }
-    
-    const match = line.match(pricePattern);
-    if (match) {
-      const normalized = match[1].replace(',', '.');
-      const amount = parseFloat(normalized);
+    if (line.match(/^[*]?(\d+[,.]\d{2})$/) && !line.includes('%')) {
+      const amount = parseFloat(line.replace(/[*,]/g, '').replace(',', '.'));
       
-      // Return first reasonable amount found from the bottom
-      if (amount > 0 && amount < 10000) {
-        console.log('Found total from bottom scan:', amount);
+      // Should be reasonable receipt total (between 1 and 1000 for most receipts)
+      if (amount >= 1 && amount <= 1000) {
+        console.log('Found reasonable total from bottom:', amount);
         return amount;
       }
     }
@@ -158,7 +167,6 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
   
   // Price pattern for Turkish format
   const pricePattern = /[*]?(\d+[,.]\d{2})/;
-  const quantityPattern = /x?\s*(\d+)\s*(?:adet|ADET)?/i;
   
   // Skip patterns for non-product lines
   const skipPatterns = [
@@ -170,10 +178,13 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
     /^\d+$/, // Pure numbers
     /^[A-Z]{2,4}\d+$/, // Product codes at start of line
     /^#\d+/, // Barcode numbers
-    /GRIZON|THIS|SMA\d+|CARET|A\.S\./i, // Company name fragments
-    /POSET|PLASTIK/i // Bag charges
+    /GRIZON|THIS|SMA\d+|CARET|A\.S\.|030/i, // Company name fragments
+    /PLASTIK\s+POSET|POSET/i, // Bag charges
+    /IND\.|KOCAILEM|RAD|MIG$/i, // Discount and other non-product lines
+    /^\d{6,}/ // Long number sequences
   ];
   
+  // Find product lines - these typically don't have prices directly in them
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
@@ -182,37 +193,43 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
       continue;
     }
     
-    // Skip very short lines or lines that are clearly not products
-    if (line.length < 3) {
+    // Skip very short lines
+    if (line.length < 4) {
       continue;
     }
     
-    // Look for product names - should not contain prices but should be followed by price info
-    if (!pricePattern.test(line)) {
-      // Check if this looks like a product name by looking ahead for price/quantity info
+    // Skip lines that contain prices (product names typically don't have prices in the same line)
+    if (pricePattern.test(line)) {
+      continue;
+    }
+    
+    // Look for lines that look like product names
+    // Product names typically:
+    // - Have letters
+    // - Are not just numbers
+    // - Are followed by price/quantity info within a few lines
+    if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && !line.match(/^\d+$/)) {
+      
+      // Check if this looks like a product by looking ahead for price info
       let hasRelatedInfo = false;
-      let quantity = '';
       let price = '';
       
-      // Look ahead 1-3 lines for price/quantity info
+      // Look ahead for price info
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-        const nextLine = lines[j];
+        const nextLine = lines[j].trim();
         
-        // Check for price
-        const priceMatch = nextLine.match(pricePattern);
+        // Check for price in next lines
+        const priceMatch = nextLine.match(/^[*]?(\d+[,.]\d{2})$/);
         if (priceMatch && !skipPatterns.some(p => p.test(nextLine))) {
           price = priceMatch[1];
           hasRelatedInfo = true;
+          break;
         }
         
-        // Check for quantity
-        const qtyMatch = nextLine.match(quantityPattern);
-        if (qtyMatch) {
-          quantity = qtyMatch[1];
-        }
-        
-        // Stop if we hit another product or skip pattern
-        if (skipPatterns.some(p => p.test(nextLine)) && !priceMatch) {
+        // Stop if we hit another potential product or skip pattern
+        if (nextLine.length > 3 && !priceMatch && 
+            (nextLine.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) || 
+             skipPatterns.some(p => p.test(nextLine)))) {
           break;
         }
       }
@@ -222,12 +239,7 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
         let cleanedName = line
           .replace(/^[#\d\s*]+/, '') // Remove leading numbers, hashes, asterisks
           .replace(/\s+/g, ' ') // Normalize spaces
-          .trim();
-        
-        // Additional cleaning for Turkish receipts
-        cleanedName = cleanedName
-          .replace(/^[*]+/, '') // Remove leading asterisks
-          .replace(/\d+$/, '') // Remove trailing numbers
+          .replace(/[*]+$/, '') // Remove trailing asterisks
           .trim();
         
         if (cleanedName.length > 2 && !cleanedName.match(/^\d+$/)) {
@@ -235,8 +247,9 @@ function extractItems(text: string): { name: string; quantity?: string; price?: 
             name: cleanedName
           };
           
-          if (quantity) item.quantity = quantity;
-          if (price) item.price = price;
+          if (price) {
+            item.price = price.replace(',', '.');
+          }
           
           items.push(item);
           console.log('Found item:', item);
