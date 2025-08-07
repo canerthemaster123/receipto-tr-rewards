@@ -24,7 +24,7 @@ export const useUserRole = () => {
           .eq('user_id', user.id)
           .order('role', { ascending: true }) // admin first, then moderator, then user
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (error) {
           console.error('Error fetching user role:', error);

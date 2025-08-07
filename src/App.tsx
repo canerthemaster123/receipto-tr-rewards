@@ -11,6 +11,7 @@ import UploadReceipt from "./pages/UploadReceipt";
 import ReceiptHistory from "./pages/ReceiptHistory";
 import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -112,7 +113,7 @@ const App = () => (
               path="/profile" 
               element={
                 <ProtectedRoute>
-                  <Dashboard />
+                  <Profile />
                 </ProtectedRoute>
               } 
             />
