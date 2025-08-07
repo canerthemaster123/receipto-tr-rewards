@@ -47,11 +47,11 @@ const AuthPage: React.FC = () => {
       if (isLogin) {
         navigate('/dashboard');
       } else {
-        // For registration, user needs to verify email first
-        toast({
-          title: "Check your email",
-          description: "We've sent you a verification link. Please check your email and click the link to activate your account.",
-        });
+        // For registration, stay on the auth page and show success message
+        setIsLogin(true); // Switch to login mode
+        setEmail(''); // Clear form
+        setPassword('');
+        setName('');
       }
     } else {
       toast({
@@ -67,12 +67,20 @@ const AuthPage: React.FC = () => {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center justify-center gap-2 mb-4 mx-auto hover:scale-105 transition-transform"
+          >
             <div className="p-3 bg-white/10 rounded-xl backdrop-blur-sm">
               <Receipt className="h-8 w-8 text-white" />
             </div>
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Receipto</h1>
+          </button>
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="block hover:scale-105 transition-transform mx-auto"
+          >
+            <h1 className="text-3xl font-bold text-white mb-2">Receipto</h1>
+          </button>
           <p className="text-white/80">Turn your receipts into rewards</p>
         </div>
 
