@@ -152,6 +152,30 @@ const UploadReceipt: React.FC = () => {
     }
   };
 
+  const checkForDuplicateReceipt = async (storeName: string, date: string, totalAmount: number) => {
+    if (!user) return false;
+
+    try {
+      const { data: existingReceipts, error } = await supabase
+        .from('receipts')
+        .select('id, merchant, purchase_date, total')
+        .eq('user_id', user.id)
+        .eq('merchant', storeName.trim())
+        .eq('purchase_date', date)
+        .eq('total', totalAmount);
+
+      if (error) {
+        console.error('Error checking for duplicates:', error);
+        return false;
+      }
+
+      return existingReceipts && existingReceipts.length > 0;
+    } catch (error) {
+      console.error('Error in duplicate check:', error);
+      return false;
+    }
+  };
+
   const submitReceipt = async () => {
     if (!file || !user) {
       toast({
@@ -170,6 +194,23 @@ const UploadReceipt: React.FC = () => {
         description: validation.errors.join(', '),
         variant: "destructive",
       });
+      return;
+    }
+
+    // Check for duplicate receipts
+    const isDuplicate = await checkForDuplicateReceipt(
+      validation.sanitizedData.storeName,
+      validation.sanitizedData.date,
+      validation.sanitizedData.totalAmount
+    );
+
+    if (isDuplicate) {
+      toast({
+        title: "Duplicate Receipt",
+        description: "A receipt with the same store, date, and total amount already exists. Please check your previous uploads.",
+        variant: "destructive",
+      });
+      setIsProcessing(false);
       return;
     }
 
@@ -227,8 +268,19 @@ const UploadReceipt: React.FC = () => {
 
       toast({
         title: "Receipt Submitted!",
-        description: "Your receipt is being reviewed. Points will be awarded upon approval.",
+        description: "Your receipt has been submitted successfully. Points will be awarded upon approval.",
       });
+      
+      // Reset form state
+      setFile(null);
+      setPreviewUrl('');
+      setReceiptData({
+        storeName: '',
+        date: '',
+        totalAmount: '',
+        items: ''
+      });
+      setIsProcessed(false);
       
       navigate('/dashboard');
     } catch (error) {
