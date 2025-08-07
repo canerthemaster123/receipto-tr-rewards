@@ -119,7 +119,10 @@ const UploadReceipt: React.FC = () => {
         storeName: ocrResult.merchant || '',
         date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
         totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
-        items: '' // We can add item extraction later if needed
+        items: ocrResult.items ? ocrResult.items.map((item: any) => 
+          typeof item === 'string' ? item : 
+          `${item.name}${item.quantity ? ` (${item.quantity})` : ''}${item.price ? ` - ${item.price}₺` : ''}`
+        ).join('\n') : ''
       };
       
       setReceiptData(extractedData);

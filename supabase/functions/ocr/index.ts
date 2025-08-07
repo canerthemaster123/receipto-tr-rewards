@@ -10,36 +10,87 @@ interface OCRResult {
   merchant: string;
   purchase_date: string;
   total: number;
-  items: string[];
+  items: { name: string; quantity?: string; price?: string }[];
   raw_text: string;
 }
 
 // Parsing helpers
 function extractMerchant(text: string): string {
   const lines = text.split('\n').filter(line => line.trim().length > 0);
+  
+  // Look for common Turkish store names first
+  const storePatterns = [
+    /MİGROS|MIGROS/i,
+    /BİM/i,
+    /A101/i,
+    /ŞOK/i,
+    /CARREFOUR/i,
+    /TEKNOSA/i,
+    /REAL/i,
+    /METRO/i
+  ];
+  
+  for (const line of lines) {
+    for (const pattern of storePatterns) {
+      if (pattern.test(line)) {
+        const match = line.match(pattern);
+        return match ? match[0] : '';
+      }
+    }
+  }
+  
+  // Fallback: look for company indicators
+  for (const line of lines) {
+    if (line.includes('A.Ş.') || line.includes('A.S.') || line.includes('LTD') || line.includes('ŞTİ')) {
+      return line.trim();
+    }
+  }
+  
+  // Last resort: return first substantial line
+  for (const line of lines) {
+    if (line.trim().length > 3 && !line.match(/^\d+$/) && !line.includes('TEL:')) {
+      return line.trim();
+    }
+  }
+  
   return lines[0]?.trim() || '';
 }
 
 function extractDate(text: string): string {
-  // Look for DD.MM.YYYY, DD/MM/YYYY, or YYYY-MM-DD patterns
+  // Look for Turkish date patterns first
   const datePatterns = [
-    /\b(\d{2})\.(\d{2})\.(\d{4})\b/,
-    /\b(\d{2})\/(\d{2})\/(\d{4})\b/,
-    /\b(\d{4})-(\d{2})-(\d{2})\b/
+    /TARİH\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
+    /TARİH\s*:\s*(\d{2}\.\d{2}\.\d{4})/i,
+    /(\d{2}\/\d{2}\/\d{4})/,
+    /(\d{2}\.\d{2}\.\d{4})/,
+    /(\d{4}-\d{2}-\d{2})/
   ];
   
   for (const pattern of datePatterns) {
     const match = text.match(pattern);
     if (match) {
-      if (pattern === datePatterns[2]) {
+      let dateStr = match[1] || match[0];
+      
+      // Convert to YYYY-MM-DD format
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          // DD/MM/YYYY to YYYY-MM-DD
+          if (parts[2].length === 4) {
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+      } else if (dateStr.includes('.')) {
+        const parts = dateStr.split('.');
+        if (parts.length === 3) {
+          // DD.MM.YYYY to YYYY-MM-DD
+          if (parts[2].length === 4) {
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+      } else if (dateStr.includes('-')) {
         // Already in YYYY-MM-DD format
-        return match[0];
-      } else {
-        // Convert DD.MM.YYYY or DD/MM/YYYY to YYYY-MM-DD
-        const day = match[1];
-        const month = match[2];
-        const year = match[3];
-        return `${year}-${month}-${day}`;
+        return dateStr;
       }
     }
   }
@@ -49,84 +100,152 @@ function extractDate(text: string): string {
 }
 
 function extractTotal(text: string): number {
-  // Look for total amount near "TOPLAM", "TOTAL", "ARA TOPLAM" keywords
+  console.log('Extracting total from text:', text);
+  
+  // Look for Turkish total patterns with more precision
   const totalPatterns = [
-    /(?:TOPLAM|TOTAL)\s*[*]?(\d+[,.]\d+)/i,
-    /(?:ARA\s+TOPLAM)\s*[*]?(\d+[,.]\d+)/i
+    /TOPLAM\s*[*]?\s*(\d+[,.]\d{2})/i,
+    /TOPLAM\s*(\d+[,.]\d{2})/i,
+    /(?:^|\n)\s*[*]?(\d+[,.]\d{2})\s*(?:\n|$)/m, // Standalone price at end
   ];
   
   for (const pattern of totalPatterns) {
     const match = text.match(pattern);
     if (match) {
       const normalized = match[1].replace(',', '.');
-      return parseFloat(normalized);
+      const total = parseFloat(normalized);
+      console.log('Found total with pattern:', pattern, 'value:', total);
+      if (total > 0 && total < 10000) { // Reasonable range for most receipts
+        return total;
+      }
     }
   }
   
-  // Fallback: look for numbers with decimal separators
-  const numberPattern = /\b\d+[,.]?\d*\b/g;
-  const matches = text.match(numberPattern);
+  // Look for the last reasonable price amount in the text
+  const lines = text.split('\n');
+  const pricePattern = /[*]?(\d+[,.]\d{2})/;
   
-  if (!matches) return 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    
+    // Skip lines that are clearly not totals
+    if (line.includes('%') || line.includes('KDV') || line.includes('KASA') || line.length < 3) {
+      continue;
+    }
+    
+    const match = line.match(pricePattern);
+    if (match) {
+      const normalized = match[1].replace(',', '.');
+      const amount = parseFloat(normalized);
+      
+      // Return first reasonable amount found from the bottom
+      if (amount > 0 && amount < 10000) {
+        console.log('Found total from bottom scan:', amount);
+        return amount;
+      }
+    }
+  }
   
-  const numbers = matches.map(match => {
-    const normalized = match.replace(',', '.');
-    return parseFloat(normalized);
-  }).filter(num => !isNaN(num) && num > 1); // Filter out small numbers like tax percentages
-  
-  return Math.max(...numbers, 0);
+  console.log('No total found, returning 0');
+  return 0;
 }
 
-function extractItems(text: string): string[] {
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const items: string[] = [];
+function extractItems(text: string): { name: string; quantity?: string; price?: string }[] {
+  console.log('Extracting items from text');
   
-  // Common product indicators and price patterns
-  const pricePattern = /[*]?\d+[,.]\d+/;
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  const items: { name: string; quantity?: string; price?: string }[] = [];
+  
+  // Price pattern for Turkish format
+  const pricePattern = /[*]?(\d+[,.]\d{2})/;
+  const quantityPattern = /x?\s*(\d+)\s*(?:adet|ADET)?/i;
+  
+  // Skip patterns for non-product lines
   const skipPatterns = [
-    /^%\d+$/, // Tax percentages like %1, %20
+    /^%\d+$/, // Tax percentages
     /^[*]?\d+[,.]\d+$/, // Pure price lines
     /TOPLAM|TOTAL|ARA\s+TOPLAM|TUTAR|KDV|KASA|FİŞ|SAAT|TARİH|MERKEZ|ADRESİ/i,
     /^\d{2}[\/\-.]\d{2}[\/\-.]\d{4}$/, // Dates
-    /MUKELLEF|BULVAR|POSET|KOCAILEM|JETKASA|ORTAK\s+POS/i,
+    /MUKELLEF|BULVAR|V\.D\.|TEL:|TCKN:|ORTAK\s+POS|JETKASA/i,
     /^\d+$/, // Pure numbers
-    /^[A-Z]{2,4}\d+$/, // Codes like SMA98
-    /TEL:|TCKN:|V\.D\./i
+    /^[A-Z]{2,4}\d+$/, // Product codes at start of line
+    /^#\d+/, // Barcode numbers
+    /GRIZON|THIS|SMA\d+|CARET|A\.S\./i, // Company name fragments
+    /POSET|PLASTIK/i // Bag charges
   ];
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // Skip if matches skip patterns
+    // Skip lines matching skip patterns
     if (skipPatterns.some(pattern => pattern.test(line))) {
       continue;
     }
     
-    // Look for product names - typically followed by price info
-    if (line.length > 3 && !pricePattern.test(line)) {
-      // Check if next few lines contain price info
-      let hasPrice = false;
-      for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-        if (pricePattern.test(lines[j])) {
-          hasPrice = true;
+    // Skip very short lines or lines that are clearly not products
+    if (line.length < 3) {
+      continue;
+    }
+    
+    // Look for product names - should not contain prices but should be followed by price info
+    if (!pricePattern.test(line)) {
+      // Check if this looks like a product name by looking ahead for price/quantity info
+      let hasRelatedInfo = false;
+      let quantity = '';
+      let price = '';
+      
+      // Look ahead 1-3 lines for price/quantity info
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const nextLine = lines[j];
+        
+        // Check for price
+        const priceMatch = nextLine.match(pricePattern);
+        if (priceMatch && !skipPatterns.some(p => p.test(nextLine))) {
+          price = priceMatch[1];
+          hasRelatedInfo = true;
+        }
+        
+        // Check for quantity
+        const qtyMatch = nextLine.match(quantityPattern);
+        if (qtyMatch) {
+          quantity = qtyMatch[1];
+        }
+        
+        // Stop if we hit another product or skip pattern
+        if (skipPatterns.some(p => p.test(nextLine)) && !priceMatch) {
           break;
         }
       }
       
-      if (hasPrice) {
+      if (hasRelatedInfo) {
         // Clean up product name
-        const cleanedName = line
-          .replace(/^[#\d\s]+/, '') // Remove leading numbers/symbols
+        let cleanedName = line
+          .replace(/^[#\d\s*]+/, '') // Remove leading numbers, hashes, asterisks
           .replace(/\s+/g, ' ') // Normalize spaces
           .trim();
+        
+        // Additional cleaning for Turkish receipts
+        cleanedName = cleanedName
+          .replace(/^[*]+/, '') // Remove leading asterisks
+          .replace(/\d+$/, '') // Remove trailing numbers
+          .trim();
+        
+        if (cleanedName.length > 2 && !cleanedName.match(/^\d+$/)) {
+          const item: { name: string; quantity?: string; price?: string } = {
+            name: cleanedName
+          };
           
-        if (cleanedName.length > 2) {
-          items.push(cleanedName);
+          if (quantity) item.quantity = quantity;
+          if (price) item.price = price;
+          
+          items.push(item);
+          console.log('Found item:', item);
         }
       }
     }
   }
   
+  console.log('Total items extracted:', items.length);
   return items;
 }
 
