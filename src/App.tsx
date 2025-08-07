@@ -12,6 +12,7 @@ import ReceiptHistory from "./pages/ReceiptHistory";
 import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
 import Profile from "./pages/Profile";
+import ReferralPage from "./pages/ReferralPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -114,6 +115,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/referrals" 
+              element={
+                <ProtectedRoute>
+                  <ReferralPage />
                 </ProtectedRoute>
               } 
             />
