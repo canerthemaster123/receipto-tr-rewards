@@ -28,6 +28,7 @@ interface ReceiptRecord {
   total: number;
   points: number;
   purchase_date: string;
+  payment_method: string | null;
   status: 'approved' | 'pending' | 'rejected';
   items: string;
   image_url?: string;
@@ -354,6 +355,13 @@ const ReceiptHistory: React.FC = () => {
                   <span className="text-sm text-muted-foreground">Purchase Date:</span>
                   <span className="text-sm">{new Date(selectedReceipt.purchase_date).toLocaleDateString('tr-TR')}</span>
                 </div>
+                
+                {selectedReceipt.payment_method && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Payment Method:</span>
+                    <span className="text-sm font-mono">{selectedReceipt.payment_method}</span>
+                  </div>
+                )}
                 
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Status:</span>

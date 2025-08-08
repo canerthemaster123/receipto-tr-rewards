@@ -32,6 +32,7 @@ interface ReceiptSubmission {
   storeName: string;
   amount: number;
   date: string;
+  paymentMethod: string | null;
   status: 'pending' | 'approved' | 'rejected';
   submitDate: string;
 }
@@ -85,6 +86,7 @@ const AdminPanel: React.FC = () => {
           merchant,
           total,
           purchase_date,
+          payment_method,
           status,
           created_at,
           points
@@ -111,6 +113,7 @@ const AdminPanel: React.FC = () => {
         storeName: receipt.merchant || 'Unknown Store',
         amount: receipt.total || 0,
         date: receipt.purchase_date || receipt.created_at.split('T')[0],
+        paymentMethod: receipt.payment_method,
         status: receipt.status as 'pending',
         submitDate: receipt.created_at
       }));
@@ -376,7 +379,7 @@ const AdminPanel: React.FC = () => {
                       </Badge>
                     </div>
                     
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                       <div>
                         <span className="text-muted-foreground">Amount:</span>
                         <p className="font-medium">₺{receipt.amount.toFixed(2)}</p>
@@ -384,6 +387,12 @@ const AdminPanel: React.FC = () => {
                       <div>
                         <span className="text-muted-foreground">Purchase Date:</span>
                         <p className="font-medium">{new Date(receipt.date).toLocaleDateString('tr-TR')}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Card:</span>
+                        <p className="font-medium font-mono text-xs">
+                          {receipt.paymentMethod || 'N/A'}
+                        </p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Submitted:</span>

@@ -11,6 +11,7 @@ interface OCRResult {
   purchase_date: string;
   total: number;
   items: string[];
+  payment_method: string | null;
   raw_text: string;
 }
 
@@ -280,6 +281,43 @@ function extractItems(text: string): string[] {
   return items;
 }
 
+function extractPaymentMethod(text: string): string | null {
+  console.log('Extracting payment method from text');
+  
+  // Turkish receipt masked card patterns
+  const cardPatterns = [
+    // Pattern: #494314******4645 ORTAK POS
+    /#(\d{4,6}\*{4,6}\d{4})/i,
+    // Pattern: 494314******4645 (standalone)
+    /(\d{4,6}\*{4,6}\d{4})/,
+    // Pattern: 1234 **** 7890 or 5310 **** **** 1234 (with spaces)
+    /(\d{4}\s+\*{4}\s+\d{4})/,
+    /(\d{4}\s+\*{4}\s+\*{4}\s+\d{4})/,
+    // Pattern: 1234****7890 (no spaces)
+    /(\d{4}\*{4}\d{4})/,
+    // Pattern with X instead of *
+    /(\d{4,6}X{4,6}\d{4})/i,
+    /(\d{4}\s+X{4}\s+\d{4})/i
+  ];
+  
+  const lines = text.split('\n').map(line => line.trim());
+  
+  // Look for card patterns in each line
+  for (const line of lines) {
+    for (const pattern of cardPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        const cardNumber = match[1];
+        console.log('Found payment method:', cardNumber);
+        return cardNumber;
+      }
+    }
+  }
+  
+  console.log('No payment method found');
+  return null;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -390,6 +428,7 @@ serve(async (req) => {
           purchase_date: new Date().toISOString().split('T')[0],
           total: 0,
           items: [],
+          payment_method: null,
           raw_text: 'No text detected in image'
         }),
         {
@@ -404,6 +443,7 @@ serve(async (req) => {
       purchase_date: extractDate(fullText),
       total: extractTotal(fullText),
       items: extractItems(fullText),
+      payment_method: extractPaymentMethod(fullText),
       raw_text: fullText
     };
 

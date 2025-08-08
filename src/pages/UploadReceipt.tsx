@@ -504,8 +504,12 @@ const UploadReceipt: React.FC = () => {
                     onChange={(e) => setReceiptData({...receiptData, paymentMethod: e.target.value})}
                     className="pl-10"
                     disabled={!isProcessed}
+                    required
                   />
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  Format: 1234 **** 7890 (masked)
+                </p>
               </div>
 
               <div className="space-y-2">
