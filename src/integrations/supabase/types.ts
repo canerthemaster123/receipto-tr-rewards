@@ -54,6 +54,7 @@ export type Database = {
           image_url: string | null
           items: string | null
           merchant: string | null
+          payment_method: string | null
           points: number | null
           purchase_date: string | null
           status: string | null
@@ -67,6 +68,7 @@ export type Database = {
           image_url?: string | null
           items?: string | null
           merchant?: string | null
+          payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
           status?: string | null
@@ -80,6 +82,7 @@ export type Database = {
           image_url?: string | null
           items?: string | null
           merchant?: string | null
+          payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
           status?: string | null
