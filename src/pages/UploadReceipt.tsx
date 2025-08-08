@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/enhanced-button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -44,6 +45,7 @@ const UploadReceipt: React.FC = () => {
   const { user, userProfile, updatePoints } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (selectedFile: File) => {
@@ -51,7 +53,7 @@ const UploadReceipt: React.FC = () => {
     const validation = validateImageFile(selectedFile);
     if (!validation.isValid) {
       toast({
-        title: "Invalid File",
+        title: t('toast.invalidFile'),
         description: validation.error,
         variant: "destructive",
       });
@@ -126,8 +128,8 @@ const UploadReceipt: React.FC = () => {
       setIsProcessed(true);
       
       toast({
-        title: "Receipt Processed!",
-        description: "Information extracted successfully. Please review and submit.",
+        title: t('toast.receiptProcessed'),
+        description: t('toast.receiptProcessedDesc'),
       });
 
     } catch (error) {
@@ -143,8 +145,8 @@ const UploadReceipt: React.FC = () => {
       setIsProcessed(true);
       
       toast({
-        title: "OCR Failed",
-        description: error instanceof Error ? error.message : "Please enter receipt details manually.",
+        title: t('toast.ocrFailed'),
+        description: error instanceof Error ? error.message : t('toast.enterManually'),
         variant: "destructive",
       });
     } finally {
@@ -179,7 +181,7 @@ const UploadReceipt: React.FC = () => {
   const submitReceipt = async () => {
     if (!file || !user) {
       toast({
-        title: "Error",
+        title: t('common.error'),
         description: "Missing file or user authentication.",
         variant: "destructive",
       });
@@ -190,7 +192,7 @@ const UploadReceipt: React.FC = () => {
     const validation = validateReceiptData(receiptData);
     if (!validation.isValid) {
       toast({
-        title: "Invalid Data",
+        title: t('toast.invalidData'),
         description: validation.errors.join(', '),
         variant: "destructive",
       });
@@ -206,8 +208,8 @@ const UploadReceipt: React.FC = () => {
 
     if (isDuplicate) {
       toast({
-        title: "Duplicate Receipt",
-        description: "A receipt with the same store, date, and total amount already exists. Please check your previous uploads.",
+        title: t('toast.duplicateReceipt'),
+        description: t('toast.duplicateReceiptDesc'),
         variant: "destructive",
       });
       setIsProcessing(false);
@@ -267,8 +269,8 @@ const UploadReceipt: React.FC = () => {
       }
 
       toast({
-        title: "Receipt Submitted!",
-        description: "Your receipt has been submitted successfully. Points will be awarded upon approval.",
+        title: t('toast.receiptSubmitted'),
+        description: t('toast.receiptSubmittedDesc'),
       });
       
       // Reset form state
@@ -286,8 +288,8 @@ const UploadReceipt: React.FC = () => {
     } catch (error) {
       console.error('Error submitting receipt:', error);
       toast({
-        title: "Submission Failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        title: t('toast.submissionFailed'),
+        description: error instanceof Error ? error.message : t('toast.unexpectedError'),
         variant: "destructive",
       });
     } finally {
@@ -299,10 +301,10 @@ const UploadReceipt: React.FC = () => {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-          Upload Receipt
+          {t('upload.title')}
         </h1>
         <p className="text-muted-foreground mt-2">
-          Upload your purchase receipt and earn 100 points instantly
+          {t('upload.description')}
         </p>
       </div>
 
@@ -320,9 +322,9 @@ const UploadReceipt: React.FC = () => {
                   <Upload className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Upload Receipt Image</h3>
+                  <h3 className="text-lg font-semibold mb-2">{t('upload.uploadReceiptImage')}</h3>
                   <p className="text-muted-foreground mb-4">
-                    Drag and drop your receipt image here, or click to browse
+                    {t('upload.dragAndDrop')}
                   </p>
                   <div className="flex gap-3 justify-center">
                     <Button
@@ -330,11 +332,11 @@ const UploadReceipt: React.FC = () => {
                       variant="default"
                     >
                       <ImageIcon className="h-4 w-4" />
-                      Choose File
+                      {t('upload.chooseFile')}
                     </Button>
                     <Button variant="outline">
                       <Camera className="h-4 w-4" />
-                      Take Photo
+                      {t('upload.takePhoto')}
                     </Button>
                   </div>
                 </div>
@@ -362,7 +364,7 @@ const UploadReceipt: React.FC = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Receipt className="h-5 w-5" />
-                Receipt Preview
+                {t('upload.receiptPreview')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -379,7 +381,7 @@ const UploadReceipt: React.FC = () => {
                       variant="outline"
                       size="sm"
                     >
-                      Change Image
+                      {t('upload.changeImage')}
                     </Button>
                     {!isProcessed && (
                       <Button
@@ -391,10 +393,10 @@ const UploadReceipt: React.FC = () => {
                         {isProcessing ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            Running OCR...
+                            {t('upload.runningOCR')}
                           </>
                         ) : (
-                          'Process Receipt'
+                          t('upload.processReceipt')
                         )}
                       </Button>
                     )}
@@ -423,23 +425,23 @@ const UploadReceipt: React.FC = () => {
                 ) : (
                   <Store className="h-5 w-5" />
                 )}
-                Receipt Information
+                {t('upload.receiptInformation')}
               </CardTitle>
               <CardDescription>
                 {isProcessed 
-                  ? "Review the extracted information and submit"
-                  : "Information will appear after processing"
+                  ? t('upload.reviewExtracted')
+                  : t('upload.infoAfterProcessing')
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="storeName">Store Name</Label>
+                <Label htmlFor="storeName">{t('upload.storeName')}</Label>
                 <div className="relative">
                   <Store className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="storeName"
-                    placeholder="e.g., Migros, CarrefourSA"
+                    placeholder={t('upload.storeNamePlaceholder')}
                     value={receiptData.storeName}
                     onChange={(e) => setReceiptData({...receiptData, storeName: e.target.value})}
                     className="pl-10"
@@ -449,7 +451,7 @@ const UploadReceipt: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="date">Purchase Date</Label>
+                <Label htmlFor="date">{t('upload.purchaseDate')}</Label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -464,7 +466,7 @@ const UploadReceipt: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="totalAmount">Total Amount (₺)</Label>
+                <Label htmlFor="totalAmount">{t('upload.totalAmount')}</Label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -481,10 +483,10 @@ const UploadReceipt: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="items">Items (Optional)</Label>
+                <Label htmlFor="items">{t('upload.items')}</Label>
                 <Textarea
                   id="items"
-                  placeholder="List of purchased items..."
+                  placeholder={t('upload.itemsPlaceholder')}
                   value={receiptData.items}
                   onChange={(e) => setReceiptData({...receiptData, items: e.target.value})}
                   className="min-h-20"
@@ -496,10 +498,10 @@ const UploadReceipt: React.FC = () => {
                 <div className="bg-secondary-light p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle className="h-5 w-5 text-warning" />
-                    <span className="font-medium">Ready to Submit</span>
+                    <span className="font-medium">{t('upload.readyToSubmit')}</span>
                   </div>
                   <p className="text-sm mb-3">
-                    Your receipt will be reviewed by our team. Points will be awarded upon approval.
+                    {t('upload.earnPoints')}
                   </p>
                   <Button
                     onClick={submitReceipt}
@@ -510,10 +512,10 @@ const UploadReceipt: React.FC = () => {
                     {isProcessing ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Submitting...
+                        {t('upload.submitting')}
                       </>
                     ) : (
-                      'Submit & Earn Points'
+                      t('upload.submitReceipt')
                     )}
                   </Button>
                 </div>

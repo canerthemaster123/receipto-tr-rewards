@@ -2,7 +2,9 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
+import { useTranslation } from 'react-i18next';
 import { Button } from './ui/enhanced-button';
+import LanguageSwitcher from './LanguageSwitcher';
 import { 
   Home, 
   Upload, 
@@ -26,6 +28,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, userProfile, logout } = useAuth();
   const { isAdmin } = useUserRole();
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -36,13 +39,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   const navItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard' },
-    { path: '/upload', icon: Upload, label: 'Upload Receipt' },
-    { path: '/history', icon: History, label: 'History' },
-    { path: '/rewards', icon: Gift, label: 'Rewards' },
-    { path: '/referrals', icon: Users, label: 'Referrals' },
-    { path: '/profile', icon: User, label: 'Profile' },
-    ...(isAdmin ? [{ path: '/admin', icon: Shield, label: 'Admin Panel' }] : [])
+    { path: '/dashboard', icon: Home, label: t('navigation.dashboard') },
+    { path: '/upload', icon: Upload, label: t('navigation.upload') },
+    { path: '/history', icon: History, label: t('navigation.history') },
+    { path: '/rewards', icon: Gift, label: t('navigation.rewards') },
+    { path: '/referrals', icon: Users, label: t('navigation.referrals') },
+    { path: '/profile', icon: User, label: t('navigation.profile') },
+    ...(isAdmin ? [{ path: '/admin', icon: Shield, label: t('navigation.admin') }] : [])
   ];
 
   return (
@@ -90,6 +93,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </span>
               </div>
               
+              <LanguageSwitcher />
+              
               <Button
                 variant="ghost"
                 size="sm"
@@ -97,7 +102,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 className="hidden md:flex"
               >
                 <LogOut className="h-4 w-4" />
-                Logout
+                {t('navigation.logout')}
               </Button>
 
               {/* Mobile menu button */}
@@ -141,7 +146,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted w-full text-left"
               >
                 <LogOut className="h-5 w-5" />
-                Logout
+                {t('navigation.logout')}
               </button>
             </div>
           </div>

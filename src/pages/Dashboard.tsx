@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -34,6 +35,7 @@ interface ReceiptData {
 const Dashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
   const [stats, setStats] = useState({
     totalReceipts: 0,
@@ -93,8 +95,8 @@ const Dashboard: React.FC = () => {
     } catch (error) {
       console.error('Error fetching receipts:', error);
       toast({
-        title: "Error",
-        description: "Failed to load receipt data. Please try again.",
+        title: t('common.error'),
+        description: t('toast.loadingError'),
         variant: "destructive",
       });
     } finally {
@@ -105,11 +107,11 @@ const Dashboard: React.FC = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
-        return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
+        return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />{t('status.approved')}</Badge>;
       case 'pending':
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />{t('status.pending')}</Badge>;
       case 'rejected':
-        return <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>;
+        return <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100"><XCircle className="h-3 w-3 mr-1" />{t('status.rejected')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -124,17 +126,17 @@ const Dashboard: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold mb-2">
-              Welcome back, {userProfile?.display_name || user?.email}! 👋
+              {t('dashboard.welcomeBack')}, {userProfile?.display_name || user?.email}! 👋
             </h1>
             <p className="text-white/80 mb-4 md:mb-0">
-              Ready to turn more receipts into rewards?
+              {t('dashboard.readyToEarn')}
             </p>
           </div>
           <div className="flex gap-3">
             <Link to="/upload">
               <Button variant="secondary" size="lg" className="bg-white text-primary hover:bg-white/90">
                 <Upload className="h-5 w-5" />
-                Upload Receipt
+                {t('dashboard.uploadReceipt')}
               </Button>
             </Link>
           </div>
@@ -150,7 +152,7 @@ const Dashboard: React.FC = () => {
                 <Coins className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Points</p>
+                <p className="text-sm text-muted-foreground">{t('dashboard.totalPoints')}</p>
                 <p className="text-2xl font-bold text-primary">{stats.totalEarned.toLocaleString()}</p>
               </div>
             </div>
@@ -164,7 +166,7 @@ const Dashboard: React.FC = () => {
                 <Receipt className="h-6 w-6 text-secondary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Receipts</p>
+                <p className="text-sm text-muted-foreground">{t('dashboard.totalReceipts')}</p>
                 <p className="text-2xl font-bold text-secondary">{stats.totalReceipts}</p>
               </div>
             </div>
@@ -178,7 +180,7 @@ const Dashboard: React.FC = () => {
                 <TrendingUp className="h-6 w-6 text-accent" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">This Month</p>
+                <p className="text-sm text-muted-foreground">{t('dashboard.thisMonth')}</p>
                 <p className="text-2xl font-bold text-accent">{stats.thisMonth}</p>
               </div>
             </div>
@@ -192,7 +194,7 @@ const Dashboard: React.FC = () => {
                 <Star className="h-6 w-6 text-success" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">To Next Reward</p>
+                <p className="text-sm text-muted-foreground">{t('dashboard.toNextReward')}</p>
                 <p className="text-2xl font-bold text-success">{pointsToNextReward}</p>
               </div>
             </div>
@@ -205,20 +207,20 @@ const Dashboard: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Gift className="h-5 w-5 text-accent" />
-            Progress to Next Reward
+            {t('dashboard.progressToNextReward')}
           </CardTitle>
           <CardDescription>
             {pointsToNextReward > 0 
-              ? `Earn ${pointsToNextReward} more points to unlock a ₺20 gift card`
-              : "Congratulations! You can redeem a ₺20 gift card"
+              ? t('dashboard.earnMorePoints', { points: pointsToNextReward })
+              : t('dashboard.congratsRedeemable')
             }
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>{stats.totalEarned} points</span>
-              <span>{stats.nextReward} points</span>
+              <span>{stats.totalEarned} {t('dashboard.points')}</span>
+              <span>{stats.nextReward} {t('dashboard.points')}</span>
             </div>
             <div className="w-full bg-muted rounded-full h-3">
               <div 
@@ -231,7 +233,7 @@ const Dashboard: React.FC = () => {
                 <Link to="/rewards">
                   <Button size="sm" className="bg-gradient-reward text-white">
                     <Gift className="h-4 w-4 mr-2" />
-                    Claim Your Reward
+                    {t('dashboard.claimReward')}
                   </Button>
                 </Link>
               </div>
@@ -246,10 +248,10 @@ const Dashboard: React.FC = () => {
         <Card className="shadow-card">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Recent Receipts</CardTitle>
+              <CardTitle>{t('dashboard.recentReceipts')}</CardTitle>
               <Link to="/history">
                 <Button variant="ghost" size="sm">
-                  View All <ArrowRight className="h-4 w-4" />
+                  {t('common.view')} <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
             </div>
@@ -276,11 +278,11 @@ const Dashboard: React.FC = () => {
             ) : receipts.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-4">No receipts uploaded yet</p>
+                <p className="text-muted-foreground mb-4">{t('dashboard.noReceiptsYet')}</p>
                 <Link to="/upload">
                   <Button>
                     <Upload className="h-4 w-4 mr-2" />
-                    Upload Your First Receipt
+                    {t('dashboard.uploadFirstReceipt')}
                   </Button>
                 </Link>
               </div>
@@ -306,7 +308,7 @@ const Dashboard: React.FC = () => {
                       <p className="font-medium">₺{parseFloat(receipt.total.toString()).toFixed(2)}</p>
                       <p className="text-sm text-secondary">
                         {receipt.status === 'approved' ? `+${receipt.points} pts` : 
-                         receipt.status === 'pending' ? 'Reviewing...' : 
+                         receipt.status === 'pending' ? t('dashboard.reviewing') : 
                          '0 pts'}
                       </p>
                     </div>
@@ -317,7 +319,7 @@ const Dashboard: React.FC = () => {
                     <Link to="/history">
                       <Button variant="ghost" size="sm">
                         <Eye className="h-4 w-4 mr-2" />
-                        View {receipts.length - 5} more receipts
+                        {t('dashboard.viewMore', { count: receipts.length - 5 })}
                       </Button>
                     </Link>
                   </div>
@@ -330,9 +332,9 @@ const Dashboard: React.FC = () => {
         {/* Quick Actions */}
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle>{t('dashboard.quickActions')}</CardTitle>
             <CardDescription>
-              Common tasks to maximize your rewards
+              {t('dashboard.commonTasks')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -341,9 +343,9 @@ const Dashboard: React.FC = () => {
                 <Button variant="outline" className="w-full justify-start h-auto p-4">
                   <Upload className="h-5 w-5" />
                   <div className="text-left">
-                    <div className="font-medium">Upload New Receipt</div>
+                    <div className="font-medium">{t('dashboard.uploadNewReceipt')}</div>
                     <div className="text-sm text-muted-foreground">
-                      Earn 100 points instantly • {stats.pendingReceipts} pending review
+                      {t('dashboard.earnInstantPoints', { count: stats.pendingReceipts })}
                     </div>
                   </div>
                 </Button>
@@ -353,9 +355,9 @@ const Dashboard: React.FC = () => {
                 <Button variant="outline" className="w-full justify-start h-auto p-4">
                   <Gift className="h-5 w-5" />
                   <div className="text-left">
-                    <div className="font-medium">Browse Rewards</div>
+                    <div className="font-medium">{t('dashboard.browseRewards')}</div>
                     <div className="text-sm text-muted-foreground">
-                      Redeem your {stats.totalEarned} points
+                      {t('dashboard.redeemPoints', { points: stats.totalEarned })}
                     </div>
                   </div>
                 </Button>
@@ -365,8 +367,8 @@ const Dashboard: React.FC = () => {
                 <Button variant="outline" className="w-full justify-start h-auto p-4">
                   <Calendar className="h-5 w-5" />
                   <div className="text-left">
-                    <div className="font-medium">Set Reminders</div>
-                    <div className="text-sm text-muted-foreground">Never miss a receipt</div>
+                    <div className="font-medium">{t('dashboard.setReminders')}</div>
+                    <div className="text-sm text-muted-foreground">{t('dashboard.neverMissReceipt')}</div>
                   </div>
                 </Button>
               </Link>
