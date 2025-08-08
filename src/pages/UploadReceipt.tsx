@@ -24,6 +24,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
+import { config } from '../config';
 
 interface ReceiptData {
   storeName: string;
@@ -204,21 +205,24 @@ const UploadReceipt: React.FC = () => {
       return;
     }
 
-    // Check for duplicate receipts
-    const isDuplicate = await checkForDuplicateReceipt(
-      validation.sanitizedData.storeName,
-      validation.sanitizedData.date,
-      validation.sanitizedData.totalAmount
-    );
+    // Check for duplicate receipts (skip if QA flag is enabled)
+    // ⚠️ QA ONLY – disable before production release
+    if (!config.ALLOW_DUPLICATE_RECEIPTS) {
+      const isDuplicate = await checkForDuplicateReceipt(
+        validation.sanitizedData.storeName,
+        validation.sanitizedData.date,
+        validation.sanitizedData.totalAmount
+      );
 
-    if (isDuplicate) {
-      toast({
-        title: t('toast.duplicateReceipt'),
-        description: t('toast.duplicateReceiptDesc'),
-        variant: "destructive",
-      });
-      setIsProcessing(false);
-      return;
+      if (isDuplicate) {
+        toast({
+          title: t('toast.duplicateReceipt'),
+          description: t('toast.duplicateReceiptDesc'),
+          variant: "destructive",
+        });
+        setIsProcessing(false);
+        return;
+      }
     }
 
     setIsProcessing(true);

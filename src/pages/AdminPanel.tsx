@@ -18,8 +18,12 @@ import {
   BarChart,
   DollarSign,
   Calendar,
-  Loader2
+  Loader2,
+  Settings
 } from 'lucide-react';
+import { Switch } from '../components/ui/switch';
+import { Label } from '../components/ui/label';
+import { config, setQAConfig } from '../config';
 
 interface ReceiptSubmission {
   id: string;
@@ -48,7 +52,20 @@ const AdminPanel: React.FC = () => {
   const [pendingReceipts, setPendingReceipts] = useState<ReceiptSubmission[]>([]);
   const [users, setUsers] = useState<UserStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // ⚠️ QA ONLY – disable before production release
+  const [allowDuplicates, setAllowDuplicates] = useState(config.ALLOW_DUPLICATE_RECEIPTS);
   const { toast } = useToast();
+
+  // Handle QA toggle for duplicate receipts
+  const handleDuplicateToggle = (checked: boolean) => {
+    setAllowDuplicates(checked);
+    setQAConfig({ ALLOW_DUPLICATE_RECEIPTS: checked });
+    toast({
+      title: "QA Setting Updated",
+      description: `Duplicate receipts are now ${checked ? 'allowed' : 'blocked'}`,
+      variant: checked ? "default" : "destructive",
+    });
+  };
 
   // Fetch real data from database
   useEffect(() => {
@@ -286,6 +303,36 @@ const AdminPanel: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* QA Settings Panel */}
+      <Card className="shadow-card border-warning/20 bg-warning/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-warning">
+            <Settings className="h-5 w-5" />
+            QA Settings
+          </CardTitle>
+          <CardDescription>
+            ⚠️ Development and testing configuration only - disable before production release
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="allow-duplicates" className="text-base">
+                Allow duplicate receipts (QA)
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Bypass duplicate receipt validation for testing purposes
+              </p>
+            </div>
+            <Switch
+              id="allow-duplicates"
+              checked={allowDuplicates}
+              onCheckedChange={handleDuplicateToggle}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="receipts" className="space-y-6">
