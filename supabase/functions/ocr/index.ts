@@ -10,7 +10,7 @@ interface OCRResult {
   merchant: string;
   purchase_date: string;
   total: number;
-  items: string[];
+  items: { name: string; qty: number }[];
   payment_method: string | null;
   raw_text: string;
 }
@@ -184,101 +184,85 @@ function extractTotal(text: string): number {
   return 0;
 }
 
-function extractItems(text: string): string[] {
-  console.log('Extracting items from text');
+function parseItems(text: string): { name: string; qty: number }[] {
+  console.log('Parsing items with quantities from text');
   
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const items: string[] = [];
+  const itemCounts = new Map<string, number>();
   
-  // Known product patterns from the receipt
-  const productPatterns = [
-    /DAMLA\s+SU\s+PET/i,
-    /ETI\s+TOPKEK\s+MEYVE/i,
-    /ETI\s+KAKAOLU\s+TOPKEK/i,
-    /TADIM\s+BAR\s+SPORTIF/i
-  ];
+  // Find the product section boundaries
+  let productStartIndex = -1;
+  let productEndIndex = -1;
   
-  // Skip patterns for non-product lines  
-  const skipPatterns = [
-    /^%\d+$/, // Tax percentages
-    /^[*]?\d+[,.]\d+$/, // Pure price lines
-    /TOPLAM|TOTAL|ARA\s+TOPLAM|TUTAR|KDV|KASA|FİŞ|SAAT|TARİH|MERKEZ|ADRESİ/i,
-    /^\d{2}[\/\-.]\d{2}[\/\-.]\d{4}$/, // Dates
-    /MUKELLEF|BULVAR|V\.D\.|TEL:|TCKN:|ORTAK\s+POS|JETKASA/i,
-    /^\d+$/, // Pure numbers
-    /^[A-Z]{2,4}\d+$/, // Product codes
-    /^#\d+/, // Barcode numbers
-    /GRIZON|THIS|SMA\d+|CARET|A\.S\.|030/i, // Company fragments
-    /PLASTIK\s+POSET|POSET/i, // Bag charges
-    /IND\.|KOCAILEM|RAD|MIG$|ARE$/i, // Discount lines
-    /^\d{6,}/, // Long numbers
-    /FATURA|SERI|SIRA/i // Invoice info
-  ];
+  // Look for first product line (after store info, before totals)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip header/store info lines
+    if (line.match(/MIGROS\s+TICARET|KOÇ\s+UNIVERSITES|SARIYER|TEL:|TARIH:|SAAT:|FİŞ\s+NO/i)) {
+      continue;
+    }
+    
+    // Look for first product line (followed by %1 and price)
+    if (i + 2 < lines.length && 
+        lines[i + 1] === '%1' && 
+        lines[i + 2].match(/^\*\d+[,.]?\d*$/)) {
+      productStartIndex = i;
+      break;
+    }
+  }
   
-  // First pass: Look for known product patterns
-  for (const pattern of productPatterns) {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (pattern.test(line)) {
-        const cleanName = line.replace(/^[#\d\s*]+/, '').trim();
-        if (cleanName.length > 2 && !items.includes(cleanName)) {
-          items.push(cleanName);
-          console.log('Found known product:', cleanName);
-        }
+  // Find end of product section (before ARA TOPLAM or TOPLAM)
+  for (let i = productStartIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.match(/^(ARA\s+)?TOPLAM$/i) || line.match(/^#\d+$/)) {
+      productEndIndex = i;
+      break;
+    }
+  }
+  
+  if (productStartIndex === -1 || productEndIndex === -1) {
+    console.log('Could not find product section boundaries');
+    return [];
+  }
+  
+  console.log(`Product section: lines ${productStartIndex} to ${productEndIndex}`);
+  
+  // Extract products from the identified section
+  for (let i = productStartIndex; i < productEndIndex; i += 3) {
+    const productLine = lines[i];
+    const percentLine = lines[i + 1];
+    const priceLine = lines[i + 2];
+    
+    // Validate this is a product entry (product name, %1, *price)
+    if (percentLine === '%1' && priceLine && priceLine.match(/^\*\d+[,.]?\d*$/)) {
+      // Clean product name
+      let cleanName = productLine
+        .replace(/^[#\d\s*]+/, '') // Remove leading numbers/symbols
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+      
+      // Skip empty or very short names
+      if (cleanName.length > 2) {
+        // Count occurrences
+        const currentCount = itemCounts.get(cleanName) || 0;
+        itemCounts.set(cleanName, currentCount + 1);
+        
+        console.log(`Found product: "${cleanName}" (occurrence ${currentCount + 1})`);
       }
     }
   }
   
-  // Second pass: Look for other potential products
-  if (items.length < 3) { // If we didn't find enough items
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      
-      // Skip if matches skip patterns
-      if (skipPatterns.some(pattern => pattern.test(line))) {
-        continue;
-      }
-      
-      // Skip if too short or contains price
-      if (line.length < 4 || line.match(/^[*]?\d+[,.]\d{2}$/)) {
-        continue;
-      }
-      
-      // Look for lines that contain letters and might be products
-      if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && !line.match(/^\d+$/)) {
-        
-        // Check if followed by price info
-        let hasPrice = false;
-        
-        for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-          const nextLine = lines[j].trim();
-          if (nextLine.match(/^[*](\d+[,.]\d{2})$/)) {
-            hasPrice = true;
-            break;
-          }
-        }
-        
-        if (hasPrice) {
-          let cleanName = line
-            .replace(/^[#\d\s*]+/, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-            
-          // Skip if already found or looks like company name
-          if (cleanName.length > 2 && 
-              !items.includes(cleanName) &&
-              !cleanName.match(/GROS|CARET|A\.S\./i)) {
-            
-            items.push(cleanName);
-            console.log('Found additional product:', cleanName);
-          }
-        }
-      }
-    }
-  }
+  // Convert to array format
+  const result = Array.from(itemCounts.entries()).map(([name, qty]) => ({
+    name,
+    qty
+  }));
   
-  console.log('Total items extracted:', items.length);
-  return items;
+  console.log(`Total unique products extracted: ${result.length}`);
+  console.log('Items with quantities:', result);
+  
+  return result;
 }
 
 function extractPaymentMethod(text: string): string | null {
@@ -442,7 +426,7 @@ serve(async (req) => {
       merchant: extractMerchant(fullText),
       purchase_date: extractDate(fullText),
       total: extractTotal(fullText),
-      items: extractItems(fullText),
+      items: parseItems(fullText),
       payment_method: extractPaymentMethod(fullText),
       raw_text: fullText
     };

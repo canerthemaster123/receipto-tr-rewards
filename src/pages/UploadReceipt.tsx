@@ -127,7 +127,7 @@ const UploadReceipt: React.FC = () => {
         date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
         totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
         paymentMethod: ocrResult.payment_method || '',
-        items: ocrResult.items ? ocrResult.items.join('\n') : ''
+        items: ocrResult.items ? ocrResult.items.map(item => item.qty > 1 ? `${item.name} x${item.qty}` : item.name).join('\n') : ''
       };
       
       setReceiptData(extractedData);

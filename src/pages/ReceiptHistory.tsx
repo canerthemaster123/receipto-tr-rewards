@@ -341,11 +341,15 @@ const ReceiptHistory: React.FC = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Items:</h4>
                   <div className="space-y-1">
-                    {getItemsArray(selectedReceipt.items).map((item, index) => (
-                      <div key={index} className="text-sm text-muted-foreground">
+                     {getItemsArray(selectedReceipt.items).map((item, index) => {
+                       // Check if item has quantity suffix
+                       const hasQty = item.includes(' x');
+                       return (
+                       <div key={index} className="text-sm text-muted-foreground flex items-center gap-2">
                         • {item}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

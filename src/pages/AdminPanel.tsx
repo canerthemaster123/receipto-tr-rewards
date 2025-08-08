@@ -398,10 +398,10 @@ const AdminPanel: React.FC = () => {
                         <span className="text-muted-foreground">Submitted:</span>
                         <p className="font-medium">{new Date(receipt.submitDate).toLocaleDateString('tr-TR')}</p>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Points:</span>
-                        <p className="font-medium text-secondary">100 pts</p>
-                      </div>
+                       <div>
+                         <span className="text-muted-foreground">Points:</span>
+                         <p className="font-medium text-secondary">100 pts</p>
+                       </div>
                     </div>
 
                     <div className="flex gap-2 pt-2">
