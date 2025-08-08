@@ -24,6 +24,13 @@ export const sanitizeItems = (items: string): string => {
   return sanitizeText(items).substring(0, 500);
 };
 
+export const sanitizePaymentMethod = (paymentMethod: string): string => {
+  // Allow digits, asterisks, spaces, and dashes for payment method
+  return sanitizeText(paymentMethod)
+    .replace(/[^0-9*\s-]/g, '') // Only allow digits, asterisks, spaces, and dashes
+    .substring(0, 50);
+};
+
 export const validateReceiptData = (data: any): {
   isValid: boolean;
   errors: string[];
@@ -34,6 +41,7 @@ export const validateReceiptData = (data: any): {
   const sanitizedData = {
     storeName: sanitizeStoreName(data.storeName || ''),
     totalAmount: sanitizeNumber(data.totalAmount || 0),
+    paymentMethod: sanitizePaymentMethod(data.paymentMethod || ''),
     items: sanitizeItems(data.items || ''),
     date: data.date || new Date().toISOString().split('T')[0]
   };
@@ -48,6 +56,14 @@ export const validateReceiptData = (data: any): {
 
   if (sanitizedData.totalAmount > 10000) {
     errors.push('Total amount seems unusually high');
+  }
+
+  if (!sanitizedData.paymentMethod) {
+    errors.push('Payment method is required');
+  }
+
+  if (!sanitizedData.items.trim()) {
+    errors.push('Items list is required');
   }
 
   // Validate date format

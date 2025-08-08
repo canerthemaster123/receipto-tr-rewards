@@ -20,7 +20,8 @@ import {
   Calendar,
   DollarSign,
   Receipt,
-  AlertTriangle
+  AlertTriangle,
+  CreditCard
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -28,6 +29,7 @@ interface ReceiptData {
   storeName: string;
   date: string;
   totalAmount: string;
+  paymentMethod: string;
   items: string;
 }
 
@@ -40,6 +42,7 @@ const UploadReceipt: React.FC = () => {
     storeName: '',
     date: '',
     totalAmount: '',
+    paymentMethod: '',
     items: ''
   });
   const { user, userProfile, updatePoints } = useAuth();
@@ -121,6 +124,7 @@ const UploadReceipt: React.FC = () => {
         storeName: ocrResult.merchant || '',
         date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
         totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
+        paymentMethod: ocrResult.payment_method || '',
         items: ocrResult.items ? ocrResult.items.join('\n') : ''
       };
       
@@ -140,6 +144,7 @@ const UploadReceipt: React.FC = () => {
         storeName: '',
         date: new Date().toISOString().split('T')[0],
         totalAmount: '',
+        paymentMethod: '',
         items: ''
       });
       setIsProcessed(true);
@@ -258,6 +263,7 @@ const UploadReceipt: React.FC = () => {
           merchant: validation.sanitizedData.storeName,
           total: validation.sanitizedData.totalAmount,
           purchase_date: validation.sanitizedData.date,
+          payment_method: validation.sanitizedData.paymentMethod,
           items: validation.sanitizedData.items,
           image_url: imageUrl,
           status: 'pending',
@@ -280,6 +286,7 @@ const UploadReceipt: React.FC = () => {
         storeName: '',
         date: '',
         totalAmount: '',
+        paymentMethod: '',
         items: ''
       });
       setIsProcessed(false);
@@ -476,6 +483,21 @@ const UploadReceipt: React.FC = () => {
                     placeholder="0.00"
                     value={receiptData.totalAmount}
                     onChange={(e) => setReceiptData({...receiptData, totalAmount: e.target.value})}
+                    className="pl-10"
+                    disabled={!isProcessed}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">{t('upload.paymentMethod')}</Label>
+                <div className="relative">
+                  <CreditCard className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="paymentMethod"
+                    placeholder={t('upload.paymentMethodPlaceholder')}
+                    value={receiptData.paymentMethod}
+                    onChange={(e) => setReceiptData({...receiptData, paymentMethod: e.target.value})}
                     className="pl-10"
                     disabled={!isProcessed}
                   />
