@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { config } from '../config';
+import type { OCRResult } from '../types/ocr';
 
 interface ReceiptData {
   storeName: string;
@@ -112,7 +113,7 @@ const UploadReceipt: React.FC = () => {
         .getPublicUrl(fileName);
 
       // Call OCR edge function
-      const { data: ocrResult, error: ocrError } = await supabase.functions.invoke('ocr', {
+      const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
         body: { imageUrl: publicUrl }
       });
 
@@ -508,7 +509,7 @@ const UploadReceipt: React.FC = () => {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Format: 1234 **** 7890 (masked)
+                  {t('upload.paymentMethodHelper')}
                 </p>
               </div>
 

@@ -91,6 +91,7 @@
     "totalAmount": "Toplam Tutar (₺)",
     "paymentMethod": "Ödeme Yöntemi",
     "paymentMethodPlaceholder": "örn. 1234 56** 7890",
+    "paymentMethodHelper": "Format: 1234 **** 7890 (maskeli)",
     "items": "Ürünler",
     "itemsPlaceholder": "Satın alınan ürünlerin listesi...",
     "readyToSubmit": "Göndermeye Hazır",

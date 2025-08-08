@@ -27,6 +27,7 @@ interface ReceiptData {
   merchant: string;
   total: number;
   purchase_date: string;
+  payment_method: string | null;
   status: string;
   points: number;
   created_at: string;
@@ -294,15 +295,18 @@ const Dashboard: React.FC = () => {
                       <div className="p-2 bg-primary/10 rounded-lg">
                         <Receipt className="h-4 w-4 text-primary" />
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{receipt.merchant}</p>
-                          {getStatusBadge(receipt.status)}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(receipt.purchase_date).toLocaleDateString('tr-TR')}
-                        </p>
-                      </div>
+                       <div>
+                         <div className="flex items-center gap-2">
+                           <p className="font-medium">{receipt.merchant}</p>
+                           {getStatusBadge(receipt.status)}
+                         </div>
+                         <div className="text-sm text-muted-foreground space-y-1">
+                           <p>{new Date(receipt.purchase_date).toLocaleDateString('tr-TR')}</p>
+                           {receipt.payment_method && (
+                             <p className="font-mono text-xs">Card: {receipt.payment_method}</p>
+                           )}
+                         </div>
+                       </div>
                     </div>
                     <div className="text-right">
                       <p className="font-medium">₺{parseFloat(receipt.total.toString()).toFixed(2)}</p>

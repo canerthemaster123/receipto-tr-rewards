@@ -91,6 +91,7 @@
     "totalAmount": "Total Amount (₺)",
     "paymentMethod": "Payment Method",
     "paymentMethodPlaceholder": "e.g. 1234 56** 7890",
+    "paymentMethodHelper": "Format: 1234 **** 7890 (masked)",
     "items": "Items",
     "itemsPlaceholder": "List of purchased items...",
     "readyToSubmit": "Ready to Submit",
