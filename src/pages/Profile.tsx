@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { Separator } from '../components/ui/separator';
 import { Badge } from '../components/ui/badge';
 import { useUserRole } from '../hooks/useUserRole';
+import { useReceiptData } from '../hooks/useReceiptData';
 import { Copy, User, Award, Shield } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 const Profile: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { userRole, isLoading: roleLoading } = useUserRole();
+  const { stats } = useReceiptData(); // Get real-time points data
   const { toast } = useToast();
   const [displayName, setDisplayName] = useState(userProfile?.display_name || '');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -142,7 +144,7 @@ const Profile: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="font-medium">Total Points</span>
                 <Badge variant="secondary" className="text-lg px-3 py-1">
-                  {userProfile?.total_points || 0}
+                  {stats.totalEarned.toLocaleString()}
                 </Badge>
               </div>
 

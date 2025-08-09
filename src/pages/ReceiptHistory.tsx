@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/enhanced-button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { useAuth } from '../components/AuthContext';
-import { supabase } from '../integrations/supabase/client';
-import { useToast } from '../hooks/use-toast';
+import { useReceiptData } from '../hooks/useReceiptData';
+import { ReceiptImageModal } from '../components/ReceiptImageModal';
 import { Link } from 'react-router-dom';
 import { 
   Receipt, 
@@ -39,73 +38,63 @@ interface ReceiptRecord {
 }
 
 const ReceiptHistory: React.FC = () => {
-  const { user } = useAuth();
-  const { toast } = useToast();
+  const { receipts, loading, stats } = useReceiptData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
-  const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (user) {
-      fetchReceipts();
-    }
-  }, [user]);
-
-  const fetchReceipts = async () => {
-    if (!user) return;
-
-    try {
-      setLoading(true);
-      
-      const { data: receiptsData, error } = await supabase
-        .from('receipts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      setReceipts(receiptsData || []);
-    } catch (error) {
-      console.error('Error fetching receipts:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load receipt history. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [imageModalData, setImageModalData] = useState<{
+    imageUrl?: string;
+    fileName: string;
+    merchant: string;
+    purchaseDate: string;
+    receiptId: string;
+  } | null>(null);
 
   const filteredReceipts = receipts.filter(receipt =>
     receipt.merchant.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    receipt.items.toLowerCase().includes(searchTerm.toLowerCase())
+    getItemsArray(receipt.items).some(item => 
+      item.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
-  const getStatusBadge = (status: ReceiptRecord['status']) => {
-    switch (status) {
-      case 'approved':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
-      case 'pending':
-        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
-      case 'rejected':
-        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
+  const handleViewImage = (receipt: ReceiptRecord) => {
+    if (!receipt.image_url) return;
+    
+    setImageModalData({
+      imageUrl: receipt.image_url,
+      fileName: receipt.image_url.split('/').pop() || 'receipt.jpg',
+      merchant: receipt.merchant,
+      purchaseDate: receipt.purchase_date,
+      receiptId: receipt.id
+    });
+    setImageModalOpen(true);
   };
 
-  const totalEarned = receipts
-    .filter(r => r.status === 'approved')
-    .reduce((sum, r) => sum + r.points, 0);
-
-  const totalSpent = receipts
-    .filter(r => r.status === 'approved')
-    .reduce((sum, r) => sum + parseFloat(r.total.toString()), 0);
+  const getStatusBadge = (status: 'approved' | 'pending' | 'rejected') => {
+    switch (status) {
+      case 'approved':
+        return (
+          <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Approved
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
+      case 'rejected':
+        return (
+          <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100">
+            <XCircle className="h-3 w-3 mr-1" />
+            Rejected
+          </Badge>
+        );
+    }
+  };
 
   const getItemsArray = (items: string): string[] => {
     if (!items) return [];
@@ -135,7 +124,7 @@ const ReceiptHistory: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Receipts</p>
-                <p className="text-2xl font-bold">{loading ? '...' : receipts.length}</p>
+                <p className="text-2xl font-bold">{loading ? '...' : stats.totalReceipts}</p>
               </div>
             </div>
           </CardContent>
@@ -149,7 +138,7 @@ const ReceiptHistory: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Points Earned</p>
-                <p className="text-2xl font-bold text-secondary">{loading ? '...' : totalEarned.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-secondary">{loading ? '...' : stats.totalEarned.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -163,7 +152,7 @@ const ReceiptHistory: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Spent</p>
-                <p className="text-2xl font-bold text-accent">₺{loading ? '...' : totalSpent.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-accent">₺{loading ? '...' : stats.totalSpent.toFixed(2)}</p>
               </div>
             </div>
           </CardContent>
@@ -310,7 +299,7 @@ const ReceiptHistory: React.FC = () => {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => window.open(receipt.image_url, '_blank')}
+                          onClick={() => handleViewImage(receipt)}
                         >
                           <Download className="h-4 w-4" />
                           Image
@@ -334,24 +323,17 @@ const ReceiptHistory: React.FC = () => {
                 <span>Receipt Details</span>
                 {getStatusBadge(selectedReceipt.status)}
               </CardTitle>
-              <CardDescription>
-                {selectedReceipt.merchant} - {new Date(selectedReceipt.purchase_date).toLocaleDateString('tr-TR')}
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedReceipt.items && (
                 <div>
                   <h4 className="font-semibold mb-2">Items:</h4>
                   <div className="space-y-1">
-                     {getItemsArray(selectedReceipt.items).map((item, index) => {
-                       // Check if item has quantity suffix
-                       const hasQty = item.includes(' x');
-                       return (
+                     {getItemsArray(selectedReceipt.items).map((item, index) => (
                        <div key={index} className="text-sm text-muted-foreground flex items-center gap-2">
                         • {item}
                       </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 </div>
               )}
@@ -413,7 +395,7 @@ const ReceiptHistory: React.FC = () => {
                   <Button 
                     variant="default" 
                     className="flex-1"
-                    onClick={() => window.open(selectedReceipt.image_url, '_blank')}
+                    onClick={() => handleViewImage(selectedReceipt)}
                   >
                     View Image
                   </Button>
@@ -422,6 +404,22 @@ const ReceiptHistory: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Image Modal */}
+      {imageModalData && (
+        <ReceiptImageModal
+          isOpen={imageModalOpen}
+          onClose={() => {
+            setImageModalOpen(false);
+            setImageModalData(null);
+          }}
+          imageUrl={imageModalData.imageUrl}
+          fileName={imageModalData.fileName}
+          merchant={imageModalData.merchant}
+          purchaseDate={imageModalData.purchaseDate}
+          receiptId={imageModalData.receiptId}
+        />
       )}
     </div>
   );

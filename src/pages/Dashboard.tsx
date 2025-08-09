@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { supabase } from '../integrations/supabase/client';
-import { useToast } from '../hooks/use-toast';
+import { useReceiptData } from '../hooks/useReceiptData';
 import { 
   Upload, 
   Gift, 
@@ -22,88 +21,10 @@ import {
   Eye
 } from 'lucide-react';
 
-interface ReceiptData {
-  id: string;
-  merchant: string;
-  total: number;
-  purchase_date: string;
-  payment_method: string | null;
-  status: string;
-  points: number;
-  created_at: string;
-}
-
 const Dashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
-  const { toast } = useToast();
   const { t } = useTranslation();
-  const [receipts, setReceipts] = useState<ReceiptData[]>([]);
-  const [stats, setStats] = useState({
-    totalReceipts: 0,
-    thisMonth: 0,
-    totalEarned: userProfile?.total_points || 0,
-    nextReward: 2000,
-    pendingReceipts: 0,
-    approvedReceipts: 0,
-  });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (user) {
-      fetchReceiptsData();
-    }
-  }, [user, userProfile]);
-
-  const fetchReceiptsData = async () => {
-    if (!user) return;
-
-    try {
-      setLoading(true);
-      
-      // Fetch user's receipts
-      const { data: receiptsData, error } = await supabase
-        .from('receipts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      setReceipts(receiptsData || []);
-
-      // Calculate stats
-      const now = new Date();
-      const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      const thisMonthReceipts = receiptsData?.filter(receipt => 
-        new Date(receipt.created_at) >= thisMonth
-      ) || [];
-
-      const pendingCount = receiptsData?.filter(r => r.status === 'pending').length || 0;
-      const approvedCount = receiptsData?.filter(r => r.status === 'approved').length || 0;
-
-      setStats({
-        totalReceipts: receiptsData?.length || 0,
-        thisMonth: thisMonthReceipts.length,
-        totalEarned: userProfile?.total_points || 0,
-        nextReward: 2000,
-        pendingReceipts: pendingCount,
-        approvedReceipts: approvedCount,
-      });
-
-    } catch (error) {
-      console.error('Error fetching receipts:', error);
-      toast({
-        title: t('common.error'),
-        description: t('toast.loadingError'),
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { receipts, loading, stats } = useReceiptData();
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -118,7 +39,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const pointsToNextReward = stats.nextReward - stats.totalEarned;
+  // Updated stats calculation using the hook
+  const nextReward = 2000;
+  const pointsToNextReward = nextReward - stats.totalEarned;
 
   return (
     <div className="space-y-6">
@@ -221,12 +144,12 @@ const Dashboard: React.FC = () => {
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>{stats.totalEarned} {t('dashboard.points')}</span>
-              <span>{stats.nextReward} {t('dashboard.points')}</span>
+              <span>{nextReward} {t('dashboard.points')}</span>
             </div>
             <div className="w-full bg-muted rounded-full h-3">
               <div 
                 className="bg-gradient-reward h-3 rounded-full transition-all duration-500 animate-glow"
-                style={{ width: `${Math.min((stats.totalEarned / stats.nextReward) * 100, 100)}%` }}
+                style={{ width: `${Math.min((stats.totalEarned / nextReward) * 100, 100)}%` }}
               />
             </div>
             {pointsToNextReward <= 0 && (
