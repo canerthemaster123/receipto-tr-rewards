@@ -30,6 +30,8 @@ import type { OCRResult } from '../types/ocr';
 interface ReceiptData {
   storeName: string;
   date: string;
+  purchaseTime: string;
+  storeAddress: string;
   totalAmount: string;
   paymentMethod: string;
   items: string;
@@ -43,6 +45,8 @@ const UploadReceipt: React.FC = () => {
   const [receiptData, setReceiptData] = useState<ReceiptData>({
     storeName: '',
     date: '',
+    purchaseTime: '',
+    storeAddress: '',
     totalAmount: '',
     paymentMethod: '',
     items: ''
@@ -125,6 +129,8 @@ const UploadReceipt: React.FC = () => {
       const extractedData: ReceiptData = {
         storeName: ocrResult.merchant || '',
         date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
+        purchaseTime: ocrResult.purchase_time || '',
+        storeAddress: ocrResult.store_address || '',
         totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
         paymentMethod: ocrResult.payment_method || '',
         items: ocrResult.items ? ocrResult.items.map(item => item.qty > 1 ? `${item.name} x${item.qty}` : item.name).join('\n') : ''
@@ -145,6 +151,8 @@ const UploadReceipt: React.FC = () => {
       setReceiptData({
         storeName: '',
         date: new Date().toISOString().split('T')[0],
+        purchaseTime: '',
+        storeAddress: '',
         totalAmount: '',
         paymentMethod: '',
         items: ''
@@ -268,6 +276,8 @@ const UploadReceipt: React.FC = () => {
           merchant: validation.sanitizedData.storeName,
           total: validation.sanitizedData.totalAmount,
           purchase_date: validation.sanitizedData.date,
+          purchase_time: receiptData.purchaseTime,
+          store_address: receiptData.storeAddress,
           payment_method: validation.sanitizedData.paymentMethod,
           items: validation.sanitizedData.items,
           image_url: imageUrl,
@@ -290,6 +300,8 @@ const UploadReceipt: React.FC = () => {
       setReceiptData({
         storeName: '',
         date: '',
+        purchaseTime: '',
+        storeAddress: '',
         totalAmount: '',
         paymentMethod: '',
         items: ''
@@ -472,6 +484,29 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.date}
                     onChange={(e) => setReceiptData({...receiptData, date: e.target.value})}
                     className="pl-10"
+                    disabled={!isProcessed}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="purchaseTime">Purchase Time</Label>
+                  <Input
+                    id="purchaseTime"
+                    placeholder="14:32"
+                    value={receiptData.purchaseTime}
+                    onChange={(e) => setReceiptData({...receiptData, purchaseTime: e.target.value})}
+                    disabled={!isProcessed}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="storeAddress">Store Address</Label>
+                  <Input
+                    id="storeAddress"
+                    placeholder="Store location"
+                    value={receiptData.storeAddress}
+                    onChange={(e) => setReceiptData({...receiptData, storeAddress: e.target.value})}
                     disabled={!isProcessed}
                   />
                 </div>

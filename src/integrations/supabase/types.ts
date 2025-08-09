@@ -57,7 +57,9 @@ export type Database = {
           payment_method: string | null
           points: number | null
           purchase_date: string | null
+          purchase_time: string | null
           status: string | null
+          store_address: string | null
           total: number | null
           updated_at: string | null
           user_id: string
@@ -71,7 +73,9 @@ export type Database = {
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
+          purchase_time?: string | null
           status?: string | null
+          store_address?: string | null
           total?: number | null
           updated_at?: string | null
           user_id: string
@@ -85,7 +89,9 @@ export type Database = {
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
+          purchase_time?: string | null
           status?: string | null
+          store_address?: string | null
           total?: number | null
           updated_at?: string | null
           user_id?: string

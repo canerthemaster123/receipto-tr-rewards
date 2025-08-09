@@ -1,6 +1,8 @@
 export interface OCRResult {
   merchant: string;
   purchase_date: string;
+  purchase_time: string | null;
+  store_address: string | null;
   total: number;
   items: {
     name: string;

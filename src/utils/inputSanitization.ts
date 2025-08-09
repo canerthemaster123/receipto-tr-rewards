@@ -43,7 +43,9 @@ export const validateReceiptData = (data: any): {
     totalAmount: sanitizeNumber(data.totalAmount || 0),
     paymentMethod: sanitizePaymentMethod(data.paymentMethod || ''),
     items: sanitizeItems(data.items || ''),
-    date: data.date || new Date().toISOString().split('T')[0]
+    date: data.date || new Date().toISOString().split('T')[0],
+    purchaseTime: sanitizeText(data.purchaseTime || '').substring(0, 10), // Limit time string
+    storeAddress: sanitizeText(data.storeAddress || '').substring(0, 200) // Limit address length
   };
 
   if (!sanitizedData.storeName) {

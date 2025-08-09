@@ -9,6 +9,8 @@ const corsHeaders = {
 interface OCRResult {
   merchant: string;
   purchase_date: string;
+  purchase_time: string | null;
+  store_address: string | null;
   total: number;
   items: {
     name: string;
@@ -69,6 +71,75 @@ function extractMerchant(text: string): string {
   }
   
   return lines[0]?.trim() || '';
+}
+
+// Extract purchase time from receipt text
+function extractPurchaseTime(text: string): string | null {
+  const lines = text.split('\n');
+  
+  for (const line of lines) {
+    const cleanLine = line.trim();
+    
+    // Look for SAAT, Saat, TIME keywords
+    if (/\b(SAAT|Saat|TIME)\b/i.test(cleanLine)) {
+      const timeMatch = cleanLine.match(/\b([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?\b/);
+      if (timeMatch) {
+        return timeMatch[0];
+      }
+    }
+    
+    // Look for standalone time patterns
+    const timeMatch = cleanLine.match(/\b([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?\b/);
+    if (timeMatch) {
+      // Make sure it's not part of a date (avoid matching dates like 12:34 in 12/34/2023)
+      const beforeMatch = cleanLine.substring(0, timeMatch.index);
+      const afterMatch = cleanLine.substring((timeMatch.index || 0) + timeMatch[0].length);
+      
+      // Skip if it looks like part of a date
+      if (!/\d/.test(beforeMatch.slice(-1)) && !/^\d/.test(afterMatch)) {
+        return timeMatch[0];
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Extract store address from receipt header
+function extractStoreAddress(text: string): string | null {
+  const lines = text.split('\n');
+  const headerLines = lines.slice(0, 8); // First ~8 lines for header
+  
+  for (const line of headerLines) {
+    const cleanLine = line.trim();
+    
+    // Skip empty lines or lines that are clearly not addresses
+    if (!cleanLine || cleanLine.length < 5) continue;
+    
+    // Skip lines that look like merchant names, phone numbers, or other non-address info
+    if (/^(MİGROS|MIGROS|BİM|A101|ŞOK|TEL|TELEFON|VERGİ|MERSIS)/i.test(cleanLine)) continue;
+    
+    // Look for street indicators
+    if (/\b(Cad\.|Caddesi|Mah\.|Mahallesi|Sk\.|Sokak|No\b|Blok)\b/i.test(cleanLine)) {
+      return cleanLine;
+    }
+    
+    // Look for postal code pattern (5 digits)
+    if (/\b\d{5}\b/.test(cleanLine)) {
+      return cleanLine;
+    }
+    
+    // Look for lines that contain multiple words and seem address-like
+    const words = cleanLine.split(/\s+/);
+    if (words.length >= 3 && !/^\d+$/.test(cleanLine) && !/^[A-Z]{2,}$/.test(cleanLine)) {
+      // Additional check for common Turkish address words
+      if (/\b(İSTANBUL|ANKARA|İZMİR|BURSA|ANTALYA|ADANA|KONYA|GAZİANTEP|MERSİN|DİYARBAKIR|KAYSERİ|ESKİŞEHİR|URFA|MALATYA|ERZURUM|VAN|BATMAN|ELAZIĞ|TEKİRDAĞ|SİVAS|KAHRAMANMARAŞ|MUĞLA|SAKARYA|DENİZLİ|TRABZİN|AFYON|RİZE|ISPARTA|MANİSA|KOCAELİ|ADIYAMAN|ÇAN|ORDU|SİNOP|KİLİS|NEVŞEHİR|EDİRNE|KİRKLARELİ|UŞAK|DÜZCEMLı|AKSARAY|AMASYA|ARTVIN|AYDIN|BALIKESİR|BARTIN|BAYBURT|BİLECİK|BİNGÖL|BİTLİS|BOLU|BURDUR|ÇANAKKALE|ÇANKIRI|ÇORUM|GEBZE|GİRESUN|GÜMÜŞHANE|HAKKARİ|HATAY|IĞDIR|K|MARAŞ|KARAMAN|KARŞ|KASTAMONU|KIRŞEHIR|KÜTAHYA|MALATYA|OSMANİYE|RIZE|SAMSUN|SİİRT|ŞANLIURFA|ŞIRNAK|TUNCELİ|YALOVA|YOZGAT|ZONGULDAK)/i.test(cleanLine)) {
+        return cleanLine;
+      }
+    }
+  }
+  
+  return null;
 }
 
 function extractDate(text: string): string {
@@ -502,6 +573,8 @@ serve(async (req) => {
     const result: OCRResult = {
       merchant: extractMerchant(fullText),
       purchase_date: extractDate(fullText),
+      purchase_time: extractPurchaseTime(fullText),
+      store_address: extractStoreAddress(fullText),
       total: extractTotal(fullText),
       items: parseItems(fullText),
       payment_method: extractPaymentMethod(fullText),
