@@ -10,7 +10,13 @@ interface OCRResult {
   merchant: string;
   purchase_date: string;
   total: number;
-  items: { name: string; qty: number }[];
+  items: {
+    name: string;
+    qty?: number;
+    unit_price?: number;
+    line_total?: number;
+    raw_line: string;
+  }[];
   payment_method: string | null;
   raw_text: string;
 }
@@ -184,85 +190,152 @@ function extractTotal(text: string): number {
   return 0;
 }
 
-function parseItems(text: string): { name: string; qty: number }[] {
-  console.log('Parsing items with quantities from text');
+function parseItems(text: string): {
+  name: string;
+  qty?: number;
+  unit_price?: number;
+  line_total?: number;
+  raw_line: string;
+}[] {
+  console.log('Parsing items with comprehensive logic for Turkish receipts');
   
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const itemCounts = new Map<string, number>();
+  const items: Array<{
+    name: string;
+    qty?: number;
+    unit_price?: number;
+    line_total?: number;
+    raw_line: string;
+  }> = [];
   
-  // Find the product section boundaries
+  // Find the product section boundaries - more robust detection
   let productStartIndex = -1;
   let productEndIndex = -1;
   
-  // Look for first product line (after store info, before totals)
+  // Look for start after header info (TARİH or FİŞ NO)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // Skip header/store info lines
-    if (line.match(/MIGROS\s+TICARET|KOÇ\s+UNIVERSITES|SARIYER|TEL:|TARIH:|SAAT:|FİŞ\s+NO/i)) {
-      continue;
-    }
-    
-    // Look for first product line (followed by %1 and price)
-    if (i + 2 < lines.length && 
-        lines[i + 1] === '%1' && 
-        lines[i + 2].match(/^\*\d+[,.]?\d*$/)) {
-      productStartIndex = i;
-      break;
+    // If we find date or receipt number, items should start soon after
+    if (line.match(/TARİH|FİŞ\s+NO/i)) {
+      // Look for first item line after this
+      for (let j = i + 1; j < lines.length; j++) {
+        const itemLine = lines[j];
+        
+        // Skip metadata lines
+        if (itemLine.match(/#\d+|MERSİS|VD\.|VERGİ|TEL:|SAAT|KASİYER|REF\s+NO|ONAY\s+KODU|TERMINAL|EKU|https?:\/\//i)) {
+          continue;
+        }
+        
+        // Item line should contain letters and possibly end with price
+        if (itemLine.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && 
+            (itemLine.match(/[*₺]?\d{1,4}[.,]\d{2}$/) || 
+             (j + 1 < lines.length && lines[j + 1].match(/^%\d+$/)) ||
+             (j + 2 < lines.length && lines[j + 2].match(/^[*]\d+[.,]\d{2}$/)))) {
+          productStartIndex = j;
+          break;
+        }
+      }
+      if (productStartIndex !== -1) break;
     }
   }
   
-  // Find end of product section (before ARA TOPLAM or TOPLAM)
+  // Find end of product section (first total/subtotal)
   for (let i = productStartIndex + 1; i < lines.length; i++) {
     const line = lines[i];
-    if (line.match(/^(ARA\s+)?TOPLAM$/i) || line.match(/^#\d+$/)) {
+    if (line.match(/^(ARA\s+)?TOPLAM|TOPKDV|GENEL\s+TOPLAM|TOPLAM\s*₺|^-{3,}$/i)) {
       productEndIndex = i;
       break;
     }
   }
   
-  if (productStartIndex === -1 || productEndIndex === -1) {
-    console.log('Could not find product section boundaries');
+  if (productStartIndex === -1) {
+    console.log('Could not find product section start');
     return [];
+  }
+  
+  if (productEndIndex === -1) {
+    // If no end found, use reasonable end point
+    productEndIndex = Math.min(lines.length, productStartIndex + 50);
   }
   
   console.log(`Product section: lines ${productStartIndex} to ${productEndIndex}`);
   
-  // Extract products from the identified section
-  for (let i = productStartIndex; i < productEndIndex; i += 3) {
-    const productLine = lines[i];
-    const percentLine = lines[i + 1];
-    const priceLine = lines[i + 2];
+  // Parse items with more permissive logic
+  for (let i = productStartIndex; i < productEndIndex; i++) {
+    const line = lines[i];
     
-    // Validate this is a product entry (product name, %1, *price)
-    if (percentLine === '%1' && priceLine && priceLine.match(/^\*\d+[,.]?\d*$/)) {
-      // Clean product name
-      let cleanName = productLine
-        .replace(/^[#\d\s*]+/, '') // Remove leading numbers/symbols
-        .replace(/\s+/g, ' ') // Normalize spaces
-        .trim();
-      
-      // Skip empty or very short names
-      if (cleanName.length > 2) {
-        // Count occurrences
-        const currentCount = itemCounts.get(cleanName) || 0;
-        itemCounts.set(cleanName, currentCount + 1);
-        
-        console.log(`Found product: "${cleanName}" (occurrence ${currentCount + 1})`);
-      }
+    // Skip clearly non-item lines
+    if (line.match(/^#\d+|MERSİS|VD\.|VERGİ|TEL:|SAAT|KASİYER|REF\s+NO|ONAY\s+KODU|TERMINAL|EKU|https?:\/\//i)) {
+      continue;
     }
+    
+    // Skip lines that are just numbers or percentages
+    if (line.match(/^[\d%.,*₺\s]+$/)) {
+      continue;
+    }
+    
+    // Must contain letters (Turkish or English)
+    if (!line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/)) {
+      continue;
+    }
+    
+    // Parse item line - extract name, quantity, unit price, line total
+    let name = line;
+    let qty: number | undefined;
+    let unit_price: number | undefined;
+    let line_total: number | undefined;
+    
+    // Extract trailing price if present
+    const priceMatch = line.match(/[*₺]?\s*(\d{1,4}[.,]\d{2})$/);
+    if (priceMatch) {
+      line_total = parseFloat(priceMatch[1].replace(',', '.'));
+      name = line.replace(/[*₺]?\s*\d{1,4}[.,]\d{2}$/, '').trim();
+    }
+    
+    // Check for quantity/weight patterns
+    const weightMatch = name.match(/(\d+(?:[.,]\d+)?)\s*(KG|G|GR|LT|L|ML|ADET|PCS|PKT)\b/i);
+    if (weightMatch) {
+      qty = parseFloat(weightMatch[1].replace(',', '.'));
+      // Remove weight from name if it's at the beginning
+      name = name.replace(/^\d+(?:[.,]\d+)?\s*(KG|G|GR|LT|L|ML|ADET|PCS|PKT)\s*/i, '').trim();
+    }
+    
+    // Check for quantity × unit price pattern
+    const qtyPriceMatch = name.match(/(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)/);
+    if (qtyPriceMatch) {
+      qty = parseFloat(qtyPriceMatch[1].replace(',', '.'));
+      unit_price = parseFloat(qtyPriceMatch[2].replace(',', '.'));
+      name = name.replace(/\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?/, '').trim();
+    }
+    
+    // Clean up name
+    name = name
+      .replace(/^[#\d\s*%₺]+/, '') // Remove leading symbols/numbers
+      .replace(/[%₺*]+$/, '') // Remove trailing symbols
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+    
+    // Skip if name is too short or empty
+    if (name.length < 2) {
+      continue;
+    }
+    
+    // Add item
+    items.push({
+      name,
+      qty,
+      unit_price,
+      line_total,
+      raw_line: line
+    });
+    
+    console.log(`Parsed item: "${name}" ${qty ? `qty: ${qty}` : ''} ${unit_price ? `unit: ${unit_price}` : ''} ${line_total ? `total: ${line_total}` : ''}`);
   }
   
-  // Convert to array format
-  const result = Array.from(itemCounts.entries()).map(([name, qty]) => ({
-    name,
-    qty
-  }));
+  console.log(`Total items extracted: ${items.length}`);
   
-  console.log(`Total unique products extracted: ${result.length}`);
-  console.log('Items with quantities:', result);
-  
-  return result;
+  return items;
 }
 
 function extractPaymentMethod(text: string): string | null {
@@ -354,8 +427,8 @@ serve(async (req) => {
       );
     }
 
-    // Call Google Cloud Vision API
-    console.log('Calling Google Vision API...');
+    // Call Google Cloud Vision API with enhanced settings for Turkish
+    console.log('Calling Google Vision API with Turkish language hints...');
     const visionResponse = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${googleVisionKey}`,
       {
@@ -373,9 +446,12 @@ serve(async (req) => {
               },
               features: [
                 {
-                  type: 'TEXT_DETECTION'
+                  type: 'DOCUMENT_TEXT_DETECTION'
                 }
-              ]
+              ],
+              imageContext: {
+                languageHints: ['tr', 'tr-Latn', 'en']
+              }
             }
           ]
         })
@@ -401,9 +477,10 @@ serve(async (req) => {
       throw new Error(`Vision API error: ${apiError.code} - ${apiError.message}`);
     }
 
-    // Extract text from the response
-    const annotations = visionData.responses?.[0]?.textAnnotations;
-    const fullText = annotations?.[0]?.description || '';
+    // Extract text from the response - prioritize fullTextAnnotation for better structure
+    const fullTextAnnotation = visionData.responses?.[0]?.fullTextAnnotation;
+    const textAnnotations = visionData.responses?.[0]?.textAnnotations;
+    const fullText = fullTextAnnotation?.text || textAnnotations?.[0]?.description || '';
 
     if (!fullText) {
       return new Response(
