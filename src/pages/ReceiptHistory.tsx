@@ -5,6 +5,8 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { useReceiptData } from '../hooks/useReceiptData';
 import { ReceiptImageModal } from '../components/ReceiptImageModal';
+import { normalizeMerchant, getDisplayMerchantName } from '../utils/merchantNormalization';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { 
   Receipt, 
@@ -39,6 +41,7 @@ interface ReceiptRecord {
 
 const ReceiptHistory: React.FC = () => {
   const { receipts, loading, stats } = useReceiptData();
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -76,21 +79,21 @@ const ReceiptHistory: React.FC = () => {
         return (
           <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">
             <CheckCircle className="h-3 w-3 mr-1" />
-            Approved
+            {t('status.approved')}
           </Badge>
         );
       case 'pending':
         return (
           <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
             <Clock className="h-3 w-3 mr-1" />
-            Pending
+            {t('status.pending')}
           </Badge>
         );
       case 'rejected':
         return (
           <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100">
             <XCircle className="h-3 w-3 mr-1" />
-            Rejected
+            {t('status.rejected')}
           </Badge>
         );
     }
@@ -106,10 +109,10 @@ const ReceiptHistory: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Receipt History
+            {t('history.title')}
           </h1>
           <p className="text-muted-foreground">
-            Track all your uploaded receipts and earned points
+            {t('history.description')}
           </p>
         </div>
       </div>

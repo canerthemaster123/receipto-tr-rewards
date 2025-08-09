@@ -187,5 +187,48 @@
   "language": {
     "turkish": "Türkçe",
     "english": "English"
+  },
+  "charts": {
+    "weeklySpend": "Weekly Spending",
+    "monthlySpend": "Monthly Spending",
+    "last8Weeks": "Last 8 Weeks",
+    "last12Months": "Last 12 Months",
+    "totalSpent": "Total: ₺{{amount}}",
+    "week": "Week {{number}}",
+    "noDataAvailable": "No data available"
+  },
+  "actions": {
+    "viewImage": "View Image",
+    "downloadImage": "Download",
+    "copyCode": "Copy Code",
+    "shareCode": "Share Code",
+    "approveReceipt": "Approve",
+    "rejectReceipt": "Reject",
+    "editReceipt": "Edit",
+    "deleteReceipt": "Delete"
+  },
+  "merchant": {
+    "receiptsFrom": "{{count}} receipts from {{merchant}}",
+    "totalSpentAt": "Total spent at {{merchant}}: ₺{{amount}}",
+    "firstPurchase": "First purchase: {{date}}",
+    "lastPurchase": "Last purchase: {{date}}"
+  },
+  "points": {
+    "earnedPoints": "+{{points}} points earned",
+    "pendingPoints": "{{points}} points pending",
+    "bonusAwarded": "+{{points}} bonus points awarded!",
+    "referralBonus": "You and your referrer both earned +{{points}} points!",
+    "pointsBalance": "Points balance: {{points}}"
+  },
+  "debug": {
+    "title": "OCR Debug Panel",
+    "description": "Test OCR parsing with raw text input",
+    "rawText": "Raw OCR Text",
+    "pasteText": "Paste raw OCR text here...",
+    "parseText": "Parse Text",
+    "parsedResults": "Parsed Results",
+    "exportJson": "Export JSON",
+    "clearText": "Clear Text",
+    "noTextProvided": "No text provided for parsing"
   }
 }

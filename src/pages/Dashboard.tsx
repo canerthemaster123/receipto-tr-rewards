@@ -6,6 +6,7 @@ import { Button } from '../components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { useReceiptData } from '../hooks/useReceiptData';
+import { SpendingCharts } from '../components/SpendingCharts';
 import { 
   Upload, 
   Gift, 
@@ -303,6 +304,9 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Spending Charts */}
+      <SpendingCharts />
     </div>
   );
 };

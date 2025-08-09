@@ -187,5 +187,48 @@
   "language": {
     "turkish": "Türkçe",
     "english": "English"
+  },
+  "charts": {
+    "weeklySpend": "Haftalık Harcama",
+    "monthlySpend": "Aylık Harcama", 
+    "last8Weeks": "Son 8 Hafta",
+    "last12Months": "Son 12 Ay",
+    "totalSpent": "Toplam: ₺{{amount}}",
+    "week": "{{number}}. Hafta",
+    "noDataAvailable": "Veri bulunmuyor"
+  },
+  "actions": {
+    "viewImage": "Resmi Görüntüle",
+    "downloadImage": "İndir",
+    "copyCode": "Kodu Kopyala",
+    "shareCode": "Kodu Paylaş",
+    "approveReceipt": "Onayla",
+    "rejectReceipt": "Reddet",
+    "editReceipt": "Düzenle",
+    "deleteReceipt": "Sil"
+  },
+  "merchant": {
+    "receiptsFrom": "{{merchant}} mağazasından {{count}} fiş",
+    "totalSpentAt": "{{merchant}} mağazasında toplam harcama: ₺{{amount}}",
+    "firstPurchase": "İlk alışveriş: {{date}}",
+    "lastPurchase": "Son alışveriş: {{date}}"
+  },
+  "points": {
+    "earnedPoints": "+{{points}} puan kazanıldı",
+    "pendingPoints": "{{points}} puan beklemede",
+    "bonusAwarded": "+{{points}} bonus puan verildi!",
+    "referralBonus": "Siz ve davet ettiğiniz kişi +{{points}} puan kazandınız!",
+    "pointsBalance": "Puan bakiyesi: {{points}}"
+  },
+  "debug": {
+    "title": "OCR Hata Ayıklama Paneli",
+    "description": "Ham metin girişi ile OCR ayrıştırmayı test edin",
+    "rawText": "Ham OCR Metni",
+    "pasteText": "Ham OCR metnini buraya yapıştırın...",
+    "parseText": "Metni Ayrıştır",
+    "parsedResults": "Ayrıştırılmış Sonuçlar",
+    "exportJson": "JSON Dışa Aktar",
+    "clearText": "Metni Temizle",
+    "noTextProvided": "Ayrıştırma için metin sağlanmadı"
   }
 }

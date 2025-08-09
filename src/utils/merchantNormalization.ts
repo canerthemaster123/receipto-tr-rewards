@@ -1,0 +1,155 @@
+/**
+ * Merchant normalization utilities for consistent grouping and analytics
+ */
+
+/**
+ * Turkish character mapping for normalization
+ */
+const TURKISH_CHAR_MAP: Record<string, string> = {
+  'İ': 'i', 'ı': 'i', 'I': 'i',
+  'Ğ': 'g', 'ğ': 'g',
+  'Ş': 's', 'ş': 's', 
+  'Ç': 'c', 'ç': 'c',
+  'Ö': 'o', 'ö': 'o',
+  'Ü': 'u', 'ü': 'u'
+};
+
+/**
+ * Normalize merchant name for consistent grouping
+ * - Converts to lowercase
+ * - Removes spaces and punctuation
+ * - Maps Turkish diacritics to base characters
+ * - Removes common company suffixes
+ */
+export const normalizeMerchant = (merchantName: string): string => {
+  if (!merchantName || typeof merchantName !== 'string') {
+    return '';
+  }
+
+  let normalized = merchantName.toLowerCase();
+
+  // Replace Turkish characters with base equivalents
+  Object.entries(TURKISH_CHAR_MAP).forEach(([turkish, base]) => {
+    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
+  });
+
+  // Remove common company suffixes and legal entities
+  const suffixesToRemove = [
+    'a\\.?s\\.?',
+    'a\\.?ş\\.?',
+    'ltd\\.?',
+    'şti\\.?',
+    'ticaret',
+    'gida',
+    'gıda',
+    'market',
+    'mağazası',
+    'mağazasi',
+    'perakende',
+    'satış',
+    'satis'
+  ];
+
+  suffixesToRemove.forEach(suffix => {
+    normalized = normalized.replace(new RegExp(`\\b${suffix}\\b`, 'g'), '');
+  });
+
+  // Remove all spaces, punctuation, and special characters
+  normalized = normalized.replace(/[\s\.\-_,;:!@#$%^&*()+={}|\[\]\\\/?"'<>~`]/g, '');
+
+  // Remove any remaining digits that might be store numbers
+  normalized = normalized.replace(/\d+$/, '');
+
+  return normalized.trim();
+};
+
+/**
+ * Group receipts by normalized merchant name
+ */
+export const groupReceiptsByMerchant = (receipts: any[]) => {
+  const groups: Record<string, any[]> = {};
+
+  receipts.forEach(receipt => {
+    const normalizedKey = normalizeMerchant(receipt.merchant);
+    if (!groups[normalizedKey]) {
+      groups[normalizedKey] = [];
+    }
+    groups[normalizedKey].push(receipt);
+  });
+
+  return groups;
+};
+
+/**
+ * Get the most representative merchant name from a group
+ * (usually the shortest clean version)
+ */
+export const getDisplayMerchantName = (receipts: any[]): string => {
+  if (!receipts || receipts.length === 0) return '';
+
+  // Get all unique merchant names
+  const uniqueNames = [...new Set(receipts.map(r => r.merchant))];
+  
+  // Sort by length (shortest first) and return the first one
+  // This tends to give us the cleanest version
+  return uniqueNames.sort((a, b) => a.length - b.length)[0];
+};
+
+/**
+ * Get merchant analytics data
+ */
+export const getMerchantAnalytics = (receipts: any[]) => {
+  const groups = groupReceiptsByMerchant(receipts.filter(r => r.status === 'approved'));
+  
+  return Object.entries(groups).map(([normalizedName, receipts]) => {
+    const totalSpent = receipts.reduce((sum, r) => sum + parseFloat(r.total.toString()), 0);
+    const totalPoints = receipts.reduce((sum, r) => sum + r.points, 0);
+    const dates = receipts.map(r => new Date(r.purchase_date)).sort();
+    
+    return {
+      normalizedName,
+      displayName: getDisplayMerchantName(receipts),
+      receiptCount: receipts.length,
+      totalSpent,
+      totalPoints,
+      firstPurchase: dates[0],
+      lastPurchase: dates[dates.length - 1],
+      receipts
+    };
+  }).sort((a, b) => b.totalSpent - a.totalSpent); // Sort by total spent descending
+};
+
+/**
+ * Test cases for merchant normalization
+ * Useful for debugging and ensuring consistency
+ */
+export const MERCHANT_TEST_CASES = [
+  { input: 'MİGROS TİCARET A.Ş.', expected: 'migros' },
+  { input: 'M GROS T CARET A.S.', expected: 'mgrost' },
+  { input: 'Migros Market', expected: 'migros' },
+  { input: 'CARREFOUR SA', expected: 'carrefour' },
+  { input: 'BİM Birleşik Mağazalar A.Ş.', expected: 'bimbirlesik' },
+  { input: 'ŞOK Marketler Ticaret A.Ş.', expected: 'sokmarketler' },
+  { input: 'A101 Yeni Mağazacılık A.Ş.', expected: 'ayenimağazacilik' }
+];
+
+/**
+ * Run tests to verify normalization works correctly
+ */
+export const testMerchantNormalization = (): boolean => {
+  let allPassed = true;
+  
+  MERCHANT_TEST_CASES.forEach(({ input, expected }) => {
+    const result = normalizeMerchant(input);
+    if (result !== expected) {
+      console.warn(`Merchant normalization test failed:`, {
+        input,
+        expected,
+        actual: result
+      });
+      allPassed = false;
+    }
+  });
+  
+  return allPassed;
+};

@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./components/AuthContext";
+import { useUserRole } from "./hooks/useUserRole";
 import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n';
 import Layout from "./components/Layout";
@@ -15,6 +16,7 @@ import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
 import Profile from "./pages/Profile";
 import ReferralPage from "./pages/ReferralPage";
+import OCRDebugPage from "./pages/OCRDebugPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +51,29 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
   
   if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading } = useAuth();
+  const { isAdmin, isLoading: roleLoading } = useUserRole();
+  
+  if (isLoading || roleLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+  
+  if (!isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -127,6 +152,21 @@ const App = () => (
                 <ProtectedRoute>
                   <ReferralPage />
                 </ProtectedRoute>
+              } 
+            />
+            {/* Debug route - available in development or for admins */}
+            <Route 
+              path="/debug/ocr" 
+              element={
+                import.meta.env.DEV ? (
+                  <ProtectedRoute>
+                    <OCRDebugPage />
+                  </ProtectedRoute>
+                ) : (
+                  <AdminRoute>
+                    <OCRDebugPage />
+                  </AdminRoute>
+                )
               } 
             />
             <Route path="*" element={<NotFound />} />
