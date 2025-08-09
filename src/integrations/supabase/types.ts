@@ -176,6 +176,7 @@ export type Database = {
           display_name: string | null
           id: string
           referral_code: string | null
+          referred_by: string | null
           total_points: number | null
           updated_at: string | null
         }
@@ -184,6 +185,7 @@ export type Database = {
           display_name?: string | null
           id: string
           referral_code?: string | null
+          referred_by?: string | null
           total_points?: number | null
           updated_at?: string | null
         }
@@ -192,6 +194,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           referral_code?: string | null
+          referred_by?: string | null
           total_points?: number | null
           updated_at?: string | null
         }
@@ -202,6 +205,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_referral_bonus: {
+        Args: { new_user_id: string; referral_code: string }
+        Returns: Json
+      }
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: Database["public"]["Enums"]["app_role"]
