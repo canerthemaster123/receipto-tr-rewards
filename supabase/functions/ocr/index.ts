@@ -7,7 +7,8 @@ const corsHeaders = {
 };
 
 interface OCRResult {
-  merchant: string;
+  merchant_raw: string;
+  merchant_brand: string;
   purchase_date: string;
   purchase_time: string | null;
   store_address: string | null;
@@ -18,9 +19,115 @@ interface OCRResult {
     unit_price?: number;
     line_total?: number;
     raw_line: string;
+    product_code?: string;
   }[];
   payment_method: string | null;
   raw_text: string;
+}
+
+/**
+ * Normalize merchant brand (fuzzy) — show brand only
+ */
+function normalizeBrand(merchantRaw: string): string {
+  if (!merchantRaw || typeof merchantRaw !== 'string') {
+    return '';
+  }
+
+  let normalized = merchantRaw.toLowerCase();
+
+  // Replace Turkish characters with base equivalents
+  const turkishCharMap: Record<string, string> = {
+    'İ': 'i', 'ı': 'i', 'I': 'i',
+    'Ğ': 'g', 'ğ': 'g',
+    'Ş': 's', 'ş': 's', 
+    'Ç': 'c', 'ç': 'c',
+    'Ö': 'o', 'ö': 'o',
+    'Ü': 'u', 'ü': 'u'
+  };
+  
+  Object.entries(turkishCharMap).forEach(([turkish, base]) => {
+    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
+  });
+
+  // Remove spaces and punctuation
+  normalized = normalized.replace(/[\s\.\-_,;:!@#$%^&*()+={}|\[\]\\\/?"'<>~`]/g, '');
+
+  // Strip company suffix words
+  const suffixesToRemove = [
+    'ticaret', 'as', 'ase', 'ltd', 'sti', 'sanayi', 've', 'vb',
+    'gida', 'market', 'magazasi', 'perakende', 'satis'
+  ];
+  
+  suffixesToRemove.forEach(suffix => {
+    normalized = normalized.replace(new RegExp(`\\b${suffix}\\b`, 'g'), '');
+  });
+
+  // Brand dictionary with common variants and broken OCR forms
+  const brandDictionary: Record<string, string> = {
+    // Migros variants
+    'migros': 'Migros',
+    'mgros': 'Migros', 
+    'mıgros': 'Migros',
+    'mıgr0s': 'Migros',
+    
+    // BİM variants  
+    'bim': 'BİM',
+    'b1m': 'BİM',
+    'bım': 'BİM',
+    
+    // A101 variants
+    'a101': 'A101',
+    'a1o1': 'A101',
+    'a10l': 'A101',
+    
+    // ŞOK variants
+    'sok': 'ŞOK',
+    'şok': 'ŞOK',
+    's0k': 'ŞOK',
+    
+    // CarrefourSA variants
+    'carrefour': 'CarrefourSA',
+    'carrefoursa': 'CarrefourSA',
+    'carref0ur': 'CarrefourSA',
+    
+    // Other major chains
+    'metro': 'Metro',
+    'macr0': 'Macro',
+    'macro': 'Macro',
+    'real': 'Real',
+    'teknosa': 'Teknosa',
+    'vatan': 'Vatan',
+    'mediamarkt': 'MediaMarkt'
+  };
+
+  // Direct match
+  if (brandDictionary[normalized]) {
+    return brandDictionary[normalized];
+  }
+
+  // Fuzzy matching for broken OCR (simple includes)
+  for (const [key, brand] of Object.entries(brandDictionary)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return brand;
+    }
+  }
+
+  // Levenshtein distance ≤2 fallback (simplified version)
+  for (const [key, brand] of Object.entries(brandDictionary)) {
+    if (Math.abs(normalized.length - key.length) <= 2) {
+      let distance = 0;
+      const maxLen = Math.max(normalized.length, key.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (normalized[i] !== key[i]) distance++;
+      }
+      if (distance <= 2) {
+        return brand;
+      }
+    }
+  }
+
+  // Fallback: return cleaned version of original
+  return merchantRaw.trim();
 }
 
 // Parsing helpers
@@ -261,12 +368,53 @@ function extractTotal(text: string): number {
   return 0;
 }
 
+/**
+ * Check if a line is a discount/markdown line that should be excluded
+ */
+function isDiscountLine(line: string): boolean {
+  // Normalize the line for checking
+  let normalized = line.toLowerCase().trim();
+  
+  // Replace Turkish characters with base equivalents
+  const turkishCharMap: Record<string, string> = {
+    'İ': 'i', 'ı': 'i', 'I': 'i',
+    'Ğ': 'g', 'ğ': 'g',
+    'Ş': 's', 'ş': 's', 
+    'Ç': 'c', 'ç': 'c',
+    'Ö': 'o', 'ö': 'o',
+    'Ü': 'u', 'ü': 'u'
+  };
+  
+  Object.entries(turkishCharMap).forEach(([turkish, base]) => {
+    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
+  });
+  
+  // Remove punctuation for pattern matching
+  const cleanLine = normalized.replace(/[^\w\s]/g, '');
+  
+  // Discount patterns to match (case-insensitive Turkish/ASCII variants)
+  const discountPatterns = [
+    /\bindirim\b/,
+    /\bind\b/,
+    /\bindt?\b/,
+    /\bkampanya\s*indirimi?\b/,
+    /\btoplam\s*indirim\b/,
+    /\bpromosyon\b/,
+    /\btutar\s*ind\b/,
+    /\bind\s*tutar\b/,
+    /\bindirim\s*tutari?\b/
+  ];
+  
+  return discountPatterns.some(pattern => pattern.test(cleanLine));
+}
+
 function parseItems(text: string): {
   name: string;
   qty?: number;
   unit_price?: number;
   line_total?: number;
   raw_line: string;
+  product_code?: string;
 }[] {
   console.log('Parsing items with comprehensive logic for Turkish receipts');
   
@@ -277,6 +425,7 @@ function parseItems(text: string): {
     unit_price?: number;
     line_total?: number;
     raw_line: string;
+    product_code?: string;
   }> = [];
   
   // Find the product section boundaries - more robust detection
@@ -336,7 +485,68 @@ function parseItems(text: string): {
   for (let i = productStartIndex; i < productEndIndex; i++) {
     const line = lines[i];
     
-    // Skip clearly non-item lines
+    // Check for product code pattern (#<6+ digits>)
+    const productCodeMatch = line.match(/^#(\d{6,})/);
+    if (productCodeMatch) {
+      const productCode = productCodeMatch[1];
+      console.log(`Found product code: #${productCode}`);
+      
+      // Look ahead for item name on next non-empty, non-discount line
+      let itemName = '';
+      let nameLineIndex = -1;
+      
+      for (let j = i + 1; j < Math.min(i + 3, productEndIndex); j++) {
+        const nextLine = lines[j];
+        if (!nextLine || nextLine.length < 2) continue;
+        if (isDiscountLine(nextLine)) continue;
+        if (nextLine.match(/^[#\d\s*%₺.,]+$/)) continue; // Skip number-only lines
+        if (nextLine.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/)) {
+          itemName = nextLine;
+          nameLineIndex = j;
+          break;
+        }
+      }
+      
+      if (itemName) {
+        // Extract price from either the code line or name line
+        let line_total: number | undefined;
+        const codePriceMatch = line.match(/[*₺]?\s*(\d{1,4}[.,]\d{2})$/);
+        const namePriceMatch = itemName.match(/[*₺]?\s*(\d{1,4}[.,]\d{2})$/);
+        
+        if (codePriceMatch) {
+          line_total = parseFloat(codePriceMatch[1].replace(',', '.'));
+        } else if (namePriceMatch) {
+          line_total = parseFloat(namePriceMatch[1].replace(',', '.'));
+          itemName = itemName.replace(/[*₺]?\s*\d{1,4}[.,]\d{2}$/, '').trim();
+        }
+        
+        // Clean up name
+        const cleanedName = itemName
+          .replace(/^[#\d\s*%₺]+/, '')
+          .replace(/[%₺*]+$/, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        if (cleanedName.length >= 2) {
+          items.push({
+            name: cleanedName,
+            line_total,
+            raw_line: line,
+            product_code: productCode
+          });
+          
+          console.log(`Parsed product code item: "${cleanedName}" (code: ${productCode}) ${line_total ? `price: ${line_total}` : ''}`);
+          
+          // Skip the name line since we've processed it
+          if (nameLineIndex > i) {
+            i = nameLineIndex;
+          }
+          continue;
+        }
+      }
+    }
+    
+    // Skip clearly non-item lines (but allow #<digits> through for processing above)
     if (line.match(/^#\d+|MERSİS|VD\.|VERGİ|TEL:|SAAT|KASİYER|REF\s+NO|ONAY\s+KODU|TERMINAL|EKU|https?:\/\//i)) {
       continue;
     }
@@ -348,6 +558,12 @@ function parseItems(text: string): {
     
     // Must contain letters (Turkish or English)
     if (!line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/)) {
+      continue;
+    }
+    
+    // Skip discount/markdown lines (e.g., "İNDİRİM", "KAMPANYA")
+    if (isDiscountLine(line)) {
+      console.log(`Skipping discount line: "${line}"`);
       continue;
     }
     
@@ -556,7 +772,8 @@ serve(async (req) => {
     if (!fullText) {
       return new Response(
         JSON.stringify({
-          merchant: '',
+          merchant_raw: '',
+          merchant_brand: '',
           purchase_date: new Date().toISOString().split('T')[0],
           total: 0,
           items: [],
@@ -570,8 +787,10 @@ serve(async (req) => {
     }
 
     // Parse the extracted text
+    const merchantRaw = extractMerchant(fullText);
     const result: OCRResult = {
-      merchant: extractMerchant(fullText),
+      merchant_raw: merchantRaw,
+      merchant_brand: normalizeBrand(merchantRaw),
       purchase_date: extractDate(fullText),
       purchase_time: extractPurchaseTime(fullText),
       store_address: extractStoreAddress(fullText),

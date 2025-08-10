@@ -128,7 +128,7 @@ const UploadReceipt: React.FC = () => {
 
       // Pre-fill form with OCR results
       const extractedData: ReceiptData = {
-        storeName: ocrResult.merchant || '',
+        storeName: ocrResult.merchant_brand || ocrResult.merchant_raw || '',
         date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
         purchaseTime: ocrResult.purchase_time || '',
         storeAddress: ocrResult.store_address || '',

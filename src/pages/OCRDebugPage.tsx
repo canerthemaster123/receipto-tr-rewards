@@ -8,7 +8,8 @@ import { Copy, Download, FileText, Settings } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
 interface ParsedOCRResult {
-  merchant: string;
+  merchant_raw: string;
+  merchant_brand: string;
   purchase_date: string;
   purchase_time: string | null;
   store_address: string | null;
@@ -19,6 +20,7 @@ interface ParsedOCRResult {
     unit_price?: number;
     line_total?: number;
     raw_line: string;
+    product_code?: string;
   }[];
   payment_method: string | null;
   raw_text: string;
@@ -103,7 +105,8 @@ const OCRDebugPage: React.FC = () => {
       });
 
     return {
-      merchant: merchant.replace(/[^A-ZÇĞİÖŞÜa-zçğıöşü\s]/g, '').trim(),
+      merchant_raw: merchant.replace(/[^A-ZÇĞİÖŞÜa-zçğıöşü\s]/g, '').trim(),
+      merchant_brand: merchant.replace(/[^A-ZÇĞİÖŞÜa-zçğıöşü\s]/g, '').trim(),
       purchase_date,
       purchase_time,
       store_address,
@@ -273,10 +276,14 @@ const OCRDebugPage: React.FC = () => {
             {parsedResult ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Merchant:</span>
-                    <p className="text-muted-foreground">{parsedResult.merchant || 'N/A'}</p>
-                  </div>
+                   <div>
+                     <span className="font-medium">Merchant Brand:</span>
+                     <p className="text-muted-foreground">{parsedResult.merchant_brand || 'N/A'}</p>
+                   </div>
+                   <div>
+                     <span className="font-medium">Raw Merchant:</span>
+                     <p className="text-muted-foreground text-xs">{parsedResult.merchant_raw || 'N/A'}</p>
+                   </div>
                   <div>
                     <span className="font-medium">Date:</span>
                     <p className="text-muted-foreground">{parsedResult.purchase_date || 'N/A'}</p>

@@ -1,5 +1,6 @@
 export interface OCRResult {
-  merchant: string;
+  merchant_raw: string;
+  merchant_brand: string;
   purchase_date: string;
   purchase_time: string | null;
   store_address: string | null;
@@ -10,6 +11,7 @@ export interface OCRResult {
     unit_price?: number;
     line_total?: number;
     raw_line: string;
+    product_code?: string;
   }[];
   payment_method: string | null;
   raw_text: string;
