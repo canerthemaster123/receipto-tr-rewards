@@ -421,6 +421,7 @@ const AdminPanel: React.FC = () => {
                         size="sm" 
                         variant="secondary"
                         onClick={() => handleReceiptAction(receipt.id, 'approve')}
+                        data-testid="approve-button"
                       >
                         <CheckCircle className="h-4 w-4" />
                         Approve
@@ -429,6 +430,7 @@ const AdminPanel: React.FC = () => {
                         size="sm" 
                         variant="destructive"
                         onClick={() => handleReceiptAction(receipt.id, 'reject')}
+                        data-testid="reject-button"
                       >
                         <XCircle className="h-4 w-4" />
                         Reject

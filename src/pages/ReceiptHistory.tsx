@@ -263,6 +263,7 @@ const ReceiptHistory: React.FC = () => {
             variant="outline"
             onClick={() => setShowFilters(!showFilters)}
             className="flex items-center gap-2"
+            data-testid="filter-button"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filters
@@ -278,12 +279,12 @@ const ReceiptHistory: React.FC = () => {
               </Badge>
             )}
           </Button>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="h-4 w-4" />
-              Clear
-            </Button>
-          )}
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="reset-filters">
+                <X className="h-4 w-4" />
+                Reset
+              </Button>
+            )}
         </div>
       </div>
 
@@ -413,7 +414,7 @@ const ReceiptHistory: React.FC = () => {
                   value={filters.merchantFilter} 
                   onValueChange={(value) => setFilters(prev => ({ ...prev, merchantFilter: value }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="merchant-filter">
                     <SelectValue placeholder="All merchants" />
                   </SelectTrigger>
                   <SelectContent>
@@ -434,7 +435,7 @@ const ReceiptHistory: React.FC = () => {
                   value={filters.statusFilter} 
                   onValueChange={(value) => setFilters(prev => ({ ...prev, statusFilter: value }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="status-filter">
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
@@ -455,6 +456,7 @@ const ReceiptHistory: React.FC = () => {
                     type="number"
                     value={filters.minAmount}
                     onChange={(e) => setFilters(prev => ({ ...prev, minAmount: e.target.value }))}
+                    data-testid="min-total-input"
                   />
                   <Input
                     placeholder="Max"
@@ -521,7 +523,7 @@ const ReceiptHistory: React.FC = () => {
             {paginatedReceipts.map((receipt) => {
               const itemsArray = getItemsArray(receipt.items);
               return (
-                <Card key={receipt.id} className="shadow-card hover:shadow-elegant transition-all">
+                <Card key={receipt.id} className="shadow-card hover:shadow-elegant transition-all" data-testid="receipt-row">
                   <CardContent className="p-6">
                     <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                       {/* Receipt Info */}

@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useReceiptData } from '../hooks/useReceiptData';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { TrendingUp, Calendar, Loader2 } from 'lucide-react';
@@ -17,6 +18,7 @@ export const SpendingCharts: React.FC = () => {
   const { receipts, loading } = useReceiptData();
   const { t } = useTranslation();
   const [isCalculating, setIsCalculating] = useState(false);
+  const [timeframe, setTimeframe] = useState('weekly');
 
   // Filter approved receipts only and handle undefined/null values
   const approvedReceipts = useMemo(() => {
@@ -189,7 +191,146 @@ export const SpendingCharts: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="spending-chart">
+      {/* Timeframe Selectors */}
+      <Card className="shadow-card">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Spending Analysis
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {['daily', 'weekly', 'monthly', 'yearly', 'all'].map((tf) => (
+                <Button
+                  key={tf}
+                  size="sm"
+                  variant={timeframe === tf ? 'default' : 'outline'}
+                  onClick={() => setTimeframe(tf)}
+                  data-testid={`timeframe-${tf}`}
+                  className="text-xs"
+                >
+                  {tf.charAt(0).toUpperCase() + tf.slice(1)}
+                </Button>
+              ))}
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {timeframe === 'weekly' && (
+            <div className="h-64">
+              {isCalculating ? (
+                <div className="h-64 flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  {weeklyData.some(d => d.amount > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={weeklyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                        <XAxis 
+                          dataKey="period" 
+                          fontSize={12}
+                          tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                         <YAxis 
+                           fontSize={12}
+                           tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                           tickFormatter={(value) => formatTRYCompact(value)}
+                         />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar 
+                          dataKey="amount" 
+                          fill="hsl(var(--primary))"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      <div className="text-center">
+                        <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                        <p>{t('charts.noDataAvailable')}</p>
+                        <p className="text-xs mt-2">
+                          {approvedReceipts.length === 0 
+                            ? "Upload and approve receipts to see weekly spending trends"
+                            : "No spending data in the last 8 weeks"
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          
+          {timeframe === 'monthly' && (
+            <div className="h-64">
+              {monthlyData.some(d => d.amount > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis 
+                      dataKey="period" 
+                      fontSize={12}
+                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                     <YAxis 
+                       fontSize={12}
+                       tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                       tickFormatter={(value) => formatTRYCompact(value)}
+                     />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="amount" 
+                      stroke="hsl(var(--secondary))"
+                      strokeWidth={3}
+                      dot={{ fill: 'hsl(var(--secondary))', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6 }}
+                      connectNulls={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  <div className="text-center">
+                    <Calendar className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>{t('charts.noDataAvailable')}</p>
+                    <p className="text-xs mt-2">
+                      {approvedReceipts.length === 0 
+                        ? "Upload and approve receipts to see monthly spending trends"
+                        : "No spending data in the last 12 months"
+                      }
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {(timeframe === 'daily' || timeframe === 'yearly' || timeframe === 'all') && (
+            <div className="h-64 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <Calendar className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                <p>Timeframe "{timeframe}" view coming soon</p>
+                <p className="text-xs mt-2">Currently showing weekly and monthly views</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      
+      {/* Keep the original charts for reference but hide them */}
+      <div className="hidden">
       {/* Weekly Spending Chart */}
       <Card className="shadow-card">
         <CardHeader>
@@ -311,6 +452,7 @@ export const SpendingCharts: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };
