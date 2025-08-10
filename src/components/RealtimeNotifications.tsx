@@ -1,0 +1,76 @@
+import { useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/AuthContext';
+import { toast } from 'sonner';
+import { CheckCircle, XCircle, Bell } from 'lucide-react';
+
+export const RealtimeNotifications = () => {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('receipt-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'receipts',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          const { new: newRecord, old: oldRecord } = payload;
+          
+          // Only show notification if status actually changed
+          if (newRecord.status !== oldRecord.status) {
+            if (newRecord.status === 'approved') {
+              toast.success('Receipt Approved!', {
+                description: `Your receipt from ${newRecord.merchant} has been approved. You earned ${newRecord.points} points!`,
+                icon: <CheckCircle className="h-4 w-4" />,
+                duration: 5000,
+              });
+            } else if (newRecord.status === 'rejected') {
+              toast.error('Receipt Rejected', {
+                description: `Your receipt from ${newRecord.merchant} was rejected. Please contact support if you believe this is an error.`,
+                icon: <XCircle className="h-4 w-4" />,
+                duration: 5000,
+              });
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users_profile',
+          filter: `id=eq.${user.id}`
+        },
+        (payload) => {
+          const { new: newRecord, old: oldRecord } = payload;
+          
+          // Notify about points changes
+          if (newRecord.total_points !== oldRecord.total_points) {
+            const pointsDiff = newRecord.total_points - oldRecord.total_points;
+            if (pointsDiff > 0) {
+              toast.success('Points Earned!', {
+                description: `You earned ${pointsDiff} points! Total: ${newRecord.total_points}`,
+                icon: <Bell className="h-4 w-4" />,
+                duration: 3000,
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  return null; // This component doesn't render anything
+};
