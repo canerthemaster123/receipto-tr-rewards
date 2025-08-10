@@ -120,8 +120,9 @@ const UploadReceipt: React.FC = () => {
         .getPublicUrl(fileName);
 
       // Call OCR edge function
+      const fakeOcr = localStorage.getItem('qa.fakeOcr') === '1';
       const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
-        body: { imageUrl: publicUrl }
+        body: { imageUrl: publicUrl + (fakeOcr ? '?qa-fake-ocr=1' : '') }
       });
 
       if (ocrError) {

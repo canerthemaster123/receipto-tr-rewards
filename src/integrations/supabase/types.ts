@@ -263,6 +263,14 @@ export type Database = {
         Args: { referral_code: string }
         Returns: Json
       }
+      qa_make_self_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      qa_reset_test_data: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       redeem_reward: {
         Args: { reward_name: string; points_cost: number }
         Returns: Json

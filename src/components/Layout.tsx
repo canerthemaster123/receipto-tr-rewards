@@ -122,6 +122,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 size="sm"
                 onClick={handleLogout}
                 className="text-muted-foreground hover:text-foreground"
+                data-testid="logout-button"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden lg:ml-2 lg:block">{t('common.logout')}</span>

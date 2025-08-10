@@ -146,7 +146,7 @@ const AuthPage: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" data-testid="auth-form">
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>

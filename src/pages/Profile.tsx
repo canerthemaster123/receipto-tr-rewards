@@ -143,7 +143,7 @@ const Profile: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="font-medium">Total Points</span>
-                <Badge variant="secondary" className="text-lg px-3 py-1">
+                <Badge variant="secondary" className="text-lg px-3 py-1" data-testid="total-points">
                   {stats.totalEarned.toLocaleString()}
                 </Badge>
               </div>
@@ -177,6 +177,7 @@ const Profile: React.FC = () => {
                     value={userProfile?.referral_code || ''} 
                     readOnly 
                     className="font-mono"
+                    data-testid="referral-code"
                   />
                   <Button
                     variant="outline"
