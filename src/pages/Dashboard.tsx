@@ -77,11 +77,11 @@ const Dashboard: React.FC = () => {
               <div className="p-3 bg-primary/10 rounded-xl">
                 <Coins className="h-6 w-6 text-primary" />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t('dashboard.totalPoints')}</p>
-                <p className="text-2xl font-bold text-primary">{stats.totalEarned.toLocaleString()}</p>
-              </div>
-            </div>
+               <div>
+                 <p className="text-sm text-muted-foreground">{t('dashboard.totalPoints')}</p>
+                 <p className="text-2xl font-bold text-primary" data-testid="total-points">{stats.totalEarned.toLocaleString()}</p>
+               </div>
+             </div>
           </CardContent>
         </Card>
 
