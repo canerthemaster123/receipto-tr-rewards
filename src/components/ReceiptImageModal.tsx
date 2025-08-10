@@ -40,24 +40,60 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
     try {
       setLoading(true);
       
-      // Extract the file path from the full URL
-      const urlParts = imageUrl.split('/');
-      const fileName = urlParts[urlParts.length - 1];
+      // Extract the file path from the full URL - handle both formats
+      let filePath = '';
       
+      if (imageUrl.includes('/storage/v1/object/public/receipts/')) {
+        // Public URL format
+        const urlParts = imageUrl.split('/storage/v1/object/public/receipts/');
+        filePath = urlParts[1];
+      } else if (imageUrl.includes('/receipts/')) {
+        // Simple format
+        const urlParts = imageUrl.split('/receipts/');
+        filePath = urlParts[1];
+      } else {
+        // Last resort: take filename from end of URL
+        const urlParts = imageUrl.split('/');
+        filePath = urlParts[urlParts.length - 1];
+      }
+
+      if (!filePath) {
+        throw new Error('Could not extract file path from URL');
+      }
+
       const { data, error } = await supabase.storage
         .from('receipts')
-        .createSignedUrl(fileName, 300); // 5 minutes expiry
+        .createSignedUrl(filePath, 300); // 5 minutes expiry
 
       if (error) {
+        console.error('Supabase signed URL error:', error);
         throw error;
+      }
+
+      if (!data?.signedUrl) {
+        throw new Error('No signed URL returned');
       }
 
       setSignedUrl(data.signedUrl);
     } catch (error) {
       console.error('Error generating signed URL:', error);
+      
+      // Fallback: try to use the original URL if it's accessible
+      if (imageUrl) {
+        try {
+          const testResponse = await fetch(imageUrl, { method: 'HEAD' });
+          if (testResponse.ok) {
+            setSignedUrl(imageUrl);
+            return;
+          }
+        } catch (testError) {
+          console.error('Original URL also inaccessible:', testError);
+        }
+      }
+      
       toast({
         title: 'Error',
-        description: 'Failed to load receipt image',
+        description: 'Failed to load receipt image. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -69,35 +105,80 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
     if (!signedUrl) return;
 
     try {
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
-      
-      // Create download link
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      
+      // Mobile detection
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const isIOSSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+
       // Generate filename: merchant_date_id.jpg
       const cleanMerchant = merchant.replace(/[^a-zA-Z0-9]/g, '_');
       const downloadFileName = `${cleanMerchant}_${purchaseDate}_${receiptId.slice(0, 8)}.jpg`;
-      link.download = downloadFileName;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up blob URL
-      window.URL.revokeObjectURL(downloadUrl);
-      
-      toast({
-        title: 'Success',
-        description: 'Receipt downloaded successfully',
-      });
+
+      if (isIOSSafari) {
+        // iOS Safari fallback: open in new tab with instructions
+        window.open(signedUrl, '_blank');
+        toast({
+          title: 'Download Instructions',
+          description: 'Long press the image and select "Save to Photos" to download',
+        });
+        return;
+      }
+
+      // Try direct download approach for modern browsers
+      try {
+        const response = await fetch(signedUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        
+        // Create download link
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = downloadFileName;
+        
+        // Force download attribute support check
+        if (typeof link.download !== 'undefined') {
+          // Modern browsers with download attribute support
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          // Clean up blob URL
+          window.URL.revokeObjectURL(downloadUrl);
+          
+          toast({
+            title: 'Success',
+            description: 'Receipt downloaded successfully',
+          });
+        } else {
+          // Fallback for browsers without download attribute
+          throw new Error('Download attribute not supported');
+        }
+      } catch (downloadError) {
+        console.warn('Direct download failed, trying fallback:', downloadError);
+        
+        // Fallback: open in new tab
+        window.open(signedUrl, '_blank');
+        
+        if (isMobile) {
+          toast({
+            title: 'Download Instructions',
+            description: 'Tap and hold the image, then select "Save Image" to download',
+          });
+        } else {
+          toast({
+            title: 'Download Instructions', 
+            description: 'Right-click the image and select "Save image as..." to download',
+          });
+        }
+      }
     } catch (error) {
       console.error('Error downloading receipt:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to download receipt',
+        title: 'Download Failed',
+        description: 'Unable to download receipt. Please try again.',
         variant: 'destructive',
       });
     }
@@ -147,12 +228,18 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
                 src={signedUrl}
                 alt={`Receipt from ${merchant}`}
                 className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
-                onError={() => {
+                onError={(e) => {
+                  console.error('Image failed to load:', signedUrl);
                   toast({
-                    title: 'Error',
-                    description: 'Failed to load receipt image',
+                    title: 'Image Load Error',
+                    description: 'Failed to display receipt image. You can still try downloading it.',
                     variant: 'destructive',
                   });
+                  // Hide the broken image
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+                onLoad={() => {
+                  console.log('Image loaded successfully');
                 }}
               />
             </div>
