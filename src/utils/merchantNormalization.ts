@@ -96,6 +96,34 @@ export const getDisplayMerchantName = (receipts: any[]): string => {
 };
 
 /**
+ * Get a clean display name for a single merchant string
+ */
+export const getCleanMerchantName = (merchantName: string): string => {
+  if (!merchantName) return '';
+  
+  // Remove common suffixes while keeping the core name readable
+  let clean = merchantName.trim();
+  
+  // Remove common company suffixes but keep readability
+  const suffixesToRemove = [
+    / A\.?Ş\.?$/i,
+    / LTD\.?$/i,
+    / ŞTİ\.?$/i,
+    / TİCARET.*$/i,
+    / GIDA.*$/i,
+    / MARKET.*$/i,
+    / MAĞAZA.*$/i,
+    / PERAKENDE.*$/i
+  ];
+  
+  suffixesToRemove.forEach(suffix => {
+    clean = clean.replace(suffix, '');
+  });
+  
+  return clean.trim() || merchantName; // Fallback to original if everything was removed
+};
+
+/**
  * Get merchant analytics data
  */
 export const getMerchantAnalytics = (receipts: any[]) => {
