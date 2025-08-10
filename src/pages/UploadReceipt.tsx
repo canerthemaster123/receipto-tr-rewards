@@ -24,7 +24,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
-import { config } from '../config';
+import { useAppSettings } from '../hooks/useAppSettings';
 import type { OCRResult } from '../types/ocr';
 
 interface ReceiptData {
@@ -55,6 +55,7 @@ const UploadReceipt: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const { getSetting } = useAppSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (selectedFile: File) => {
@@ -214,9 +215,9 @@ const UploadReceipt: React.FC = () => {
       return;
     }
 
-    // Check for duplicate receipts (skip if QA flag is enabled)
-    // ⚠️ QA ONLY – disable before production release
-    if (!config.ALLOW_DUPLICATE_RECEIPTS) {
+    // Check for duplicate receipts based on app settings
+    const dupEnforcementEnabled = getSetting('dup_enforcement_enabled', true);
+    if (dupEnforcementEnabled) {
       const isDuplicate = await checkForDuplicateReceipt(
         validation.sanitizedData.storeName,
         validation.sanitizedData.date,
@@ -231,6 +232,21 @@ const UploadReceipt: React.FC = () => {
         });
         setIsProcessing(false);
         return;
+      }
+    } else if (!dupEnforcementEnabled) {
+      // Show warning toast when duplicates are allowed
+      const isDuplicate = await checkForDuplicateReceipt(
+        validation.sanitizedData.storeName,
+        validation.sanitizedData.date,
+        validation.sanitizedData.totalAmount
+      );
+      
+      if (isDuplicate) {
+        toast({
+          title: "Duplicate Receipt Detected",
+          description: "Duplicate upload allowed (test mode)",
+          variant: "default",
+        });
       }
     }
 
@@ -281,7 +297,7 @@ const UploadReceipt: React.FC = () => {
           payment_method: validation.sanitizedData.paymentMethod,
           items: validation.sanitizedData.items,
           image_url: imageUrl,
-          status: 'pending',
+          status: getSetting('auto_approve_receipts', false) ? 'approved' : 'pending',
           points: 100 // Points awarded upon approval
         });
 

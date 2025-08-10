@@ -111,7 +111,7 @@ export const useReceiptData = (): UseReceiptDataReturn => {
     };
   }, [user, fetchReceipts]);
 
-  // Calculate stats
+  // Calculate stats - now using points ledger for accurate totals
   const stats = {
     totalReceipts: receipts.length,
     approvedReceipts: receipts.filter(r => r.status === 'approved').length,
@@ -122,7 +122,7 @@ export const useReceiptData = (): UseReceiptDataReturn => {
       const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       return new Date(receipt.created_at) >= thisMonth;
     }).length,
-    totalEarned: userProfile?.total_points || 0,
+    totalEarned: userProfile?.total_points || 0, // Will be updated by points ledger hook
     totalSpent: receipts
       .filter(r => r.status === 'approved')
       .reduce((sum, r) => sum + parseFloat(r.total.toString()), 0),

@@ -3,6 +3,9 @@ import { useAuth } from '../components/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/enhanced-button';
 import { Badge } from '../components/ui/badge';
+import { useRewards } from '../hooks/useRewards';
+import { usePointsLedger } from '../hooks/usePointsLedger';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Gift, 
   Coins, 
@@ -12,11 +15,12 @@ import {
   GamepadIcon,
   CreditCard,
   CheckCircle,
-  Star
+  Star,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
-interface Reward {
+interface StaticReward {
   id: string;
   title: string;
   description: string;
@@ -29,12 +33,28 @@ interface Reward {
   image?: string;
 }
 
-const Rewards: React.FC = () => {
-  const { user, userProfile, updatePoints } = useAuth();
-  const { toast } = useToast();
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+interface DatabaseReward {
+  id: string;
+  name: string;
+  cost: number;
+  stock: number;
+  active: boolean;
+  description?: string;
+  category?: string;
+}
 
-  const rewards: Reward[] = [
+type RewardType = StaticReward | DatabaseReward;
+
+const Rewards: React.FC = () => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const { rewards: dbRewards, loading: rewardsLoading } = useRewards();
+  const { totalPoints } = usePointsLedger();
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+
+  // Fallback static rewards for demo if no database rewards
+  const staticRewards: StaticReward[] = [
     {
       id: '1',
       title: 'Amazon Gift Card',
@@ -99,6 +119,9 @@ const Rewards: React.FC = () => {
     }
   ];
 
+  // Use database rewards if available, otherwise fallback to static
+  const displayRewards: RewardType[] = dbRewards.length > 0 ? dbRewards : staticRewards;
+
   const categories = [
     { id: 'all', label: 'All Rewards', icon: Gift },
     { id: 'gift_card', label: 'Gift Cards', icon: ShoppingBag },
@@ -107,32 +130,67 @@ const Rewards: React.FC = () => {
   ];
 
   const filteredRewards = selectedCategory === 'all' 
-    ? rewards 
-    : rewards.filter(reward => reward.category === selectedCategory);
+    ? displayRewards 
+    : displayRewards.filter(reward => reward.category === selectedCategory);
 
-  const handleRedeem = async (reward: Reward) => {
+  const getRewardCost = (reward: RewardType): number => {
+    return 'cost' in reward ? reward.cost : reward.points;
+  };
+
+  const getRewardName = (reward: RewardType): string => {
+    return 'name' in reward ? reward.name : reward.title;
+  };
+
+  const getRewardDescription = (reward: RewardType): string => {
+    return reward.description || `Redeem ${getRewardName(reward)} with your points`;
+  };
+
+  const handleRedeem = async (reward: RewardType) => {
     if (!user) return;
 
-    const currentPoints = userProfile?.total_points || 0;
-    if (currentPoints < reward.points) {
+    const cost = getRewardCost(reward);
+    const name = getRewardName(reward);
+
+    if (totalPoints < cost) {
       toast({
         title: "Insufficient Points",
-        description: `You need ${reward.points - currentPoints} more points to redeem this reward.`,
+        description: `You need ${cost - totalPoints} more points to redeem this reward.`,
         variant: "destructive",
       });
       return;
     }
 
-    // Mock redemption process
-    updatePoints(currentPoints - reward.points);
+    setIsRedeeming(true);
     
-    toast({
-      title: "Reward Redeemed!",
-      description: `${reward.title} has been sent to your email. Check your inbox!`,
-    });
+    try {
+      const { data, error } = await supabase.rpc('redeem_reward', {
+        reward_name: name,
+        points_cost: cost
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast({
+          title: "Reward Redeemed!",
+          description: `${name} redemption is being processed. Check "My Rewards" for updates.`,
+        });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error) {
+      console.error('Redemption error:', error);
+      toast({
+        title: "Redemption Failed",
+        description: error instanceof Error ? error.message : "Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRedeeming(false);
+    }
   };
 
-  const canAfford = (points: number) => userProfile ? userProfile.total_points >= points : false;
+  const canAfford = (points: number) => totalPoints >= points;
 
   return (
     <div className="space-y-6">
@@ -152,7 +210,7 @@ const Rewards: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-white/80 text-sm">Your Points Balance</p>
-              <p className="text-3xl font-bold">{userProfile?.total_points?.toLocaleString() || 0}</p>
+              <p className="text-3xl font-bold">{totalPoints.toLocaleString()}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
               <Coins className="h-8 w-8" />
@@ -180,75 +238,90 @@ const Rewards: React.FC = () => {
       </div>
 
       {/* Rewards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredRewards.map((reward) => {
-          const Icon = reward.icon;
-          const affordable = canAfford(reward.points);
+      {rewardsLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredRewards.map((reward) => {
+            const cost = getRewardCost(reward);
+            const name = getRewardName(reward);
+            const description = getRewardDescription(reward);
+            const affordable = canAfford(cost);
           
-          return (
-            <Card 
-              key={reward.id} 
-              className={`shadow-card hover:shadow-elegant transition-all relative ${
-                !affordable ? 'opacity-75' : ''
-              }`}
-            >
-              {reward.popular && (
-                <Badge className="absolute -top-2 -right-2 bg-accent text-white z-10">
-                  Popular
-                </Badge>
-              )}
-              
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-xl ${
-                    affordable ? 'bg-primary/10' : 'bg-muted'
-                  }`}>
-                    <Icon className={`h-6 w-6 ${
-                      affordable ? 'text-primary' : 'text-muted-foreground'
-                    }`} />
+            return (
+              <Card 
+                key={reward.id} 
+                className={`shadow-card hover:shadow-elegant transition-all relative ${
+                  !affordable ? 'opacity-75' : ''
+                }`}
+              >
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-3 rounded-xl ${
+                      affordable ? 'bg-primary/10' : 'bg-muted'
+                    }`}>
+                      <Gift className={`h-6 w-6 ${
+                        affordable ? 'text-primary' : 'text-muted-foreground'
+                      }`} />
+                    </div>
+                    <div className="flex-1">
+                      <CardTitle className="text-lg">{name}</CardTitle>
+                      <CardDescription>
+                        {'brand' in reward ? reward.brand : reward.category || 'Reward'}
+                      </CardDescription>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{reward.title}</CardTitle>
-                    <CardDescription>{reward.brand}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {reward.description}
-                </p>
+                </CardHeader>
                 
-                <div className="flex items-center justify-between">
-                  <div className="text-2xl font-bold text-primary">
-                    {reward.value}
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    {description}
+                  </p>
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-secondary">
+                      <Coins className="h-4 w-4" />
+                      <span className="font-medium">{cost.toLocaleString()}</span>
+                    </div>
+                    {'stock' in reward ? (
+                      <div className="text-sm text-muted-foreground">
+                        Stock: {reward.stock}
+                      </div>
+                    ) : 'value' in reward ? (
+                      <div className="text-sm text-primary font-medium">
+                        {reward.value}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="flex items-center gap-1 text-secondary">
-                    <Coins className="h-4 w-4" />
-                    <span className="font-medium">{reward.points.toLocaleString()}</span>
-                  </div>
-                </div>
-                
-                <Button
-                  onClick={() => handleRedeem(reward)}
-                  disabled={!affordable}
-                  variant={affordable ? "reward" : "outline"}
-                  className="w-full"
-                >
-                  {affordable ? (
-                    <>
-                      <CheckCircle className="h-4 w-4" />
-                      Redeem Now
-                    </>
-                  ) : (
-                    `Need ${(reward.points - (userProfile?.total_points || 0)).toLocaleString()} more points`
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                  
+                  <Button
+                    onClick={() => handleRedeem(reward)}
+                    disabled={!affordable || isRedeeming || ('stock' in reward && reward.stock <= 0)}
+                    variant={affordable ? "default" : "outline"}
+                    className="w-full"
+                  >
+                    {isRedeeming ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Redeeming...
+                      </>
+                    ) : affordable ? (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        Redeem Now
+                      </>
+                    ) : (
+                      `Need ${(cost - totalPoints).toLocaleString()} more points`
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* How it Works */}
       <Card className="shadow-card">

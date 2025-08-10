@@ -17,6 +17,9 @@ import AdminPanel from "./pages/AdminPanel";
 import Profile from "./pages/Profile";
 import ReferralPage from "./pages/ReferralPage";
 import OCRDebugPage from "./pages/OCRDebugPage";
+import Settings from "./pages/Settings";
+import PointsHistory from "./pages/PointsHistory";
+import MyRewards from "./pages/MyRewards";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -167,6 +170,30 @@ const App = () => (
                     <OCRDebugPage />
                   </AdminRoute>
                 )
+              } 
+            />
+            <Route 
+              path="/settings" 
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/points-history" 
+              element={
+                <ProtectedRoute>
+                  <PointsHistory />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/my-rewards" 
+              element={
+                <ProtectedRoute>
+                  <MyRewards />
+                </ProtectedRoute>
               } 
             />
             <Route path="*" element={<NotFound />} />
