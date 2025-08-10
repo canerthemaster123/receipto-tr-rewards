@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/enhanced-button';
 import { Badge } from '../components/ui/badge';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { formatTRY } from '../utils/currency';
+import { useAuth } from '../components/AuthContext';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AdminRoute from '../components/AdminRoute';
@@ -380,10 +384,10 @@ const AdminPanel: React.FC = () => {
                     </div>
                     
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Amount:</span>
-                        <p className="font-medium">₺{receipt.amount.toFixed(2)}</p>
-                      </div>
+                       <div>
+                         <span className="text-muted-foreground">Amount:</span>
+                         <p className="font-medium">{formatTRY(receipt.amount)}</p>
+                       </div>
                       <div>
                         <span className="text-muted-foreground">Purchase Date:</span>
                         <p className="font-medium">{new Date(receipt.date).toLocaleDateString('tr-TR')}</p>

@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { useReceiptData } from '../hooks/useReceiptData';
 import { ReceiptImageModal } from '../components/ReceiptImageModal';
 import { normalizeMerchant, getCleanMerchantName } from '../utils/merchantNormalization';
+import { formatTRY } from '../utils/currency';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -542,8 +543,8 @@ const ReceiptHistory: React.FC = () => {
 
                       {/* Status and Amount */}
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-xl font-bold">₺{parseFloat(receipt.total.toString()).toFixed(2)}</p>
+                         <div className="text-right">
+                           <p className="text-xl font-bold text-primary">{formatTRY(receipt.total)}</p>
                           {receipt.status === 'approved' && (
                             <p className="text-sm text-secondary">
                               <Coins className="h-3 w-3 inline mr-1" />
@@ -670,10 +671,10 @@ const ReceiptHistory: React.FC = () => {
                   </div>
                 )}
                 
-                <div className="flex justify-between items-center font-semibold">
-                  <span>Total:</span>
-                  <span>₺{parseFloat(selectedReceipt.total.toString()).toFixed(2)}</span>
-                </div>
+                 <div className="flex justify-between items-center font-semibold">
+                   <span>Total:</span>
+                   <span>{formatTRY(selectedReceipt.total)}</span>
+                 </div>
               </div>
 
               <div className="flex gap-2">

@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useTranslation } from 'react-i18next';
 import { TrendingUp, Calendar, Loader2 } from 'lucide-react';
 import { Skeleton } from '../components/ui/skeleton';
+import { formatTRY, formatTRYCompact } from '../utils/currency';
 
 interface ChartData {
   period: string;
@@ -134,16 +135,6 @@ export const SpendingCharts: React.FC = () => {
     }
   }, [receipts, loading, approvedReceipts.length]);
 
-  const formatCurrency = (value: number) => {
-    if (isNaN(value) || value === null || value === undefined) return '₺0';
-    return new Intl.NumberFormat('tr-TR', {
-      style: 'currency',
-      currency: 'TRY',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length && payload[0]?.payload) {
       const data = payload[0].payload;
@@ -151,7 +142,7 @@ export const SpendingCharts: React.FC = () => {
         <div className="bg-white p-3 border border-border rounded-lg shadow-lg">
           <p className="font-medium">{label}</p>
           <p className="text-primary">
-            {formatCurrency(data.amount || 0)}
+            {formatTRY(data.amount || 0)}
           </p>
           <p className="text-sm text-muted-foreground">
             {data.count || 0} {data.count === 1 ? 'receipt' : 'receipts'}
@@ -229,11 +220,11 @@ export const SpendingCharts: React.FC = () => {
                       textAnchor="end"
                       height={60}
                     />
-                    <YAxis 
-                      fontSize={12}
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                      tickFormatter={(value) => `₺${value}`}
-                    />
+                     <YAxis 
+                       fontSize={12}
+                       tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                       tickFormatter={(value) => formatTRYCompact(value)}
+                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Bar 
                       dataKey="amount" 
@@ -286,11 +277,11 @@ export const SpendingCharts: React.FC = () => {
                     textAnchor="end"
                     height={60}
                   />
-                  <YAxis 
-                    fontSize={12}
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    tickFormatter={(value) => `₺${value}`}
-                  />
+                   <YAxis 
+                     fontSize={12}
+                     tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                     tickFormatter={(value) => formatTRYCompact(value)}
+                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Line 
                     type="monotone" 

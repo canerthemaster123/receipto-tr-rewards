@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { useReceiptData } from '../hooks/useReceiptData';
 import { SpendingCharts } from '../components/SpendingCharts';
+import { formatTRY } from '../utils/currency';
 import { 
   Upload, 
   Gift, 
@@ -232,8 +233,8 @@ const Dashboard: React.FC = () => {
                          </div>
                        </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium">₺{parseFloat(receipt.total.toString()).toFixed(2)}</p>
+                     <div className="text-right">
+                       <p className="font-medium">{formatTRY(receipt.total)}</p>
                       <p className="text-sm text-secondary">
                         {receipt.status === 'approved' ? `+${receipt.points} pts` : 
                          receipt.status === 'pending' ? t('dashboard.reviewing') : 

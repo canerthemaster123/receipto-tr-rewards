@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '../components/ui/badge';
 import { Copy, Download, FileText, Settings } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
+import { formatTRY } from '../utils/currency';
 
 interface ParsedOCRResult {
   merchant_raw: string;
@@ -35,58 +36,152 @@ const OCRDebugPage: React.FC = () => {
   const [parsedResult, setParsedResult] = useState<ParsedOCRResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Sample Turkish receipt for testing
+  const MIGROS_SAMPLE = `MİGROS TİCARET A.Ş.
+GÜNEY MEGA STORE
+Barbaros Mah. Begonya Sk. No:3/A
+34349 İSTANBUL
+VERGİ NO: 6200278131
+TARİH: 08.01.2025
+SAAT: 14:23:45
+FİŞ NO: 0078
+
+#60020857386623299
+SERFRESH SADE ŞALGAM
+*12,75
+
+ZEYTIN DOLMASI
+2,500 KG x 89,90
+*224,75
+
+KAMPANYA İNDİRİMİ
+*-5,50
+
+TUTAR İNDİRİM
+*-3,25
+
+ARA TOPLAM              228,75
+TOPLAM                  *228,75
+
+#494314******4645 ORTAK POS
+ONAY KODU: 123456
+TERMINAL: 12345678
+
+4039592837461029583947261
+`;
+
   // Since we can't directly import OCR functions in frontend, 
   // we'll create a simplified version for testing
   const parseOCRText = (text: string): ParsedOCRResult => {
     const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
     
-    // Extract merchant (usually first few lines)
-    const merchant = lines.find(line => 
+    // Extract merchant brand using simplified normalization
+    let merchant = lines.find(line => 
       /^(MİGROS|MIGROS|BİM|A101|ŞOK|CARREFOUR|REAL|MACRO)/i.test(line)
     ) || lines[0] || '';
+    
+    // Normalize to brand
+    let brand = merchant;
+    if (/migros/i.test(merchant)) brand = 'Migros';
+    else if (/bim/i.test(merchant)) brand = 'BİM';
+    else if (/a101/i.test(merchant)) brand = 'A101';
+    else if (/şok|sok/i.test(merchant)) brand = 'ŞOK';
+    else if (/carrefour/i.test(merchant)) brand = 'CarrefourSA';
 
     // Extract date
-    const datePattern = /(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{4})/;
+    const datePattern = /TARİH\s*:\s*(\d{2}\.\d{2}\.\d{4})|(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{4})/i;
     const dateMatch = text.match(datePattern);
-    const purchase_date = dateMatch ? dateMatch[1] : '';
+    const purchase_date = dateMatch ? (dateMatch[1] || dateMatch[2]) : '';
 
     // Extract time
-    const timePattern = /\b([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?\b/;
+    const timePattern = /SAAT\s*:\s*(\d{2}:\d{2}:\d{2})|(\d{1,2}:\d{2}:\d{2})/i;
     const timeMatch = text.match(timePattern);
-    const purchase_time = timeMatch ? timeMatch[0] : null;
+    const purchase_time = timeMatch ? (timeMatch[1] || timeMatch[2]) : null;
 
-    // Extract total
-    const totalPattern = /TOPLAM[\s:]*₺?(\d+[,\.]\d{2})/i;
+    // Extract total (avoiding discount lines)
+    const totalPattern = /TOPLAM[\s:]*₺?\*?(\d+[,\.]\d{2})/i;
     const totalMatch = text.match(totalPattern);
     const total = totalMatch ? parseFloat(totalMatch[1].replace(',', '.')) : 0;
 
     // Extract address (lines with street indicators)
     const store_address = lines.find(line =>
-      /\b(Cad\.|Caddesi|Mah\.|Mahallesi|Sk\.|Sokak|No\b|Blok)\b/i.test(line)
+      /\b(Mah\.|Mahallesi|Sk\.|Sokak|No\b|Cad\.|Caddesi)\b/i.test(line)
     ) || null;
 
     // Extract payment method
-    const paymentPattern = /(\*{4}\s*\d{4}|\d{4}\s*\*{4}|\d{4}\s*\*+\s*\d{4})/;
+    const paymentPattern = /#?(\d{6}\*{4,6}\d{4}|\d{4}\s*\*{4}\s*\d{4})/;
     const paymentMatch = text.match(paymentPattern);
-    const payment_method = paymentMatch ? paymentMatch[0] : null;
+    const payment_method = paymentMatch ? paymentMatch[1] : null;
 
-    // Extract items (simplified)
-    const items = lines
-      .filter(line => {
-        // Skip header/footer lines
-        if (/^(MİGROS|MIGROS|BİM|A101|ŞOK|CARREFOUR|VERGİ|MERSIS|TEL|TOPLAM|SAAT|TARİH)/i.test(line)) return false;
-        if (/^\d+[,\.]\d{2}$/.test(line)) return false; // Just prices
-        if (line.length < 3) return false;
-        
-        // Include lines that look like items
-        return /[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}/.test(line);
-      })
-      .slice(0, 10) // Limit to first 10 potential items
-      .map(line => {
-        const priceMatch = line.match(/(\d+[,\.]\d{2})$/);
+    // Extract FİŞ NO
+    const fisPattern = /FİŞ\s*NO\s*:\s*(\d+)/i;
+    const fisMatch = text.match(fisPattern);
+    const fis_no = fisMatch ? fisMatch[1] : null;
+
+    // Extract barcode (18-24 digit sequence)
+    const barcodePattern = /\b(\d{18,24})\b/;
+    const barcodeLines = lines.slice(-5); // Check last 5 lines
+    let receipt_unique_no = null;
+    for (const line of barcodeLines) {
+      const match = line.match(barcodePattern);
+      if (match) {
+        receipt_unique_no = match[1];
+        break;
+      }
+    }
+
+    // Parse items (filter out discounts, handle product codes)
+    const items = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      
+      // Skip header/footer lines and discounts
+      if (/^(MİGROS|MIGROS|BİM|A101|VERGİ|MERSIS|TEL|TOPLAM|SAAT|TARİH|ONAY|TERMINAL)/i.test(line)) {
+        i++;
+        continue;
+      }
+      
+      // Skip discount lines
+      if (/\b(İNDİRİM|INDIRIM|KAMPANYA|PROMOSYON)\b/i.test(line)) {
+        i++;
+        continue;
+      }
+      
+      // Check for product code (#<digits>)
+      const productCodeMatch = line.match(/^#(\d{6,})/);
+      if (productCodeMatch) {
+        const product_code = productCodeMatch[1];
+        // Look for item name on next line
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          if (nextLine && /[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}/.test(nextLine) && 
+              !/\b(İNDİRİM|INDIRIM|KAMPANYA)\b/i.test(nextLine)) {
+            
+            const priceMatch = nextLine.match(/\*?(\d+[,\.]\d{2})$/);
+            const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : undefined;
+            const name = nextLine.replace(/\*?\d+[,\.]\d{2}$/, '').trim();
+            
+            if (name.length >= 2) {
+              items.push({
+                name,
+                line_total: price,
+                raw_line: line,
+                product_code
+              });
+            }
+            i += 2; // Skip both lines
+            continue;
+          }
+        }
+      }
+      
+      // Regular item line
+      if (/[A-ZÇĞİÖŞÜa-zçğıöşü]{2,}/.test(line) && !/^\d+[,\.]\d{2}$/.test(line)) {
+        const priceMatch = line.match(/\*?(\d+[,\.]\d{2})$/);
         const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : undefined;
         
-        const qtyMatch = line.match(/(\d+(?:[,\.]\d+)?)\s*[xX×]\s*(\d+(?:[,\.]\d+)?)/);
+        const qtyMatch = line.match(/(\d+(?:[,\.]\d+)?)\s*KG\s*x\s*(\d+(?:[,\.]\d+)?)/);
         let qty: number | undefined;
         let unit_price: number | undefined;
         
@@ -95,28 +190,32 @@ const OCRDebugPage: React.FC = () => {
           unit_price = parseFloat(qtyMatch[2].replace(',', '.'));
         }
 
-        const name = line.replace(/\d+[,\.]\d{2}$/, '').trim();
+        const name = line.replace(/\*?\d+[,\.]\d{2}$/, '').replace(/\d+(?:[,\.]\d+)?\s*KG\s*x\s*\d+(?:[,\.]\d+)?/, '').trim();
         
-        return {
-          name,
-          qty,
-          unit_price,
-          line_total: price,
-          raw_line: line
-        };
-      });
+        if (name.length >= 2) {
+          items.push({
+            name,
+            qty,
+            unit_price,
+            line_total: price,
+            raw_line: line
+          });
+        }
+      }
+      i++;
+    }
 
     return {
       merchant_raw: merchant.replace(/[^A-ZÇĞİÖŞÜa-zçğıöşü\s]/g, '').trim(),
-      merchant_brand: merchant.replace(/[^A-ZÇĞİÖŞÜa-zçğıöşü\s]/g, '').trim(),
+      merchant_brand: brand,
       purchase_date,
       purchase_time,
       store_address,
       total,
       items,
       payment_method,
-      receipt_unique_no: null,
-      fis_no: null,
+      receipt_unique_no,
+      fis_no,
       raw_text: text
     };
   };
@@ -193,6 +292,86 @@ const OCRDebugPage: React.FC = () => {
     setParsedResult(null);
   };
 
+  const handleLoadSample = () => {
+    setRawText(MIGROS_SAMPLE);
+    toast({
+      title: 'Sample Loaded',
+      description: 'Migros sample receipt loaded for testing'
+    });
+  };
+
+  const runUnitTests = () => {
+    const tests = [
+      {
+        name: 'Discount lines are filtered out',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          const hasDiscountItems = result.items.some(item => 
+            /\b(İNDİRİM|INDIRIM|KAMPANYA|PROMOSYON)\b/i.test(item.name)
+          );
+          return !hasDiscountItems;
+        }
+      },
+      {
+        name: 'Product code + name extraction',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          const productCodeItem = result.items.find(item => item.product_code);
+          return productCodeItem && productCodeItem.name === 'SERFRESH SADE ŞALGAM' && 
+                 productCodeItem.product_code === '60020857386623299';
+        }
+      },
+      {
+        name: 'Merchant brand normalization',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          return result.merchant_brand === 'Migros';
+        }
+      },
+      {
+        name: 'Barcode extraction',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          return result.receipt_unique_no === '4039592837461029583947261';
+        }
+      },
+      {
+        name: 'FİŞ NO extraction',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          return result.fis_no === '0078';
+        }
+      },
+      {
+        name: 'Total amount correct',
+        test: () => {
+          const result = parseOCRText(MIGROS_SAMPLE);
+          return Math.abs(result.total - 228.75) < 0.01;
+        }
+      }
+    ];
+
+    const results = tests.map(({ name, test }) => {
+      try {
+        const passed = test();
+        return { name, passed, error: null };
+      } catch (error) {
+        return { name, passed: false, error: error.message };
+      }
+    });
+
+    const allPassed = results.every(r => r.passed);
+    
+    toast({
+      title: `Unit Tests ${allPassed ? 'Passed' : 'Failed'}`,
+      description: `${results.filter(r => r.passed).length}/${results.length} tests passed`,
+      variant: allPassed ? 'default' : 'destructive'
+    });
+
+    console.log('OCR Unit Test Results:', results);
+    return results;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -238,10 +417,26 @@ const OCRDebugPage: React.FC = () => {
               </Button>
               <Button 
                 variant="outline"
+                onClick={handleLoadSample}
+              >
+                Load Sample
+              </Button>
+              <Button 
+                variant="outline"
                 onClick={handleClearText}
                 disabled={!rawText && !parsedResult}
               >
                 {t('debug.clearText')}
+              </Button>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="secondary"
+                onClick={runUnitTests}
+                className="flex-1"
+              >
+                Run Unit Tests
               </Button>
             </div>
           </CardContent>
@@ -296,10 +491,10 @@ const OCRDebugPage: React.FC = () => {
                     <span className="font-medium">Time:</span>
                     <p className="text-muted-foreground">{parsedResult.purchase_time || 'N/A'}</p>
                   </div>
-                  <div>
-                    <span className="font-medium">Total:</span>
-                    <p className="text-muted-foreground">₺{parsedResult.total.toFixed(2)}</p>
-                  </div>
+                   <div>
+                     <span className="font-medium">Total:</span>
+                     <p className="text-muted-foreground">{formatTRY(parsedResult.total)}</p>
+                   </div>
                 </div>
 
                 {parsedResult.store_address && (
@@ -336,11 +531,12 @@ const OCRDebugPage: React.FC = () => {
                     {parsedResult.items.map((item, index) => (
                       <div key={index} className="text-xs bg-muted/50 p-2 rounded">
                         <div className="font-medium">{item.name}</div>
-                        <div className="text-muted-foreground">
-                          {item.qty && `Qty: ${item.qty} • `}
-                          {item.unit_price && `Unit: ₺${item.unit_price} • `}
-                          {item.line_total && `Total: ₺${item.line_total}`}
-                        </div>
+                         <div className="text-muted-foreground">
+                           {item.qty && `Qty: ${item.qty} • `}
+                           {item.unit_price && `Unit: ${formatTRY(item.unit_price)} • `}
+                           {item.line_total && `Total: ${formatTRY(item.line_total)}`}
+                           {item.product_code && `Code: #${item.product_code}`}
+                         </div>
                       </div>
                     ))}
                   </div>
