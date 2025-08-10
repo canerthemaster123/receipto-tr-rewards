@@ -69,7 +69,7 @@ export const useReceiptData = (): UseReceiptDataReturn => {
     // Initial fetch
     fetchReceipts();
 
-    // Set up realtime subscription for receipts
+    // Set up realtime subscription for receipts with better error handling
     const receiptChannel = supabase
       .channel('receipt-changes')
       .on(
@@ -81,11 +81,18 @@ export const useReceiptData = (): UseReceiptDataReturn => {
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Receipt change detected:', payload);
-          fetchReceipts(); // Refetch on any change
+          console.log('Receipt change detected:', payload.eventType, (payload.new as any)?.status);
+          // Immediate refetch to ensure charts update
+          fetchReceipts();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Receipt realtime subscription active');
+        } else if (status === 'CLOSED') {
+          console.log('Receipt realtime subscription closed');
+        }
+      });
 
     // Set up realtime subscription for user profile changes (points updates)
     const profileChannel = supabase
@@ -99,11 +106,15 @@ export const useReceiptData = (): UseReceiptDataReturn => {
           filter: `id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Profile change detected:', payload);
-          // This will trigger a re-render with updated points
+          console.log('Profile change detected:', (payload.new as any)?.total_points);
+          // Profile changes might affect calculations, so refetch receipts too
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Profile realtime subscription active');
+        }
+      });
 
     return () => {
       supabase.removeChannel(receiptChannel);

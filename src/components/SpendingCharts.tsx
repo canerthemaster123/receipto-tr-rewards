@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useReceiptData } from '../hooks/useReceiptData';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { TrendingUp, Calendar } from 'lucide-react';
+import { TrendingUp, Calendar, Loader2 } from 'lucide-react';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface ChartData {
   period: string;
@@ -12,14 +13,27 @@ interface ChartData {
 }
 
 export const SpendingCharts: React.FC = () => {
-  const { receipts } = useReceiptData();
+  const { receipts, loading } = useReceiptData();
   const { t } = useTranslation();
+  const [isCalculating, setIsCalculating] = useState(false);
 
-  // Filter approved receipts only
-  const approvedReceipts = receipts.filter(r => r.status === 'approved');
+  // Filter approved receipts only and handle undefined/null values
+  const approvedReceipts = useMemo(() => {
+    if (!receipts || !Array.isArray(receipts)) return [];
+    return receipts.filter(r => 
+      r && 
+      r.status === 'approved' && 
+      r.purchase_date && 
+      r.total !== undefined && 
+      r.total !== null &&
+      !isNaN(parseFloat(r.total.toString()))
+    );
+  }, [receipts]);
 
-  // Generate weekly data (last 8 weeks)
+  // Generate weekly data (last 8 weeks) with proper error handling
   const getWeeklyData = (): ChartData[] => {
+    if (!approvedReceipts.length) return [];
+    
     const now = new Date();
     const weeklyData: ChartData[] = [];
 
@@ -33,15 +47,26 @@ export const SpendingCharts: React.FC = () => {
       weekEnd.setHours(23, 59, 59, 999);
 
       const weekReceipts = approvedReceipts.filter(r => {
-        const receiptDate = new Date(r.purchase_date);
-        return receiptDate >= weekStart && receiptDate <= weekEnd;
+        try {
+          const receiptDate = new Date(r.purchase_date);
+          return !isNaN(receiptDate.getTime()) && receiptDate >= weekStart && receiptDate <= weekEnd;
+        } catch {
+          return false;
+        }
       });
 
-      const totalAmount = weekReceipts.reduce((sum, r) => sum + parseFloat(r.total.toString()), 0);
+      const totalAmount = weekReceipts.reduce((sum, r) => {
+        try {
+          const amount = parseFloat(r.total.toString());
+          return sum + (isNaN(amount) ? 0 : amount);
+        } catch {
+          return sum;
+        }
+      }, 0);
 
       weeklyData.push({
         period: t('charts.week', { number: 8 - i }),
-        amount: totalAmount,
+        amount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
         count: weekReceipts.length
       });
     }
@@ -49,8 +74,10 @@ export const SpendingCharts: React.FC = () => {
     return weeklyData;
   };
 
-  // Generate monthly data (last 12 months)
+  // Generate monthly data (last 12 months) with proper error handling
   const getMonthlyData = (): ChartData[] => {
+    if (!approvedReceipts.length) return [];
+    
     const now = new Date();
     const monthlyData: ChartData[] = [];
 
@@ -60,15 +87,26 @@ export const SpendingCharts: React.FC = () => {
       const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
       const monthReceipts = approvedReceipts.filter(r => {
-        const receiptDate = new Date(r.purchase_date);
-        return receiptDate >= monthStart && receiptDate <= monthEnd;
+        try {
+          const receiptDate = new Date(r.purchase_date);
+          return !isNaN(receiptDate.getTime()) && receiptDate >= monthStart && receiptDate <= monthEnd;
+        } catch {
+          return false;
+        }
       });
 
-      const totalAmount = monthReceipts.reduce((sum, r) => sum + parseFloat(r.total.toString()), 0);
+      const totalAmount = monthReceipts.reduce((sum, r) => {
+        try {
+          const amount = parseFloat(r.total.toString());
+          return sum + (isNaN(amount) ? 0 : amount);
+        } catch {
+          return sum;
+        }
+      }, 0);
 
       monthlyData.push({
         period: monthDate.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' }),
-        amount: totalAmount,
+        amount: Math.round(totalAmount * 100) / 100, // Round to 2 decimal places
         count: monthReceipts.length
       });
     }
@@ -76,10 +114,28 @@ export const SpendingCharts: React.FC = () => {
     return monthlyData;
   };
 
-  const weeklyData = getWeeklyData();
-  const monthlyData = getMonthlyData();
+  // Memoize chart data calculations for better performance
+  const weeklyData = useMemo(() => {
+    setIsCalculating(true);
+    const data = getWeeklyData();
+    setIsCalculating(false);
+    return data;
+  }, [approvedReceipts, t]);
+
+  const monthlyData = useMemo(() => {
+    return getMonthlyData();
+  }, [approvedReceipts, t]);
+
+  // Set up realtime updates effect
+  useEffect(() => {
+    if (!loading && receipts.length > 0) {
+      // Charts will automatically update due to useMemo dependencies
+      console.log('Charts updated with', approvedReceipts.length, 'approved receipts');
+    }
+  }, [receipts, loading, approvedReceipts.length]);
 
   const formatCurrency = (value: number) => {
+    if (isNaN(value) || value === null || value === undefined) return '₺0';
     return new Intl.NumberFormat('tr-TR', {
       style: 'currency',
       currency: 'TRY',
@@ -89,16 +145,16 @@ export const SpendingCharts: React.FC = () => {
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
+    if (active && payload && payload.length && payload[0]?.payload) {
       const data = payload[0].payload;
       return (
         <div className="bg-white p-3 border border-border rounded-lg shadow-lg">
           <p className="font-medium">{label}</p>
           <p className="text-primary">
-            {formatCurrency(data.amount)}
+            {formatCurrency(data.amount || 0)}
           </p>
           <p className="text-sm text-muted-foreground">
-            {data.count} receipts
+            {data.count || 0} {data.count === 1 ? 'receipt' : 'receipts'}
           </p>
         </div>
       );
@@ -106,8 +162,40 @@ export const SpendingCharts: React.FC = () => {
     return null;
   };
 
-  const totalWeeklySpend = weeklyData.reduce((sum, week) => sum + week.amount, 0);
-  const totalMonthlySpend = monthlyData.reduce((sum, month) => sum + month.amount, 0);
+  const totalWeeklySpend = weeklyData.reduce((sum, week) => sum + (week.amount || 0), 0);
+  const totalMonthlySpend = monthlyData.reduce((sum, month) => sum + (month.amount || 0), 0);
+
+  // Show loading skeleton while data is being fetched
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Card className="shadow-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-5" />
+              <Skeleton className="h-6 w-32" />
+            </div>
+            <Skeleton className="h-4 w-48" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+        <Card className="shadow-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-5" />
+              <Skeleton className="h-6 w-32" />
+            </div>
+            <Skeleton className="h-4 w-48" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -123,38 +211,53 @@ export const SpendingCharts: React.FC = () => {
           </p>
         </CardHeader>
         <CardContent>
-          <div className="h-64">
-            {weeklyData.some(d => d.amount > 0) ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey="period" 
-                    fontSize={12}
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis 
-                    fontSize={12}
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    tickFormatter={(value) => `₺${value}`}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar 
-                    dataKey="amount" 
-                    fill="hsl(var(--primary))"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <div className="text-center">
-                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>{t('charts.noDataAvailable')}</p>
+          {isCalculating ? (
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="h-64">
+              {weeklyData.some(d => d.amount > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis 
+                      dataKey="period" 
+                      fontSize={12}
+                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis 
+                      fontSize={12}
+                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      tickFormatter={(value) => `₺${value}`}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar 
+                      dataKey="amount" 
+                      fill="hsl(var(--primary))"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  <div className="text-center">
+                    <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>{t('charts.noDataAvailable')}</p>
+                    <p className="text-xs mt-2">
+                      {approvedReceipts.length === 0 
+                        ? "Upload and approve receipts to see weekly spending trends"
+                        : "No spending data in the last 8 weeks"
+                      }
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -173,12 +276,15 @@ export const SpendingCharts: React.FC = () => {
           <div className="h-64">
             {monthlyData.some(d => d.amount > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyData}>
+                <LineChart data={monthlyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey="period" 
                     fontSize={12}
                     tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis 
                     fontSize={12}
@@ -193,6 +299,7 @@ export const SpendingCharts: React.FC = () => {
                     strokeWidth={3}
                     dot={{ fill: 'hsl(var(--secondary))', strokeWidth: 2, r: 4 }}
                     activeDot={{ r: 6 }}
+                    connectNulls={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -201,6 +308,12 @@ export const SpendingCharts: React.FC = () => {
                 <div className="text-center">
                   <Calendar className="h-12 w-12 mx-auto mb-4 opacity-30" />
                   <p>{t('charts.noDataAvailable')}</p>
+                  <p className="text-xs mt-2">
+                    {approvedReceipts.length === 0 
+                      ? "Upload and approve receipts to see monthly spending trends"
+                      : "No spending data in the last 12 months"
+                    }
+                  </p>
                 </div>
               </div>
             )}
