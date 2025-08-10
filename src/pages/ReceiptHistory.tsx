@@ -131,14 +131,14 @@ const ReceiptHistory: React.FC = () => {
     }
 
     // Merchant filter (normalized)
-    if (filters.merchantFilter) {
+    if (filters.merchantFilter && filters.merchantFilter !== 'all') {
       result = result.filter(receipt => 
         normalizeMerchant(receipt.merchant) === filters.merchantFilter
       );
     }
 
     // Status filter
-    if (filters.statusFilter) {
+    if (filters.statusFilter && filters.statusFilter !== 'all') {
       result = result.filter(receipt => receipt.status === filters.statusFilter);
     }
 
@@ -418,7 +418,7 @@ const ReceiptHistory: React.FC = () => {
                     <SelectValue placeholder="All merchants" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All merchants</SelectItem>
+                    <SelectItem value="all">All merchants</SelectItem>
                     {uniqueMerchants.map(merchant => (
                       <SelectItem key={merchant} value={merchant}>
                         {getCleanMerchantName(merchant)}
@@ -439,7 +439,7 @@ const ReceiptHistory: React.FC = () => {
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
