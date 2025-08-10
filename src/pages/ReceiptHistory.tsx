@@ -35,6 +35,7 @@ import {
 interface ReceiptRecord {
   id: string;
   merchant: string;
+  merchant_brand?: string;
   total: number;
   purchase_date: string;
   purchase_time?: string;
@@ -44,6 +45,8 @@ interface ReceiptRecord {
   points: number;
   items: string;
   image_url?: string;
+  receipt_unique_no?: string;
+  fis_no?: string;
   created_at: string;
   updated_at: string;
 }
@@ -73,8 +76,11 @@ const ReceiptHistory: React.FC = () => {
     imageUrl?: string;
     fileName: string;
     merchant: string;
+    merchantBrand?: string;
     purchaseDate: string;
     receiptId: string;
+    receiptUniqueNo?: string;
+    fisNo?: string;
   } | null>(null);
 
   const [filters, setFilters] = useState<AdvancedFilters>({
@@ -179,8 +185,11 @@ const ReceiptHistory: React.FC = () => {
       imageUrl: receipt.image_url,
       fileName: receipt.image_url.split('/').pop() || 'receipt.jpg',
       merchant: receipt.merchant,
+      merchantBrand: receipt.merchant_brand,
       purchaseDate: receipt.purchase_date,
-      receiptId: receipt.id
+      receiptId: receipt.id,
+      receiptUniqueNo: receipt.receipt_unique_no,
+      fisNo: receipt.fis_no
     });
     setImageModalOpen(true);
   };
@@ -711,8 +720,11 @@ const ReceiptHistory: React.FC = () => {
           imageUrl={imageModalData.imageUrl}
           fileName={imageModalData.fileName}
           merchant={imageModalData.merchant}
+          merchantBrand={imageModalData.merchantBrand}
           purchaseDate={imageModalData.purchaseDate}
           receiptId={imageModalData.receiptId}
+          receiptUniqueNo={imageModalData.receiptUniqueNo}
+          fisNo={imageModalData.fisNo}
         />
       )}
     </div>

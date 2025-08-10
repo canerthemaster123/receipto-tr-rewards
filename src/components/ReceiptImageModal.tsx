@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { Download, Eye, X } from 'lucide-react';
+import { Download, Eye, X, Store, Calendar, Barcode, Hash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface ReceiptImageModalProps {
@@ -11,8 +11,11 @@ interface ReceiptImageModalProps {
   imageUrl?: string;
   fileName: string;
   merchant: string;
+  merchantBrand?: string;
   purchaseDate: string;
   receiptId: string;
+  receiptUniqueNo?: string;
+  fisNo?: string;
 }
 
 export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
@@ -21,8 +24,11 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
   imageUrl,
   fileName,
   merchant,
+  merchantBrand,
   purchaseDate,
-  receiptId
+  receiptId,
+  receiptUniqueNo,
+  fisNo
 }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -252,21 +258,60 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
             </div>
           )}
           
-          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-            <div>
-              <p className="font-medium">{merchant}</p>
-              <p className="text-sm text-muted-foreground">Purchase Date: {purchaseDate}</p>
+          <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Store className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">{merchantBrand || merchant}</p>
+                  {merchantBrand && merchantBrand !== merchant && (
+                    <p className="text-xs text-muted-foreground">Raw: {merchant}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span>Purchase Date: {purchaseDate}</span>
+              </div>
             </div>
-            {signedUrl && (
-              <Button
-                variant="default"
-                onClick={handleDownload}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Download Receipt
-              </Button>
+
+            {(receiptUniqueNo || fisNo) && (
+              <div className="border-t pt-3">
+                <div className="grid grid-cols-1 gap-3 text-sm">
+                  {receiptUniqueNo && (
+                    <div className="flex items-center gap-2">
+                      <Barcode className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">Receipt No:</span>
+                        <span className="ml-2 font-mono text-xs">{receiptUniqueNo}</span>
+                      </div>
+                    </div>
+                  )}
+                  {fisNo && (
+                    <div className="flex items-center gap-2">
+                      <Hash className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">FİŞ NO:</span>
+                        <span className="ml-2">{fisNo}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
+
+            <div className="flex justify-end">
+              {signedUrl && (
+                <Button
+                  variant="default"
+                  onClick={handleDownload}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Receipt
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>

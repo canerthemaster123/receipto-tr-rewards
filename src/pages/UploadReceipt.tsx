@@ -42,6 +42,7 @@ const UploadReceipt: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isProcessed, setIsProcessed] = useState(false);
+  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData>({
     storeName: '',
     date: '',
@@ -72,6 +73,7 @@ const UploadReceipt: React.FC = () => {
 
     setFile(selectedFile);
     setIsProcessed(false);
+    setOcrResult(null);
     
     // Create preview URL
     const url = URL.createObjectURL(selectedFile);
@@ -138,6 +140,7 @@ const UploadReceipt: React.FC = () => {
       };
       
       setReceiptData(extractedData);
+      setOcrResult(ocrResult); // Store OCR result for later use
       setIsProcessed(true);
       
       toast({
@@ -284,22 +287,31 @@ const UploadReceipt: React.FC = () => {
         imageUrl = publicUrl;
       }
 
-      // Save receipt data to database
+      // Save receipt data to database (including new OCR fields)
+      const insertData: any = {
+        user_id: user.id,
+        merchant: validation.sanitizedData.storeName,
+        total: validation.sanitizedData.totalAmount,
+        purchase_date: validation.sanitizedData.date,
+        purchase_time: receiptData.purchaseTime,
+        store_address: receiptData.storeAddress,
+        payment_method: validation.sanitizedData.paymentMethod,
+        items: validation.sanitizedData.items,
+        image_url: imageUrl,
+        status: getSetting('auto_approve_receipts', false) ? 'approved' : 'pending',
+        points: 100 // Points awarded upon approval
+      };
+
+      // Add OCR-extracted fields if available
+      if (ocrResult) {
+        insertData.merchant_brand = ocrResult.merchant_brand;
+        insertData.receipt_unique_no = ocrResult.receipt_unique_no;
+        insertData.fis_no = ocrResult.fis_no;
+      }
+
       const { error: dbError } = await supabase
         .from('receipts')
-        .insert({
-          user_id: user.id,
-          merchant: validation.sanitizedData.storeName,
-          total: validation.sanitizedData.totalAmount,
-          purchase_date: validation.sanitizedData.date,
-          purchase_time: receiptData.purchaseTime,
-          store_address: receiptData.storeAddress,
-          payment_method: validation.sanitizedData.paymentMethod,
-          items: validation.sanitizedData.items,
-          image_url: imageUrl,
-          status: getSetting('auto_approve_receipts', false) ? 'approved' : 'pending',
-          points: 100 // Points awarded upon approval
-        });
+        .insert(insertData);
 
       if (dbError) {
         throw new Error(`Database error: ${dbError.message}`);
@@ -313,6 +325,7 @@ const UploadReceipt: React.FC = () => {
       // Reset form state
       setFile(null);
       setPreviewUrl('');
+      setOcrResult(null);
       setReceiptData({
         storeName: '',
         date: '',
