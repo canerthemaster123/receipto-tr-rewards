@@ -706,6 +706,40 @@ serve(async (req) => {
   try {
     const { imageUrl } = await req.json();
     
+    // Check for fake OCR header (for E2E tests)
+    const fakeOcrHeader = req.headers.get('x-qa-fake-ocr');
+    const url = new URL(req.url);
+    const fakeOcrParam = url.searchParams.get('qa-fake-ocr');
+    
+    if (fakeOcrHeader === '1' || fakeOcrParam === '1') {
+      console.log('Using fake OCR for E2E testing');
+      const fakeResult: OCRResult = {
+        merchant_raw: "M GROS KO? SN VERS TES MAZAZASI",
+        merchant_brand: "Migros",
+        purchase_date: "2024-12-22",
+        purchase_time: "15:35",
+        store_address: "Atatürk Mah. Turgut Özal Bulv. No:7, Ataşehir/İstanbul",
+        total: 464.25,
+        payment_method: "494314******4645",
+        items: [
+          { name: "MIGROS SIYAH ZEYTIN", qty: 1, line_total: 99.50, raw_line: "MIGROS SIYAH ZEYTIN 1 99,50" },
+          { name: "TWIX 50 GR", qty: 1, line_total: 29.90, raw_line: "TWIX 50 GR 1 29,90" },
+          { name: "PIKO PIRINC PATLAKLI", qty: 2, line_total: 14.00, raw_line: "PIKO PIRINC PATLAKLI 2 14,00" }
+        ],
+        receipt_unique_no: "09290044195241222",
+        fis_no: "0078",
+        raw_text: "M GROS KO? SN VERS TES MAZAZASI\nFİŞ NO: 0078\nMIGROS SIYAH ZEYTIN 1 99,50\nTWIX 50 GR 1 29,90\nPIKO PIRINC PATLAKLI 2 14,00\nTOPLAM: 464,25\n494314******4645\n09290044195241222"
+      };
+      
+      return new Response(
+        JSON.stringify(fakeResult),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+    
     if (!imageUrl) {
       return new Response(
         JSON.stringify({ error: 'imageUrl is required' }),
