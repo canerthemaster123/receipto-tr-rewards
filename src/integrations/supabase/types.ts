@@ -50,14 +50,17 @@ export type Database = {
       receipts: {
         Row: {
           created_at: string | null
+          fis_no: string | null
           id: string
           image_url: string | null
           items: string | null
           merchant: string | null
+          merchant_brand: string | null
           payment_method: string | null
           points: number | null
           purchase_date: string | null
           purchase_time: string | null
+          receipt_unique_no: string | null
           status: string | null
           store_address: string | null
           total: number | null
@@ -66,14 +69,17 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          fis_no?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
           merchant?: string | null
+          merchant_brand?: string | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
           purchase_time?: string | null
+          receipt_unique_no?: string | null
           status?: string | null
           store_address?: string | null
           total?: number | null
@@ -82,14 +88,17 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          fis_no?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
           merchant?: string | null
+          merchant_brand?: string | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
           purchase_time?: string | null
+          receipt_unique_no?: string | null
           status?: string | null
           store_address?: string | null
           total?: number | null

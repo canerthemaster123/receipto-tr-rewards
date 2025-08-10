@@ -14,5 +14,7 @@ export interface OCRResult {
     product_code?: string;
   }[];
   payment_method: string | null;
+  receipt_unique_no: string | null;
+  fis_no: string | null;
   raw_text: string;
 }

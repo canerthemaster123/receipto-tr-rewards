@@ -23,6 +23,8 @@ interface ParsedOCRResult {
     product_code?: string;
   }[];
   payment_method: string | null;
+  receipt_unique_no: string | null;
+  fis_no: string | null;
   raw_text: string;
 }
 
@@ -113,6 +115,8 @@ const OCRDebugPage: React.FC = () => {
       total,
       items,
       payment_method,
+      receipt_unique_no: null,
+      fis_no: null,
       raw_text: text
     };
   };
@@ -309,6 +313,20 @@ const OCRDebugPage: React.FC = () => {
                   <div>
                     <span className="font-medium text-sm">Payment:</span>
                     <p className="text-sm text-muted-foreground font-mono">{parsedResult.payment_method}</p>
+                  </div>
+                )}
+
+                {parsedResult.receipt_unique_no && (
+                  <div>
+                    <span className="font-medium text-sm">Receipt No:</span>
+                    <p className="text-sm text-muted-foreground font-mono">{parsedResult.receipt_unique_no}</p>
+                  </div>
+                )}
+
+                {parsedResult.fis_no && (
+                  <div>
+                    <span className="font-medium text-sm">FİŞ NO:</span>
+                    <p className="text-sm text-muted-foreground">{parsedResult.fis_no}</p>
                   </div>
                 )}
 

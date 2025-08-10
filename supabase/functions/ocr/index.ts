@@ -22,6 +22,8 @@ interface OCRResult {
     product_code?: string;
   }[];
   payment_method: string | null;
+  receipt_unique_no: string | null;
+  fis_no: string | null;
   raw_text: string;
 }
 
@@ -625,6 +627,39 @@ function parseItems(text: string): {
   return items;
 }
 
+/**
+ * Extract barcode/unique receipt number from bottom of receipt
+ */
+function extractReceiptUniqueNo(text: string): string | null {
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  
+  // Scan the last ~10 lines for a single long numeric sequence (18–24 digits)
+  const endLines = lines.slice(-10);
+  
+  for (const line of endLines) {
+    // Look for longest numeric sequence 18-24 digits
+    const barcodeMatch = line.match(/\b(\d{18,24})\b/);
+    if (barcodeMatch) {
+      console.log(`Found receipt unique number: ${barcodeMatch[1]}`);
+      return barcodeMatch[1];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract FİŞ NO if present
+ */
+function extractFisNo(text: string): string | null {
+  const fisMatch = text.match(/f(?:i|İ)ş\s*no\s*[:\-]?\s*(\d+)/i);
+  if (fisMatch) {
+    console.log(`Found FİŞ NO: ${fisMatch[1]}`);
+    return fisMatch[1];
+  }
+  return null;
+}
+
 function extractPaymentMethod(text: string): string | null {
   console.log('Extracting payment method from text');
   
@@ -778,6 +813,8 @@ serve(async (req) => {
           total: 0,
           items: [],
           payment_method: null,
+          receipt_unique_no: null,
+          fis_no: null,
           raw_text: 'No text detected in image'
         }),
         {
@@ -797,6 +834,8 @@ serve(async (req) => {
       total: extractTotal(fullText),
       items: parseItems(fullText),
       payment_method: extractPaymentMethod(fullText),
+      receipt_unique_no: extractReceiptUniqueNo(fullText),
+      fis_no: extractFisNo(fullText),
       raw_text: fullText
     };
 
