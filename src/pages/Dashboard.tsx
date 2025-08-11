@@ -6,6 +6,7 @@ import { Button } from '../components/ui/enhanced-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { useReceiptData } from '../hooks/useReceiptData';
+import { usePointsLedger } from '../hooks/usePointsLedger';
 import { SpendingCharts } from '../components/SpendingCharts';
 import { formatTRY } from '../utils/currency';
 import { 
@@ -27,6 +28,7 @@ const Dashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { t } = useTranslation();
   const { receipts, loading, stats } = useReceiptData();
+  const { totalPoints } = usePointsLedger();
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -41,9 +43,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Updated stats calculation using the hook
+  // Updated stats calculation using the points ledger
   const nextReward = 2000;
-  const pointsToNextReward = nextReward - stats.totalEarned;
+  const currentPoints = totalPoints || stats.totalEarned;
+  const pointsToNextReward = nextReward - currentPoints;
 
   return (
     <div className="space-y-6">
@@ -79,7 +82,7 @@ const Dashboard: React.FC = () => {
               </div>
                <div>
                  <p className="text-sm text-muted-foreground">{t('dashboard.totalPoints')}</p>
-                 <p className="text-2xl font-bold text-primary" data-testid="total-points">{stats.totalEarned.toLocaleString()}</p>
+                 <p className="text-2xl font-bold text-primary" data-testid="total-points">{currentPoints.toLocaleString()}</p>
                </div>
              </div>
           </CardContent>
@@ -145,13 +148,13 @@ const Dashboard: React.FC = () => {
         <CardContent>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>{stats.totalEarned} {t('dashboard.points')}</span>
+              <span>{currentPoints} {t('dashboard.points')}</span>
               <span>{nextReward} {t('dashboard.points')}</span>
             </div>
             <div className="w-full bg-muted rounded-full h-3">
               <div 
                 className="bg-gradient-reward h-3 rounded-full transition-all duration-500 animate-glow"
-                style={{ width: `${Math.min((stats.totalEarned / nextReward) * 100, 100)}%` }}
+                style={{ width: `${Math.min((currentPoints / nextReward) * 100, 100)}%` }}
               />
             </div>
             {pointsToNextReward <= 0 && (
@@ -286,7 +289,7 @@ const Dashboard: React.FC = () => {
                   <div className="text-left">
                     <div className="font-medium">{t('dashboard.browseRewards')}</div>
                     <div className="text-sm text-muted-foreground">
-                      {t('dashboard.redeemPoints', { points: stats.totalEarned })}
+                      {t('dashboard.redeemPoints', { points: currentPoints })}
                     </div>
                   </div>
                 </Button>

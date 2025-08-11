@@ -7,15 +7,16 @@ import { Label } from '../components/ui/label';
 import { Separator } from '../components/ui/separator';
 import { Badge } from '../components/ui/badge';
 import { useUserRole } from '../hooks/useUserRole';
-import { useReceiptData } from '../hooks/useReceiptData';
-import { Copy, User, Award, Shield } from 'lucide-react';
+import { usePointsLedger } from '../hooks/usePointsLedger';
+import { Copy, User, Award, Shield, HelpCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
 const Profile: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { userRole, isLoading: roleLoading } = useUserRole();
-  const { stats } = useReceiptData(); // Get real-time points data
+  const { totalPoints } = usePointsLedger();
   const { toast } = useToast();
   const [displayName, setDisplayName] = useState(userProfile?.display_name || '');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -144,7 +145,7 @@ const Profile: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="font-medium">Total Points</span>
                 <Badge variant="secondary" className="text-lg px-3 py-1" data-testid="total-points">
-                  {stats.totalEarned.toLocaleString()}
+                  {totalPoints.toLocaleString()}
                 </Badge>
               </div>
 
@@ -154,15 +155,30 @@ const Profile: React.FC = () => {
                 <span className="font-medium">Account Role</span>
                 {roleLoading ? (
                   <Badge variant="outline">Loading...</Badge>
-                ) : (
-                  <Badge variant={getRoleBadgeVariant(userRole || 'user')} className="flex items-center gap-1">
-                    {getRoleIcon(userRole || 'user')}
-                    {userRole || 'user'}
-                  </Badge>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                 ) : (
+                   <Badge variant={getRoleBadgeVariant(userRole || 'user')} className="flex items-center gap-1">
+                     {getRoleIcon(userRole || 'user')}
+                     {userRole || 'user'}
+                   </Badge>
+                 )}
+               </div>
+
+               {userRole === 'admin' && (
+                 <>
+                   <Separator />
+                   <div className="flex items-center justify-between">
+                     <span className="font-medium">Admin Resources</span>
+                     <Link to="/admin/help">
+                       <Button variant="outline" size="sm" className="flex items-center gap-1">
+                         <HelpCircle className="h-4 w-4" />
+                         Admin Guide
+                       </Button>
+                     </Link>
+                   </div>
+                 </>
+               )}
+             </CardContent>
+           </Card>
 
           {/* Referral Code */}
           <Card>
