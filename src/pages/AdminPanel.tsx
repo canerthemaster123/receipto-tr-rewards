@@ -191,15 +191,38 @@ const AdminPanel: React.FC = () => {
       const receipt = pendingReceipts.find(r => r.id === receiptId);
       if (!receipt) return;
 
-      const newStatus = action === 'approve' ? 'approved' : 'rejected';
-      
-      // Update receipt status
-      const { error } = await supabase
-        .from('receipts')
-        .update({ status: newStatus })
-        .eq('id', receiptId);
+      if (action === 'approve') {
+        // Use the new approve function that handles points in transaction
+        const { data: approveResult, error: approveError } = await supabase
+          .rpc('approve_receipt_with_points', {
+            receipt_id: receiptId
+          });
 
-      if (error) throw error;
+        if (approveError) throw approveError;
+
+        if (!approveResult?.success) {
+          throw new Error(approveResult?.error || 'Approval failed');
+        }
+
+        toast({
+          title: "Fiş Onaylandı!",
+          description: `Fiş onaylandı ve ${approveResult.points_awarded} puan eklendi.`,
+        });
+      } else {
+        // Simple reject - just update status
+        const { error } = await supabase
+          .from('receipts')
+          .update({ status: 'rejected' })
+          .eq('id', receiptId);
+
+        if (error) throw error;
+
+        toast({
+          title: "Fiş Reddedildi",
+          description: "Fiş başarıyla reddedildi.",
+          variant: "destructive",
+        });
+      }
 
       // Log admin action
       await supabase.rpc('log_admin_action', {
@@ -207,21 +230,17 @@ const AdminPanel: React.FC = () => {
         _table_name: 'receipts',
         _record_id: receiptId,
         _old_values: { status: 'pending' },
-        _new_values: { status: newStatus }
+        _new_values: { status: action === 'approve' ? 'approved' : 'rejected' }
       });
 
       // Update local state
       setPendingReceipts(prev => prev.filter(r => r.id !== receiptId));
 
-      toast({
-        title: "Success",
-        description: `Receipt ${action}ed successfully.`,
-      });
     } catch (error) {
       console.error(`Error ${action}ing receipt:`, error);
       toast({
-        title: "Error",
-        description: `Failed to ${action} receipt. Please try again.`,
+        title: "Hata",
+        description: `Fiş ${action === 'approve' ? 'onaylanırken' : 'reddedilirken'} hata oluştu.`,
         variant: "destructive",
       });
     }

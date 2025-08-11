@@ -88,24 +88,42 @@ const AuthPage: React.FC = () => {
             console.error('Profile creation error:', profileError);
           }
 
-          // Handle referral if provided
+          // Handle referral if provided - normalize input
           if (referralCode.trim()) {
             try {
+              // Normalize referral code client-side
+              const normalizedCode = referralCode.trim().toLowerCase().replace(/\s+/g, '');
+              
               const { data: bonusResult, error: bonusError } = await supabase
                 .rpc('apply_referral_bonus', {
                   new_user_id: signUpResult.user.id,
-                  referral_code: referralCode.trim()
+                  code: normalizedCode
                 });
 
-              if (bonusResult?.success) {
+              if (bonusError) {
+                console.error('Referral RPC error:', bonusError);
                 toast({
                   title: "Hesap oluşturuldu!",
+                  description: "Kayıt tamamlandı, ancak referans kodu işlenirken bir hata oluştu.",
+                  variant: "default",
+                });
+              } else if (bonusResult?.success) {
+                toast({
+                  title: "🎉 Referans Bonusu!",
                   description: "Kayıt tamamlandı! Siz ve arkadaşınız 200'er puan aldınız!",
                 });
               } else {
+                // Non-blocking warning for invalid code
+                const errorMsg = bonusResult?.error === 'self_ref' 
+                  ? "Kendi referans kodunuzu kullanamazsınız"
+                  : bonusResult?.error === 'already_used'
+                  ? "Bu hesap zaten bir referans kodu kullanmış"
+                  : "Referans kodu geçersiz";
+                
                 toast({
                   title: "Hesap oluşturuldu!",
-                  description: "Kayıt tamamlandı, ancak referans kodu geçersizdi.",
+                  description: `Kayıt tamamlandı, ancak ${errorMsg.toLowerCase()}.`,
+                  variant: "default",
                 });
               }
             } catch (referralError) {

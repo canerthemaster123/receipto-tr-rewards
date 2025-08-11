@@ -26,6 +26,7 @@ import {
 import { useToast } from '../hooks/use-toast';
 import { useAppSettings } from '../hooks/useAppSettings';
 import type { OCRResult } from '../types/ocr';
+import CameraModal from '../components/CameraModal';
 
 interface ReceiptData {
   storeName: string;
@@ -52,6 +53,7 @@ const UploadReceipt: React.FC = () => {
     paymentMethod: '',
     items: ''
   });
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const { user, userProfile, updatePoints } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -391,9 +393,15 @@ const UploadReceipt: React.FC = () => {
                     <Button 
                       variant="outline"
                       onClick={() => {
-                        const cameraInput = document.getElementById('camera-input') as HTMLInputElement;
-                        if (cameraInput) {
-                          cameraInput.click();
+                        // Check if camera is available for web capture
+                        if (navigator.mediaDevices?.getUserMedia) {
+                          setIsCameraModalOpen(true);
+                        } else {
+                          // Fallback to file input with capture attribute
+                          const cameraInput = document.getElementById('camera-input') as HTMLInputElement;
+                          if (cameraInput) {
+                            cameraInput.click();
+                          }
                         }
                       }}
                     >
@@ -639,6 +647,15 @@ const UploadReceipt: React.FC = () => {
           </Card>
         </div>
       )}
+      {/* Camera Modal */}
+      <CameraModal
+        isOpen={isCameraModalOpen}
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={(capturedFile) => {
+          handleFileSelect(capturedFile);
+          setIsCameraModalOpen(false);
+        }}
+      />
     </div>
   );
 };

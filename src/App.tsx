@@ -15,6 +15,7 @@ import UploadReceipt from "./pages/UploadReceipt";
 import ReceiptHistory from "./pages/ReceiptHistory";
 import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
+import AdminHelp from "./pages/AdminHelp";
 import Profile from "./pages/Profile";
 import ReferralPage from "./pages/ReferralPage";
 import OCRDebugPage from "./pages/OCRDebugPage";
@@ -140,6 +141,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AdminPanel />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/help" 
+              element={
+                <ProtectedRoute>
+                  <AdminHelp />
                 </ProtectedRoute>
               } 
             />
