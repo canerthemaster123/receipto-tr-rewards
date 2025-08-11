@@ -390,7 +390,12 @@ const UploadReceipt: React.FC = () => {
                     </Button>
                     <Button 
                       variant="outline"
-                      onClick={() => document.getElementById('camera-input')?.click()}
+                      onClick={() => {
+                        const cameraInput = document.getElementById('camera-input') as HTMLInputElement;
+                        if (cameraInput) {
+                          cameraInput.click();
+                        }
+                      }}
                     >
                       <Camera className="h-4 w-4" />
                       {t('upload.takePhoto')}
