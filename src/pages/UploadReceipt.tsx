@@ -388,12 +388,16 @@ const UploadReceipt: React.FC = () => {
                       <ImageIcon className="h-4 w-4" />
                       {t('upload.chooseFile')}
                     </Button>
-                    <Button variant="outline">
+                    <Button 
+                      variant="outline"
+                      onClick={() => document.getElementById('camera-input')?.click()}
+                    >
                       <Camera className="h-4 w-4" />
                       {t('upload.takePhoto')}
                     </Button>
                   </div>
                   <input
+                    id="camera-input"
                     type="file"
                     accept="image/*"
                     capture="environment"
@@ -401,14 +405,6 @@ const UploadReceipt: React.FC = () => {
                     onChange={(e) => {
                       const selectedFile = e.target.files?.[0];
                       if (selectedFile) handleFileSelect(selectedFile);
-                    }}
-                    ref={(input) => {
-                      if (input) {
-                        const cameraButton = input.parentElement?.querySelector('button:nth-child(2)');
-                        if (cameraButton) {
-                          cameraButton.onclick = () => input.click();
-                        }
-                      }
                     }}
                   />
                 </div>
