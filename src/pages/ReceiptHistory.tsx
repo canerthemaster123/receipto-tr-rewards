@@ -97,15 +97,10 @@ const ReceiptHistory: React.FC = () => {
     return items.split('\n').filter(item => item.trim().length > 0);
   };
 
-  // Get unique merchants for filter dropdown
+  // Use curated brands list for filter dropdown
   const uniqueMerchants = useMemo(() => {
-    const merchantSet = new Set<string>();
-    receipts.forEach(receipt => {
-      const normalizedMerchant = normalizeMerchant(receipt.merchant);
-      merchantSet.add(normalizedMerchant);
-    });
-    return Array.from(merchantSet).sort();
-  }, [receipts]);
+    return ['Migros', 'ŞOK', 'A101', 'BİM', 'CarrefourSA', 'File Market', 'Metro', 'Mopaş', 'Happy Center', 'Diğer'];
+  }, []);
 
   // Advanced filtering logic
   const filteredReceipts = useMemo(() => {

@@ -15,7 +15,8 @@ const AuthPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [referralCode, setReferralCode] = useState('');
-  const { login, register, isLoading } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -24,89 +25,116 @@ const AuthPage: React.FC = () => {
     
     if (!email || !password || (!isLogin && !name)) {
       toast({
-        title: "Error",
-        description: "Please fill in all required fields.",
+        title: "Hata",
+        description: "Lütfen tüm gerekli alanları doldurun.",
         variant: "destructive",
       });
       return;
     }
 
-    let result;
-    if (isLogin) {
-      result = await login(email, password);
-    } else {
-      result = await register(email, password, name);
-      
-      // If registration successful and referral code provided, apply bonus
-      if (result.success && result.user && referralCode.trim()) {
-        try {
-          const { data: bonusResult, error: bonusError } = await supabase
-            .rpc('apply_referral_bonus', {
-              new_user_id: result.user.id,
-              referral_code: referralCode.trim()
+    setIsLoading(true);
+    
+    try {
+      if (isLogin) {
+        const result = await login(email, password);
+        if (result.success) {
+          toast({
+            title: "Hoş geldiniz!",
+            description: "Başarıyla giriş yaptınız.",
+          });
+          navigate('/dashboard');
+        } else {
+          toast({
+            title: "Hata",
+            description: result.error || "Geçersiz kimlik bilgileri.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        // Sign up flow with improved error handling
+        const redirectUrl = `${window.location.origin}/`;
+        
+        const { data: signUpResult, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl,
+            data: {
+              display_name: name,
+            }
+          }
+        });
+
+        if (signUpError) {
+          let errorMessage = signUpError.message;
+          if (signUpError.message.includes('already registered')) {
+            errorMessage = "Bu e-posta adresi zaten kayıtlı.";
+          }
+          throw new Error(errorMessage);
+        }
+
+        // Immediately create user profile after successful signup
+        if (signUpResult.user) {
+          const { error: profileError } = await supabase
+            .from('users_profile')
+            .upsert({
+              id: signUpResult.user.id,
+              display_name: name,
+              referral_code: signUpResult.user.id.substring(0, 8),
+              total_points: 0
             });
 
-          if (bonusError) {
-            console.error('Referral bonus error:', bonusError);
-            // Show warning but don't fail registration
-            toast({
-              title: "Account created successfully!",
-              description: `Registration completed, but referral bonus failed: ${bonusError.message}`,
-              variant: "default",
-            });
-          } else if (bonusResult?.success) {
-            toast({
-              title: "Welcome bonus applied!",
-              description: `Account created! You and your referrer both received +200 points!`,
-            });
+          if (profileError) {
+            console.error('Profile creation error:', profileError);
+          }
+
+          // Handle referral if provided
+          if (referralCode.trim()) {
+            try {
+              const { data: bonusResult, error: bonusError } = await supabase
+                .rpc('apply_referral_bonus', {
+                  new_user_id: signUpResult.user.id,
+                  referral_code: referralCode.trim()
+                });
+
+              if (bonusResult?.success) {
+                toast({
+                  title: "Hesap oluşturuldu!",
+                  description: "Kayıt tamamlandı! Siz ve arkadaşınız 200'er puan aldınız!",
+                });
+              } else {
+                toast({
+                  title: "Hesap oluşturuldu!",
+                  description: "Kayıt tamamlandı, ancak referans kodu geçersizdi.",
+                });
+              }
+            } catch (referralError) {
+              console.error('Referral error:', referralError);
+              toast({
+                title: "Hesap oluşturuldu!",
+                description: "Kayıt başarıyla tamamlandı.",
+              });
+            }
           } else {
             toast({
-              title: "Account created!",
-              description: bonusResult?.error || "Registration completed, but referral code was invalid.",
+              title: "Hesap oluşturuldu!",
+              description: "Kayıt başarıyla tamamlandı.",
             });
           }
-        } catch (error) {
-          console.error('Referral processing error:', error);
-          toast({
-            title: "Account created!",
-            description: "Registration completed successfully.",
-          });
+          
+          // Navigate to dashboard immediately
+          navigate('/dashboard');
         }
       }
-    }
-
-    if (result.success) {
-      if (isLogin || !referralCode.trim()) {
-        // Only show standard success message if no referral was processed
-        if (isLogin) {
-          toast({
-            title: "Welcome back!",
-            description: "Successfully logged in.",
-          });
-        } else if (!referralCode.trim()) {
-          toast({
-            title: "Account created!",
-            description: "Please check your email to verify your account.",
-          });
-        }
-      }
-      
-      if (isLogin) {
-        navigate('/dashboard');
-      } else {
-        // For registration, stay on the auth page and show success message
-        setIsLogin(true); // Switch to login mode
-        setEmail(''); // Clear form
-        setPassword('');
-        setName('');
-        setReferralCode('');
-      }
-    } else {
+    } catch (error) {
+      console.error('Auth error:', error);
       toast({
-        title: "Error",
-        description: result.error || (isLogin ? "Invalid credentials." : "Registration failed."),
+        title: "Hata",
+        description: error instanceof Error ? error.message : "Beklenmeyen bir hata oluştu.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -228,10 +256,10 @@ const AuthPage: React.FC = () => {
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    {isLogin ? 'Signing In...' : 'Creating Account...'}
+                    {isLogin ? 'Giriş yapılıyor...' : 'Hesap oluşturuluyor...'}
                   </>
                 ) : (
-                  isLogin ? 'Sign In' : 'Create Account'
+                  isLogin ? 'Giriş Yap' : 'Hesap Oluştur'
                 )}
               </Button>
             </form>
@@ -243,8 +271,8 @@ const AuthPage: React.FC = () => {
                 className="text-sm text-primary hover:underline"
               >
                 {isLogin 
-                  ? "Don't have an account? Sign up" 
-                  : "Already have an account? Sign in"
+                  ? "Hesabınız yok mu? Kayıt olun" 
+                  : "Zaten hesabınız var mı? Giriş yapın"
                 }
               </button>
             </div>

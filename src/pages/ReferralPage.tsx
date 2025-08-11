@@ -246,32 +246,6 @@ const ReferralPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Enter Referral Code */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Enter a Referral Code</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="referralCode">Have a referral code? Enter it here</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="referralCode"
-                    value={referralCode}
-                    onChange={(e) => setReferralCode(e.target.value)}
-                    placeholder="Enter referral code"
-                    className="font-mono"
-                  />
-                  <Button
-                    onClick={handleReferralSubmit}
-                    disabled={isProcessing || !referralCode.trim()}
-                  >
-                    {isProcessing ? 'Processing...' : 'Apply Code'}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Your Referrals */}
           {myReferrals.length > 0 && (

@@ -96,6 +96,107 @@ export const getDisplayMerchantName = (receipts: any[]): string => {
 };
 
 /**
+ * Curated list of major Turkish retail chains
+ */
+export const CURATED_BRANDS = [
+  'Migros',
+  'ŞOK', 
+  'A101',
+  'BİM',
+  'CarrefourSA',
+  'File Market',
+  'Metro',
+  'Mopaş',
+  'Happy Center',
+  'Diğer'
+];
+
+/**
+ * Normalize brand (fuzzy matching to curated list)
+ */
+export const normalizeBrand = (merchantRaw: string): string => {
+  if (!merchantRaw || typeof merchantRaw !== 'string') {
+    return 'Diğer';
+  }
+
+  let normalized = merchantRaw.toLowerCase();
+
+  // Replace Turkish characters with base equivalents
+  Object.entries(TURKISH_CHAR_MAP).forEach(([turkish, base]) => {
+    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
+  });
+
+  // Remove spaces and punctuation
+  normalized = normalized.replace(/[\s\.\-_,;:!@#$%^&*()+={}|\[\]\\\/?"'<>~`]/g, '');
+
+  // Brand dictionary with common variants and broken OCR forms
+  const brandDictionary: Record<string, string> = {
+    // Migros variants
+    'migros': 'Migros',
+    'mgros': 'Migros', 
+    'mıgros': 'Migros',
+    'mıgr0s': 'Migros',
+    
+    // BİM variants  
+    'bim': 'BİM',
+    'b1m': 'BİM',
+    'bım': 'BİM',
+    
+    // A101 variants
+    'a101': 'A101',
+    'a1o1': 'A101',
+    'a10l': 'A101',
+    
+    // ŞOK variants
+    'sok': 'ŞOK',
+    'şok': 'ŞOK',
+    's0k': 'ŞOK',
+    
+    // CarrefourSA variants
+    'carrefour': 'CarrefourSA',
+    'carrefoursa': 'CarrefourSA',
+    'carref0ur': 'CarrefourSA',
+    
+    // Other major chains
+    'metro': 'Metro',
+    'filemarket': 'File Market',
+    'file': 'File Market',
+    'mopas': 'Mopaş',
+    'happycenter': 'Happy Center',
+    'happy': 'Happy Center'
+  };
+
+  // Direct match
+  if (brandDictionary[normalized]) {
+    return brandDictionary[normalized];
+  }
+
+  // Fuzzy matching for broken OCR (simple includes)
+  for (const [key, brand] of Object.entries(brandDictionary)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return brand;
+    }
+  }
+
+  // Levenshtein distance ≤2 fallback (simplified version)
+  for (const [key, brand] of Object.entries(brandDictionary)) {
+    if (Math.abs(normalized.length - key.length) <= 2) {
+      let distance = 0;
+      const maxLen = Math.max(normalized.length, key.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (normalized[i] !== key[i]) distance++;
+      }
+      if (distance <= 2) {
+        return brand;
+      }
+    }
+  }
+
+  // Fallback to "Diğer"
+  return 'Diğer';
+};
+
+/**
  * Get a clean display name for a single merchant string
  */
 export const getCleanMerchantName = (merchantName: string): string => {

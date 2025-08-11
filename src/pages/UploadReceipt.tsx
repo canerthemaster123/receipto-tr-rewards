@@ -393,6 +393,24 @@ const UploadReceipt: React.FC = () => {
                       {t('upload.takePhoto')}
                     </Button>
                   </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      const selectedFile = e.target.files?.[0];
+                      if (selectedFile) handleFileSelect(selectedFile);
+                    }}
+                    ref={(input) => {
+                      if (input) {
+                        const cameraButton = input.parentElement?.querySelector('button:nth-child(2)');
+                        if (cameraButton) {
+                          cameraButton.onclick = () => input.click();
+                        }
+                      }
+                    }}
+                  />
                 </div>
               </div>
               <input
