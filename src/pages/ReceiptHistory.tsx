@@ -91,6 +91,12 @@ const ReceiptHistory: React.FC = () => {
     maxAmount: ''
   });
 
+  // Helper function to parse items array
+  const getItemsArray = (items: string): string[] => {
+    if (!items) return [];
+    return items.split('\n').filter(item => item.trim().length > 0);
+  };
+
   // Get unique merchants for filter dropdown
   const uniqueMerchants = useMemo(() => {
     const merchantSet = new Set<string>();
@@ -220,10 +226,6 @@ const ReceiptHistory: React.FC = () => {
     }
   };
 
-  const getItemsArray = (items: string): string[] => {
-    if (!items) return [];
-    return items.split('\n').filter(item => item.trim().length > 0);
-  };
 
   const clearFilters = () => {
     setFilters({
