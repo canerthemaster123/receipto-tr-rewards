@@ -47,6 +47,33 @@ export type Database = {
         }
         Relationships: []
       }
+      points_ledger: {
+        Row: {
+          created_at: string | null
+          delta: number
+          id: string
+          meta: Json | null
+          source: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          delta: number
+          id?: string
+          meta?: Json | null
+          source: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          delta?: number
+          id?: string
+          meta?: Json | null
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       receipts: {
         Row: {
           created_at: string | null
@@ -215,7 +242,11 @@ export type Database = {
     }
     Functions: {
       apply_referral_bonus: {
-        Args: { new_user_id: string; referral_code: string }
+        Args: { new_user_id: string; code: string }
+        Returns: Json
+      }
+      approve_receipt_with_points: {
+        Args: { receipt_id: string; points_awarded?: number }
         Returns: Json
       }
       get_current_user_role: {

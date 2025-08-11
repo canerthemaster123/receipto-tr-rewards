@@ -10,7 +10,7 @@ interface CameraModalProps {
   onCapture: (file: File) => void;
 }
 
-const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture }) => {
+export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture }) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,65 +20,69 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
-  // Start camera when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !stream) {
       startCamera();
-    } else {
-      stopCamera();
-      setCapturedImage(null);
-      setError(null);
     }
-
-    return () => stopCamera();
+    
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
   }, [isOpen]);
 
   const startCamera = async () => {
     try {
       setIsLoading(true);
       setError(null);
-
-      // Check if getUserMedia is supported
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Camera access not supported in this browser');
+      
+      // Check if camera is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera not supported on this device');
       }
 
-      // Request camera access with environment facing (rear camera on mobile)
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
+      // Request camera access with environment camera preference (back camera on mobile)
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
       });
-
+      
       setStream(mediaStream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Camera access error:', err);
-      let errorMessage = 'Camera access failed';
       
-      if (err.name === 'NotAllowedError') {
-        errorMessage = 'Camera permission denied. Please allow camera access and try again.';
-      } else if (err.name === 'NotFoundError') {
-        errorMessage = 'No camera found on this device.';
-      } else if (err.name === 'NotSupportedError') {
-        errorMessage = 'Camera not supported in this browser.';
+      // Try fallback without facingMode constraint
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } 
+        });
+        setStream(fallbackStream);
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback camera error:', fallbackErr);
+        setError('Camera access denied. Please allow camera permission and try again.');
+        toast({
+          title: "Camera Error",
+          description: "Unable to access camera. Please check permissions.",
+          variant: "destructive",
+        });
       }
-      
-      setError(errorMessage);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
     }
   };
 
@@ -87,20 +91,20 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) return;
 
-    if (!context) return;
-
-    // Set canvas size to video dimensions
+    // Set canvas dimensions to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    // Draw current video frame to canvas
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Draw the current video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Convert canvas to blob/data URL
-    const dataURL = canvas.toDataURL('image/jpeg', 0.9);
-    setCapturedImage(dataURL);
+    // Convert canvas to image data URL
+    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    setCapturedImage(imageDataUrl);
   };
 
   const retakePhoto = () => {
@@ -110,63 +114,64 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
   const usePhoto = () => {
     if (!capturedImage || !canvasRef.current) return;
 
-    // Convert data URL to File object
+    // Convert canvas to blob and create file
     canvasRef.current.toBlob((blob) => {
       if (blob) {
-        const file = new File([blob], `receipt-${Date.now()}.jpg`, {
+        const timestamp = new Date().getTime();
+        const file = new File([blob], `camera-capture-${timestamp}.jpg`, {
           type: 'image/jpeg',
-          lastModified: Date.now()
+          lastModified: timestamp
         });
         
         onCapture(file);
-        onClose();
-        
-        toast({
-          title: "Fotoğraf çekildi!",
-          description: "Fiş fotoğrafı başarıyla alındı.",
-        });
+        handleClose();
       }
-    }, 'image/jpeg', 0.9);
+    }, 'image/jpeg', 0.8);
   };
 
   const handleClose = () => {
-    stopCamera();
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setCapturedImage(null);
+    setError(null);
     onClose();
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
-            Fiş Fotoğrafı Çek
+            Take Photo
           </DialogTitle>
         </DialogHeader>
-
+        
         <div className="space-y-4">
           {error ? (
-            <div className="text-center p-8 space-y-4">
-              <div className="p-4 bg-destructive/10 rounded-full w-fit mx-auto">
-                <AlertCircle className="h-8 w-8 text-destructive" />
-              </div>
+            <div className="flex flex-col items-center gap-4 p-6 text-center">
+              <AlertCircle className="h-12 w-12 text-destructive" />
               <div>
-                <h3 className="font-semibold mb-2">Kamera Erişimi Hatası</h3>
-                <p className="text-sm text-muted-foreground">{error}</p>
+                <h3 className="font-semibold text-destructive">Camera Error</h3>
+                <p className="text-sm text-muted-foreground mt-1">{error}</p>
               </div>
               <Button onClick={startCamera} variant="outline">
-                Tekrar Dene
+                Try Again
               </Button>
             </div>
           ) : isLoading ? (
-            <div className="text-center p-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
-              <p className="text-muted-foreground">Kamera açılıyor...</p>
+            <div className="flex items-center justify-center p-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-sm text-muted-foreground">Starting camera...</p>
+              </div>
             </div>
           ) : capturedImage ? (
-            // Show captured image with options
+            // Show captured image with retake/use options
             <div className="space-y-4">
-              <div className="relative bg-muted rounded-lg overflow-hidden">
+              <div className="relative rounded-lg overflow-hidden bg-black">
                 <img 
                   src={capturedImage} 
                   alt="Captured receipt" 
@@ -174,61 +179,53 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
                 />
               </div>
               
-              <div className="flex gap-2 justify-center">
-                <Button 
-                  onClick={retakePhoto}
-                  variant="outline"
-                  className="flex items-center gap-2"
-                >
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={retakePhoto}>
                   <RotateCcw className="h-4 w-4" />
-                  Tekrar Çek
+                  Retake
                 </Button>
-                <Button 
-                  onClick={usePhoto}
-                  className="flex items-center gap-2"
-                >
+                <Button onClick={usePhoto} variant="secondary">
                   <Check className="h-4 w-4" />
-                  Bu Fotoğrafı Kullan
+                  Use Photo
                 </Button>
               </div>
             </div>
           ) : (
-            // Show live camera preview
+            // Show live camera feed
             <div className="space-y-4">
-              <div className="relative bg-muted rounded-lg overflow-hidden">
+              <div className="relative rounded-lg overflow-hidden bg-black">
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
                   muted
-                  className="w-full h-auto max-h-96"
+                  className="w-full h-auto max-h-96 object-cover"
                 />
-                <canvas ref={canvasRef} className="hidden" />
+                
+                {/* Overlay guide for receipt positioning */}
+                <div className="absolute inset-4 border-2 border-white/50 border-dashed rounded-lg pointer-events-none">
+                  <div className="absolute -top-6 left-0 text-white text-xs bg-black/50 px-2 py-1 rounded">
+                    Position receipt here
+                  </div>
+                </div>
               </div>
               
-              <div className="text-center space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Fişi kamera önüne yerleştirin ve fotoğraf çekin
-                </p>
-                <Button 
-                  onClick={capturePhoto}
-                  size="lg"
-                  className="flex items-center gap-2"
-                >
-                  <Camera className="h-5 w-5" />
-                  Fotoğraf Çek
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={handleClose}>
+                  <X className="h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button onClick={capturePhoto} variant="secondary">
+                  <Camera className="h-4 w-4" />
+                  Take Photo
                 </Button>
               </div>
             </div>
           )}
         </div>
-
-        <div className="flex justify-end">
-          <Button onClick={handleClose} variant="outline">
-            <X className="h-4 w-4 mr-2" />
-            İptal
-          </Button>
-        </div>
+        
+        {/* Hidden canvas for image processing */}
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
       </DialogContent>
     </Dialog>
   );
