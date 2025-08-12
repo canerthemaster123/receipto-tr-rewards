@@ -1,52 +1,120 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { Card, CardContent } from './ui/card';
-import { Loader2, Shield, AlertCircle } from 'lucide-react';
+import { Navigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/enhanced-button';
+import { Shield, UserCheck, AlertTriangle, Loader2 } from 'lucide-react';
+import { useToast } from '../hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AdminRouteProps {
   children: React.ReactNode;
-  requiredRole?: 'admin' | 'moderator';
 }
 
-const AdminRoute: React.FC<AdminRouteProps> = ({ 
-  children, 
-  requiredRole = 'admin' 
-}) => {
+const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
+  const { user } = useAuth();
   const { userRole, isLoading } = useUserRole();
+  const { toast } = useToast();
+
+  // Dev-only admin bootstrap for @e2e.local emails
+  const handleMakeAdmin = async () => {
+    if (!user?.email?.endsWith('@e2e.local')) {
+      toast({
+        title: "Unauthorized",
+        description: "Admin bootstrap only available for test accounts",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('qa_make_self_admin');
+      
+      if (error) throw error;
+      
+      if (data?.ok) {
+        toast({
+          title: "Success",
+          description: "Admin role granted. Please refresh the page.",
+        });
+        // Refresh page to update role
+        window.location.reload();
+      } else {
+        throw new Error(data?.error || 'Failed to grant admin role');
+      }
+    } catch (error) {
+      console.error('Error making self admin:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to grant admin role",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-96">
-          <CardContent className="p-8 text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-            <p className="text-muted-foreground">Verifying permissions...</p>
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-center min-h-64">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Checking permissions...</p>
+        </div>
       </div>
     );
   }
 
-  const hasAccess = 
-    (requiredRole === 'admin' && userRole === 'admin') ||
-    (requiredRole === 'moderator' && (userRole === 'admin' || userRole === 'moderator'));
-
-  if (!hasAccess) {
+  if (userRole !== 'admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-96">
-          <CardContent className="p-8 text-center">
-            <div className="p-4 bg-destructive/10 rounded-full w-fit mx-auto mb-4">
-              <Shield className="h-8 w-8 text-destructive" />
+      <div className="max-w-2xl mx-auto mt-12 space-y-6">
+        <Card className="shadow-card border-destructive/20">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+              <Shield className="h-6 w-6 text-destructive" />
             </div>
-            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-            <p className="text-muted-foreground mb-4">
-              You don't have permission to access this area.
+            <CardTitle className="text-destructive">Access Denied</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-muted-foreground">
+              This area is restricted to administrators only. You currently have {userRole || 'user'} permissions.
             </p>
-            <div className="flex items-center gap-2 justify-center text-sm text-warning">
-              <AlertCircle className="h-4 w-4" />
-              Required role: {requiredRole}
+            
+            {/* Dev-only admin bootstrap */}
+            {user.email?.endsWith('@e2e.local') && (
+              <div className="border-t pt-4 mt-6">
+                <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 mb-4">
+                  <div className="flex items-center gap-2 text-warning">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Development Mode</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Test account detected. You can grant yourself admin access for testing.
+                  </p>
+                </div>
+                <Button onClick={handleMakeAdmin} variant="outline">
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Make Me Admin (Dev Only)
+                </Button>
+              </div>
+            )}
+            
+            <div className="border-t pt-4 mt-6">
+              <h3 className="font-semibold mb-2">How to Access Admin</h3>
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>1. Contact your system administrator to request admin access</p>
+                <p>2. They can grant you admin permissions through the user management panel</p>
+                <p>3. Once granted, refresh this page to access admin features</p>
+              </div>
+              
+              <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                <p className="text-xs text-muted-foreground">
+                  For more information, see the <a href="/admin/help" className="text-primary hover:underline">Admin Guide</a>
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

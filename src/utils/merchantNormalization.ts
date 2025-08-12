@@ -15,17 +15,22 @@ const TURKISH_CHAR_MAP: Record<string, string> = {
 };
 
 /**
- * Normalize merchant name for consistent grouping
- * - Converts to lowercase
- * - Removes spaces and punctuation
- * - Maps Turkish diacritics to base characters
- * - Removes common company suffixes
+ * Normalize merchant name for consistent grouping using brand mapping
+ * - First tries to map to curated brand
+ * - Falls back to normalization for unknown brands
  */
 export const normalizeMerchant = (merchantName: string): string => {
   if (!merchantName || typeof merchantName !== 'string') {
-    return '';
+    return 'Diğer';
   }
 
+  // First try brand normalization (most accurate)
+  const brand = normalizeBrand(merchantName);
+  if (brand !== 'Diğer') {
+    return brand;
+  }
+
+  // Fallback to raw normalization for unknown brands
   let normalized = merchantName.toLowerCase();
 
   // Replace Turkish characters with base equivalents
@@ -60,7 +65,7 @@ export const normalizeMerchant = (merchantName: string): string => {
   // Remove any remaining digits that might be store numbers
   normalized = normalized.replace(/\d+$/, '');
 
-  return normalized.trim();
+  return normalized.trim() || 'Diğer';
 };
 
 /**

@@ -131,11 +131,13 @@ const ReceiptHistory: React.FC = () => {
       });
     }
 
-    // Merchant filter (normalized)
+    // Merchant filter (normalized brand matching)
     if (filters.merchantFilter && filters.merchantFilter !== 'all') {
-      result = result.filter(receipt => 
-        normalizeMerchant(receipt.merchant) === filters.merchantFilter
-      );
+      result = result.filter(receipt => {
+        // Use both merchant_brand (if available) and raw merchant name for filtering
+        const brandToCheck = receipt.merchant_brand || receipt.merchant;
+        return normalizeMerchant(brandToCheck) === filters.merchantFilter;
+      });
     }
 
     // Status filter
