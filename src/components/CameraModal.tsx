@@ -10,7 +10,7 @@ interface CameraModalProps {
   onCapture: (file: File) => void;
 }
 
-export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture }) => {
+const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture }) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
