@@ -23,7 +23,7 @@ export const SpendingCharts: React.FC = () => {
   // Filter approved receipts only and handle undefined/null values
   const approvedReceipts = useMemo(() => {
     if (!receipts || !Array.isArray(receipts)) return [];
-    return receipts.filter(r => 
+    const filtered = receipts.filter(r => 
       r && 
       r.status === 'approved' && 
       r.purchase_date && 
@@ -31,6 +31,8 @@ export const SpendingCharts: React.FC = () => {
       r.total !== null &&
       !isNaN(parseFloat(r.total.toString()))
     );
+    console.log(`Charts updated with ${filtered.length} approved receipts`);
+    return filtered;
   }, [receipts]);
 
   // Generate weekly data (last 8 weeks) with proper error handling

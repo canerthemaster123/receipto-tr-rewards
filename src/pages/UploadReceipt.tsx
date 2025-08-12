@@ -392,17 +392,15 @@ const UploadReceipt: React.FC = () => {
                     </Button>
                     <Button 
                       variant="outline"
-                      onClick={() => {
-                        // Check if camera is available for web capture
-                        if (navigator.mediaDevices?.getUserMedia) {
-                          setIsCameraModalOpen(true);
-                        } else {
-                          // Fallback to file input with capture attribute
-                          const cameraInput = document.getElementById('camera-input') as HTMLInputElement;
-                          if (cameraInput) {
-                            cameraInput.click();
-                          }
-                        }
+                       onClick={() => {
+                         // Check if camera is available for web capture
+                         if (navigator.mediaDevices?.getUserMedia) {
+                           setIsCameraModalOpen(true);
+                         } else {
+                           // Fallback to file input with capture attribute
+                           const el = document.getElementById('camera-input') as HTMLInputElement | null;
+                           el?.click();
+                         }
                       }}
                     >
                       <Camera className="h-4 w-4" />
@@ -651,7 +649,7 @@ const UploadReceipt: React.FC = () => {
       <CameraModal
         isOpen={isCameraModalOpen}
         onClose={() => setIsCameraModalOpen(false)}
-        onCapture={(capturedFile) => {
+        onCapture={(capturedFile: File) => {
           handleFileSelect(capturedFile);
           setIsCameraModalOpen(false);
         }}
