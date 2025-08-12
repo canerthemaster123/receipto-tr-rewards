@@ -195,7 +195,8 @@ const AdminPanel: React.FC = () => {
         // Use the new approve function that handles points in transaction
         const { data: approveResult, error: approveError } = await supabase
           .rpc('approve_receipt_with_points', {
-            receipt_id: receiptId
+            receipt_id: receiptId,
+            points_awarded: 100
           });
 
         if (approveError) throw approveError;
@@ -205,8 +206,8 @@ const AdminPanel: React.FC = () => {
         }
 
         toast({
-          title: "Fiş Onaylandı!",
-          description: `Fiş onaylandı ve ${approveResult.points_awarded} puan eklendi.`,
+          title: "Başarılı",
+          description: `Onaylandı (+100 puan)`,
         });
       } else {
         // Simple reject - just update status
@@ -218,9 +219,8 @@ const AdminPanel: React.FC = () => {
         if (error) throw error;
 
         toast({
-          title: "Fiş Reddedildi",
-          description: "Fiş başarıyla reddedildi.",
-          variant: "destructive",
+          title: "Başarılı",
+          description: "Fiş reddedildi",
         });
       }
 

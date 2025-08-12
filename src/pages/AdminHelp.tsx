@@ -1,165 +1,153 @@
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/enhanced-button';
-import { Shield, Users, CheckCircle, BarChart, ExternalLink } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Shield, Users, Receipt, Settings } from 'lucide-react';
+import { useUserRole } from '@/hooks/useUserRole';
 
-const AdminHelp: React.FC = () => {
+export default function AdminHelp() {
   const navigate = useNavigate();
+  const { isAdmin } = useUserRole();
+
+  if (!isAdmin) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-2xl mx-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Erişim Reddedildi
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">
+                Bu sayfaya erişim için admin yetkisi gereklidir.
+              </p>
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/dashboard')}
+                className="mt-4"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Dashboard'a Dön
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-          Admin Yardım
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Admin paneli kullanımı ve yetki yönetimi hakkında bilgiler
-        </p>
-      </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center gap-4 mb-6">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => navigate('/profile')}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Profil'e Dön
+          </Button>
+          <h1 className="text-3xl font-bold">Admin Rehberi</h1>
+        </div>
 
-      <div className="grid gap-6">
-        {/* Admin Panel Access */}
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" />
-              Admin Paneline Erişim
-            </CardTitle>
-            <CardDescription>
-              Admin paneline nasıl erişilir ve kimler kullanabilir
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Erişim Adresi:</h4>
-              <code className="bg-muted px-2 py-1 rounded text-sm">/admin</code>
-              <p className="text-sm text-muted-foreground mt-2">
-                Admin paneline doğrudan tarayıcınızın adres çubuğuna <code>/admin</code> yazarak erişebilirsiniz.
+        <div className="grid gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Admin Paneline Erişim
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p>
+                Admin paneline erişmek için aşağıdaki adımları takip edin:
               </p>
-            </div>
-            
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Yetki Gereksinimleri:</h4>
-              <ul className="list-disc list-inside text-sm space-y-1">
-                <li>Kullanıcının <code>users_profile.role</code> alanı <code>"admin"</code> olmalıdır</li>
-                <li>Yetkisiz kullanıcılar otomatik olarak dashboard sayfasına yönlendirilir</li>
-                <li>Admin yetkisi yalnızca Supabase veritabanından manuel olarak verilebilir</li>
-              </ul>
-            </div>
-
-            <Button 
-              onClick={() => navigate('/admin')}
-              className="w-fit"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Admin Paneline Git
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* User Role Management */}
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-secondary" />
-              Kullanıcı Yetki Yönetimi
-            </CardTitle>
-            <CardDescription>
-              Supabase'de kullanıcı yetkilerini nasıl düzenleyebilirsiniz
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Supabase Adımları:</h4>
-              <ol className="list-decimal list-inside text-sm space-y-2">
-                <li>Supabase Dashboard'a giriş yapın</li>
-                <li><code>users_profile</code> tablosunu açın</li>
-                <li>Yetki vermek istediğiniz kullanıcıyı bulun</li>
-                <li><code>role</code> sütununu <code>"admin"</code> olarak güncelleyin</li>
-                <li>Değişiklik otomatik olarak uygulanır</li>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>Hesabınızın admin rolüne sahip olduğundan emin olun</li>
+                <li>Profil sayfanızdan "Admin Panel" linkine tıklayın</li>
+                <li>Veya doğrudan <code>/admin</code> adresine gidin</li>
               </ol>
-            </div>
+              <Button 
+                onClick={() => navigate('/admin')}
+                className="w-full sm:w-auto"
+              >
+                Admin Panel'e Git
+              </Button>
+            </CardContent>
+          </Card>
 
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Mevcut Roller:</h4>
-              <ul className="list-disc list-inside text-sm space-y-1">
-                <li><code>admin</code> - Tam erişim, tüm işlemleri yapabilir</li>
-                <li><code>moderator</code> - Kısıtlı admin erişimi</li>
-                <li><code>user</code> - Standart kullanıcı (varsayılan)</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Receipt Approval */}
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-accent" />
-              Fiş Onaylama Sistemi
-            </CardTitle>
-            <CardDescription>
-              Fişlerin nasıl onaylandığı ve puan sisteminin çalışması
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Onaylama Süreci:</h4>
-              <ol className="list-decimal list-inside text-sm space-y-2">
-                <li>Kullanıcılar fiş yükler → Status: <code>pending</code></li>
-                <li>Admin onaylar → Status: <code>approved</code>, +100 puan</li>
-                <li>Admin reddeder → Status: <code>rejected</code>, puan yok</li>
-                <li>Onaylanan fişler anında grafiklere yansır</li>
-              </ol>
-            </div>
-
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Otomatik İşlemler:</h4>
-              <ul className="list-disc list-inside text-sm space-y-1">
-                <li>Onaylama işlemi <code>points_ledger</code> tablosuna kayıt eklenir</li>
-                <li>Kullanıcının <code>total_points</code> alanı güncellenir</li>
-                <li>Realtime güncellemeler ile anında yansıma</li>
-                <li>Admin işlemleri audit log'a kaydedilir</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Analytics */}
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart className="h-5 w-5 text-warning" />
-              Analitikler ve Raporlama
-            </CardTitle>
-            <CardDescription>
-              Harcama analitiği ve grafiklerin veri kaynakları
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Veri Kaynakları:</h4>
-              <ul className="list-disc list-inside text-sm space-y-1">
-                <li>Grafikler yalnızca <code>approved</code> statüsündeki fişleri kullanır</li>
-                <li>Kullanıcıya özel veriler (RLS ile korunmuş)</li>
-                <li>Tarih aralığı filtreleme desteği</li>
-                <li>Otomatik para birimi formatı (₺)</li>
-              </ul>
-            </div>
-
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Boş Grafik Durumu:</h4>
-              <p className="text-sm">
-                Eğer grafikler boş görünüyorsa: "Onaylanan fişleriniz görünmüyor. 
-                Bir fişi onaylayın ve burası dolsun." mesajı gösterilir.
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Receipt className="h-5 w-5" />
+                Fiş Onaylama Süreci
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p>
+                Kullanıcılar tarafından yüklenen fişleri onaylamak için:
               </p>
-            </div>
-          </CardContent>
-        </Card>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>Admin panelinde "Bekleyen" durumundaki fişleri görüntüleyin</li>
+                <li>Fiş detaylarını incelemek için "Görüntüle" butonuna tıklayın</li>
+                <li>Fiş geçerliyse "Onayla" butonuna tıklayın (otomatik +100 puan)</li>
+                <li>Fiş geçersizse "Reddet" butonuna tıklayın</li>
+                <li>Onaylanan fişler kullanıcının puan bakiyesine otomatik eklenir</li>
+              </ol>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Kullanıcı Yönetimi
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p>
+                Admin olarak yapabileceğiniz işlemler:
+              </p>
+              <ul className="list-disc list-inside space-y-2 text-sm">
+                <li>Tüm kullanıcıların fiş geçmişini görüntüleme</li>
+                <li>Bekleyen, onaylanmış ve reddedilen fişleri filtreleme</li>
+                <li>Kullanıcı puan bakiyelerini görüntüleme</li>
+                <li>Toplu onaylama ve reddetme işlemleri</li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Sistem Ayarları
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p>
+                Geliştirme ortamında kullanılabilecek özellikler:
+              </p>
+              <ul className="list-disc list-inside space-y-2 text-sm">
+                <li>Test verilerini sıfırlama</li>
+                <li>Sahte OCR modunu etkinleştirme</li>
+                <li>Admin yetkisi verme (@e2e.local hesapları için)</li>
+                <li>Gerçek zamanlı bildirimler</li>
+              </ul>
+              <div className="mt-4 p-4 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Not:</strong> Geliştirme özellikleri sadece test hesapları (@e2e.local) 
+                  için kullanılabilir ve üretim ortamında otomatik olarak devre dışı kalır.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
-};
-
-export default AdminHelp;
+}
