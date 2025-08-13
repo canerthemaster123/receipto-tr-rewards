@@ -10,6 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n';
 import Layout from "./components/Layout";
 import AuthPage from "./pages/AuthPage";
+import AuthCallback from "./components/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import UploadReceipt from "./pages/UploadReceipt";
 import ReceiptHistory from "./pages/ReceiptHistory";
@@ -103,6 +104,10 @@ const App = () => (
                   <AuthPage />
                 </PublicRoute>
               } 
+            />
+            <Route 
+              path="/auth/callback" 
+              element={<AuthCallback />} 
             />
             <Route 
               path="/dashboard" 
