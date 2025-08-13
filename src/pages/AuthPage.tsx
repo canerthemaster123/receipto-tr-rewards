@@ -73,21 +73,9 @@ const AuthPage: React.FC = () => {
           throw new Error(errorMessage);
         }
 
-        // Immediately create user profile after successful signup
+        // User profile will be created automatically by the handle_new_user trigger
+        // So we don't need to manually create it here anymore
         if (signUpResult.user) {
-          const { error: profileError } = await supabase
-            .from('users_profile')
-            .upsert({
-              id: signUpResult.user.id,
-              display_name: name,
-              referral_code: signUpResult.user.id.substring(0, 8),
-              total_points: 0
-            });
-
-          if (profileError) {
-            console.error('Profile creation error:', profileError);
-          }
-
           // Handle referral if provided - normalize input
           if (referralCode.trim()) {
             try {
@@ -163,16 +151,29 @@ const AuthPage: React.FC = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`
+          redirectTo: `${window.location.origin}/dashboard`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
         }
       });
 
       if (error) {
-        toast({
-          title: "Google Giriş Hatası",
-          description: error.message,
-          variant: "destructive",
-        });
+        // Check if it's the provider disabled error
+        if (error.message.includes('provider is not enabled')) {
+          toast({
+            title: "Google Giriş Devre Dışı",
+            description: "Google girişi şu anda devre dışı. Lütfen email/şifre ile giriş yapın.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Google Giriş Hatası",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
       }
     } catch (error) {
       console.error('Google sign in error:', error);

@@ -28,6 +28,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Ensure Google user profile exists (since trigger might fail for Google OAuth)
+  const ensureGoogleUserProfile = async (user: any) => {
+    try {
+      // Check if profile already exists
+      const { data: existingProfile } = await supabase
+        .from('users_profile')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (!existingProfile) {
+        // Create profile manually for Google users
+        const { error } = await supabase
+          .from('users_profile')
+          .upsert({
+            id: user.id,
+            display_name: user.user_metadata?.full_name || user.email.split('@')[0],
+            referral_code: user.id.substring(0, 8),
+            total_points: 0
+          });
+
+        if (error) {
+          console.error('Error creating Google user profile:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error ensuring Google user profile:', error);
+    }
+  };
+
   // Fetch user profile data
   const fetchUserProfile = async (userId: string) => {
     try {
@@ -56,10 +86,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Defer profile fetching to avoid potential recursion
-          setTimeout(() => {
-            fetchUserProfile(session.user.id);
-          }, 0);
+          // Handle Google OAuth callback - ensure profile exists
+          if (event === 'SIGNED_IN' && session.user.app_metadata.provider === 'google') {
+            // For Google auth, ensure profile exists and handle referral if needed
+            setTimeout(async () => {
+              await ensureGoogleUserProfile(session.user);
+              fetchUserProfile(session.user.id);
+            }, 0);
+          } else {
+            // Regular profile fetch for other auth methods
+            setTimeout(() => {
+              fetchUserProfile(session.user.id);
+            }, 0);
+          }
         } else {
           setUserProfile(null);
         }
