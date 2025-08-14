@@ -230,5 +230,47 @@
     "exportJson": "JSON Dışa Aktar",
     "clearText": "Metni Temizle",
     "noTextProvided": "Ayrıştırma için metin sağlanmadı"
+  },
+  "gamification": {
+    "streaks": {
+      "title": "Günlük Seriler",
+      "current": "Mevcut Seri",
+      "longest": "En Uzun Seri",
+      "days": "gün"
+    },
+    "badges": {
+      "title": "Başarımlar",
+      "locked": "Kilitli",
+      "earnedOn": "Kazanıldı"
+    },
+    "challenges": {
+      "title": "Meydan Okumalar",
+      "weeklyChallenge": "Haftalık Meydan Okuma",
+      "noChallenges": "Şu anda aktif meydan okuma yok",
+      "timeLeft": "Kalan süre: {time}",
+      "progress": "İlerleme",
+      "completed": "Tamamlandı",
+      "viewAll": "Tümünü Görüntüle",
+      "allActiveChallenges": "Tüm Aktif Meydan Okumalar"
+    },
+    "leaderboard": {
+      "title": "Sıralama Tablosu",
+      "subtitle": "Diğer kullanıcılara karşı sıralamanızı görün",
+      "weekly": "Haftalık",
+      "monthly": "Aylık",
+      "week": "Hafta",
+      "month": "Ay",
+      "selectWeek": "Bir hafta seçin",
+      "selectMonth": "Bir ay seçin",
+      "rankings": "Sıralamar",
+      "noData": "Sıralama verisi mevcut değil",
+      "yourRank": "Sıralamanız: #{rank} ({points} puan)"
+    },
+    "toasts": {
+      "streakIncrement": "Seriniz: {streak} gün",
+      "badgeEarned": "Rozet kazanıldı: {badge}",
+      "challengeProgress": "Meydan okuma ilerlemesi: {progress}/{target}",
+      "challengeCompleted": "Tebrikler! {title} tamamlandı: +{points} puan"
+    }
   }
 }

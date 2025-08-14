@@ -16,7 +16,8 @@ import {
   Receipt,
   Menu,
   X,
-  Shield
+  Shield,
+  Crown
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -42,6 +43,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/history', icon: History, label: t('navigation.history') },
     { path: '/rewards', icon: Gift, label: t('navigation.rewards') },
     { path: '/referrals', icon: Users, label: t('navigation.referrals') },
+    { path: '/leaderboard', icon: Crown, label: t('navigation.leaderboard') },
     { path: '/profile', icon: User, label: t('navigation.profile') },
     ...(isAdmin ? [{ path: '/admin', icon: Shield, label: t('navigation.admin') }] : [])
   ];

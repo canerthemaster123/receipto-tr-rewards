@@ -9,6 +9,7 @@ import { useReceiptData } from '../hooks/useReceiptData';
 import { usePointsLedger } from '../hooks/usePointsLedger';
 import { SpendingCharts } from '../components/SpendingCharts';
 import { formatTRY } from '../utils/currency';
+import WeeklyChallenges from '../components/WeeklyChallenges';
 import { 
   Upload, 
   Gift, 
@@ -308,6 +309,9 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Weekly Challenges */}
+      <WeeklyChallenges />
 
       {/* Spending Charts */}
       <SpendingCharts />

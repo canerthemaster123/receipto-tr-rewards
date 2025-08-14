@@ -25,7 +25,8 @@
     "upload": "Upload Receipt",
     "history": "History",
     "rewards": "Rewards",
-    "referrals": "Referrals", 
+    "referrals": "Referrals",
+    "leaderboard": "Leaderboard",
     "profile": "Profile",
     "admin": "Admin Panel",
     "logout": "Logout"
@@ -230,5 +231,47 @@
     "exportJson": "Export JSON",
     "clearText": "Clear Text",
     "noTextProvided": "No text provided for parsing"
+  },
+  "gamification": {
+    "streaks": {
+      "title": "Daily Streaks",
+      "current": "Current Streak",
+      "longest": "Longest Streak",
+      "days": "days"
+    },
+    "badges": {
+      "title": "Achievements",
+      "locked": "Locked",
+      "earnedOn": "Earned on"
+    },
+    "challenges": {
+      "title": "Challenges",
+      "weeklyChallenge": "Weekly Challenge",
+      "noChallenges": "No active challenges at the moment",
+      "timeLeft": "Time left: {time}",
+      "progress": "Progress",
+      "completed": "Completed",
+      "viewAll": "View All Challenges",
+      "allActiveChallenges": "All Active Challenges"
+    },
+    "leaderboard": {
+      "title": "Leaderboard",
+      "subtitle": "See how you rank against other users",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "week": "Week",
+      "month": "Month",
+      "selectWeek": "Select a week",
+      "selectMonth": "Select a month",
+      "rankings": "Rankings",
+      "noData": "No leaderboard data available",
+      "yourRank": "Your rank: #{rank} ({points} points)"
+    },
+    "toasts": {
+      "streakIncrement": "Streak: {streak} days",
+      "badgeEarned": "Badge earned: {badge}",
+      "challengeProgress": "Challenge progress: {progress}/{target}",
+      "challengeCompleted": "Congratulations! {title} completed: +{points} points"
+    }
   }
 }

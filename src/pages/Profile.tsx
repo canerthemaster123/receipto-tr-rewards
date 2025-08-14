@@ -12,6 +12,7 @@ import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp } from 'lucide
 import { Link } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import StreaksAndBadges from '@/components/StreaksAndBadges';
 
 interface PointsLedgerEntry {
   id: string;
@@ -246,6 +247,9 @@ const Profile: React.FC = () => {
               </p>
             </CardContent>
           </Card>
+
+          {/* Streaks & Badges */}
+          <StreaksAndBadges />
 
           {/* Points History */}
           <Card>

@@ -23,6 +23,7 @@ import OCRDebugPage from "./pages/OCRDebugPage";
 import Settings from "./pages/Settings";
 import PointsHistory from "./pages/PointsHistory";
 import MyRewards from "./pages/MyRewards";
+import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -170,6 +171,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ReferralPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/leaderboard" 
+              element={
+                <ProtectedRoute>
+                  <Leaderboard />
                 </ProtectedRoute>
               } 
             />
