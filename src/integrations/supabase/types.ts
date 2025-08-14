@@ -47,6 +47,172 @@ export type Database = {
         }
         Relationships: []
       }
+      badges: {
+        Row: {
+          active: boolean
+          desc_en: string | null
+          desc_tr: string | null
+          icon: string
+          id: string
+          key: string
+          name_en: string
+          name_tr: string
+          sort: number
+        }
+        Insert: {
+          active?: boolean
+          desc_en?: string | null
+          desc_tr?: string | null
+          icon: string
+          id?: string
+          key: string
+          name_en: string
+          name_tr: string
+          sort?: number
+        }
+        Update: {
+          active?: boolean
+          desc_en?: string | null
+          desc_tr?: string | null
+          icon?: string
+          id?: string
+          key?: string
+          name_en?: string
+          name_tr?: string
+          sort?: number
+        }
+        Relationships: []
+      }
+      challenge_progress: {
+        Row: {
+          challenge_id: string
+          completed: boolean
+          completed_at: string | null
+          id: string
+          progress: number
+          user_id: string
+        }
+        Insert: {
+          challenge_id: string
+          completed?: boolean
+          completed_at?: string | null
+          id?: string
+          progress?: number
+          user_id: string
+        }
+        Update: {
+          challenge_id?: string
+          completed?: boolean
+          completed_at?: string | null
+          id?: string
+          progress?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenge_progress_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "challenges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "challenge_progress_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_profile"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      challenges: {
+        Row: {
+          active: boolean
+          created_at: string | null
+          created_by: string | null
+          ends_at: string
+          goal_key: string
+          goal_target: number
+          id: string
+          reward_points: number
+          starts_at: string
+          title_en: string
+          title_tr: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string | null
+          created_by?: string | null
+          ends_at: string
+          goal_key: string
+          goal_target: number
+          id?: string
+          reward_points?: number
+          starts_at: string
+          title_en: string
+          title_tr: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string | null
+          created_by?: string | null
+          ends_at?: string
+          goal_key?: string
+          goal_target?: number
+          id?: string
+          reward_points?: number
+          starts_at?: string
+          title_en?: string
+          title_tr?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenges_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_profile"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leaderboard_snapshots: {
+        Row: {
+          created_at: string | null
+          id: string
+          period_key: string
+          points: number
+          public_name: string
+          rank: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          period_key: string
+          points: number
+          public_name: string
+          rank: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          period_key?: string
+          points?: number
+          public_name?: string
+          rank?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leaderboard_snapshots_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_profile"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       points_ledger: {
         Row: {
           created_at: string | null
@@ -185,6 +351,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_badges: {
+        Row: {
+          awarded_at: string
+          badge_key: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          awarded_at?: string
+          badge_key: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          awarded_at?: string
+          badge_key?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_badges_badge_key_fkey"
+            columns: ["badge_key"]
+            isOneToOne: false
+            referencedRelation: "badges"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "user_badges_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_profile"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -205,6 +407,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_streaks: {
+        Row: {
+          current_streak: number
+          last_activity_date: string | null
+          longest_streak: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          current_streak?: number
+          last_activity_date?: string | null
+          longest_streak?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          current_streak?: number
+          last_activity_date?: string | null
+          longest_streak?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_streaks_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users_profile"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       users_profile: {
         Row: {
@@ -248,6 +482,14 @@ export type Database = {
       approve_receipt_with_points: {
         Args: { receipt_id: string; points_awarded?: number }
         Returns: Json
+      }
+      award_badges_if_any: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      build_leaderboard_snapshot: {
+        Args: { p_period_key: string; p_start_date: string; p_end_date: string }
+        Returns: undefined
       }
       bytea_to_text: {
         Args: { data: string }
@@ -345,6 +587,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      mask_name: {
+        Args: { display_name: string }
+        Returns: string
+      }
       process_referral: {
         Args: { referral_code: string }
         Returns: Json
@@ -376,6 +622,14 @@ export type Database = {
       text_to_bytea: {
         Args: { data: string }
         Returns: string
+      }
+      update_challenge_progress: {
+        Args: { p_user_id: string; p_goal_key: string; p_increment?: number }
+        Returns: undefined
+      }
+      update_user_streak: {
+        Args: { p_user_id: string; p_date?: string }
+        Returns: undefined
       }
       urlencode: {
         Args: { data: Json } | { string: string } | { string: string }
