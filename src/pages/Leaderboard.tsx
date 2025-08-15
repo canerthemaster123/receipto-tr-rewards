@@ -191,7 +191,7 @@ const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ entries, loading, u
           </div>
         ) : (
           <>
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="leaderboard-table">
               {entries.map((entry, index) => (
                 <div
                   key={entry.id}

@@ -37,7 +37,7 @@ const StreaksAndBadges: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="streaks-badges">
       {/* Streaks Card */}
       <Card>
         <CardHeader>

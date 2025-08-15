@@ -25,6 +25,7 @@ import {
   Loader2,
   Settings
 } from 'lucide-react';
+import GamificationAdmin from '../components/GamificationAdmin';
 import { Switch } from '../components/ui/switch';
 import { Label } from '../components/ui/label';
 import { config, setQAConfig } from '../config';
@@ -362,7 +363,7 @@ const AdminPanel: React.FC = () => {
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="receipts" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="receipts" className="flex items-center gap-2">
             <Receipt className="h-4 w-4" />
             Pending Receipts
@@ -370,6 +371,10 @@ const AdminPanel: React.FC = () => {
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Users
+          </TabsTrigger>
+          <TabsTrigger value="gamification" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Gamification
           </TabsTrigger>
           <TabsTrigger value="analytics" className="flex items-center gap-2">
             <BarChart className="h-4 w-4" />
@@ -517,6 +522,11 @@ const AdminPanel: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Gamification Tab */}
+        <TabsContent value="gamification" className="space-y-4">
+          <GamificationAdmin onDataChange={fetchData} />
         </TabsContent>
 
         {/* Analytics Tab */}

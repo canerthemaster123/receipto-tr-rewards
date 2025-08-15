@@ -72,7 +72,7 @@ const WeeklyChallenges: React.FC = () => {
   const challengeTitle = i18n.language === 'tr' ? mainChallenge.title_tr : mainChallenge.title_en;
 
   return (
-    <Card>
+    <Card data-testid="weekly-challenges">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Target className="h-5 w-5 text-blue-500" />

@@ -161,10 +161,10 @@ const AuthPage: React.FC = () => {
 
       if (error) {
         // Check if it's the provider disabled error
-        if (error.message.includes('provider is not enabled')) {
+        if (error.message.includes('provider is not enabled') || error.message.includes('OAuth')) {
           toast({
-            title: "Google Giriş Devre Dışı",
-            description: "Google girişi şu anda devre dışı. Lütfen email/şifre ile giriş yapın.",
+            title: "Google Giriş Yapılandırması Gerekli",
+            description: "Google girişi için Supabase Dashboard'da OAuth yapılandırması yapılmalı. Şimdilik email/şifre ile giriş yapabilirsiniz.",
             variant: "destructive",
           });
         } else {
