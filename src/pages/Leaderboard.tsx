@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLeaderboard } from '@/hooks/useLeaderboard';
 import { useAuth } from '@/components/AuthContext';
-import { Trophy, Medal, Award, Crown } from 'lucide-react';
+import { Trophy, Medal, Award, Crown, Receipt, CheckCircle } from 'lucide-react';
 
 const Leaderboard: React.FC = () => {
   const { t } = useTranslation();
@@ -185,9 +185,29 @@ const LeaderboardTable: React.FC<LeaderboardTableProps> = ({ entries, loading, u
             ))}
           </div>
         ) : entries.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Award className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>{t('gamification.leaderboard.noData')}</p>
+          <div className="text-center py-12">
+            <Trophy className="h-16 w-16 mx-auto mb-6 text-muted-foreground/50" />
+            <h3 className="text-lg font-semibold mb-2">{t('gamification.leaderboard.noDataTitle')}</h3>
+            <p className="text-muted-foreground mb-6">
+              {t('gamification.leaderboard.noDataDescription')}
+            </p>
+            <div className="bg-muted/50 rounded-lg p-6 mx-auto max-w-md">
+              <h4 className="font-medium mb-3">{t('gamification.leaderboard.howToRank')}</h4>
+              <ul className="text-sm text-muted-foreground space-y-2 text-left">
+                <li className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-primary" />
+                  {t('gamification.leaderboard.uploadReceipts')}
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-secondary" />
+                  {t('gamification.leaderboard.earnPoints')}
+                </li>
+                <li className="flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-accent" />
+                  {t('gamification.leaderboard.climbRanks')}
+                </li>
+              </ul>
+            </div>
           </div>
         ) : (
           <>

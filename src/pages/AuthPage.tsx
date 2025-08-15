@@ -148,6 +148,9 @@ const AuthPage: React.FC = () => {
     try {
       setIsLoading(true);
       
+      // First try to check if provider is available
+      const { data: providers, error: providersError } = await supabase.auth.getSession();
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -160,17 +163,31 @@ const AuthPage: React.FC = () => {
       });
 
       if (error) {
-        // Check if it's the provider disabled error
-        if (error.message.includes('provider is not enabled') || error.message.includes('OAuth')) {
+        console.error('Google OAuth error:', error);
+        
+        // Provide clearer error messages and fallback
+        if (error.message.includes('provider is not enabled') || 
+            error.message.includes('Unsupported provider') ||
+            error.message.includes('validation_failed')) {
+          
           toast({
-            title: "Google Giriş Yapılandırması Gerekli",
-            description: "Google girişi için Supabase Dashboard'da OAuth yapılandırması yapılmalı. Şimdilik email/şifre ile giriş yapabilirsiniz.",
+            title: "Google Giriş Henüz Aktif Değil",
+            description: "Google ile giriş özelliği yakında aktif olacak. Şimdilik email ve şifrenizle hesap oluşturabilirsiniz.",
             variant: "destructive",
           });
+          
+          // Auto-switch to email/password mode
+          if (!isLogin) {
+            toast({
+              title: "Email ile kayıt olun",
+              description: "Hesabınızı email ve şifre ile oluşturun, Google entegrasyonu çok yakında!",
+            });
+          }
+          
         } else {
           toast({
-            title: "Google Giriş Hatası",
-            description: error.message,
+            title: "Giriş Hatası",
+            description: error.message || "Google ile giriş yapılırken bir hata oluştu.",
             variant: "destructive",
           });
         }
@@ -178,8 +195,8 @@ const AuthPage: React.FC = () => {
     } catch (error) {
       console.error('Google sign in error:', error);
       toast({
-        title: "Hata",
-        description: "Google ile giriş yapılırken bir hata oluştu.",
+        title: "Bağlantı Hatası",
+        description: "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
         variant: "destructive",
       });
     } finally {
