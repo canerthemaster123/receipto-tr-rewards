@@ -265,6 +265,12 @@
       "selectMonth": "Select a month",
       "rankings": "Rankings",
       "noData": "No leaderboard data available",
+      "noDataTitle": "No Rankings Yet",
+      "noDataDescription": "Be the first to climb the leaderboard! Start earning points by uploading receipts.",
+      "howToRank": "How to rank up:",
+      "uploadReceipts": "Upload your receipts",
+      "earnPoints": "Get them approved for points", 
+      "climbRanks": "Climb the leaderboard!",
       "yourRank": "Your rank: #{rank} ({points} points)"
     },
     "toasts": {

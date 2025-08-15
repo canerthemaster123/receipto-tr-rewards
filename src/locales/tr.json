@@ -26,6 +26,7 @@
     "history": "Geçmiş",
     "rewards": "Ödüller",
     "referrals": "Davetler",
+    "leaderboard": "Lider Tablosu",
     "profile": "Profil",
     "admin": "Yönetici Paneli",
     "logout": "Çıkış Yap"
@@ -264,6 +265,12 @@
       "selectMonth": "Bir ay seçin",
       "rankings": "Sıralamar",
       "noData": "Sıralama verisi mevcut değil",
+      "noDataTitle": "Henüz Sıralama Yok",
+      "noDataDescription": "Lider tablosunda ilk olmak için harekete geç! Fiş yükleyerek puan kazanmaya başla.",
+      "howToRank": "Nasıl sıralanırım:",
+      "uploadReceipts": "Fişlerinizi yükleyin",
+      "earnPoints": "Onaylanınca puan kazanın",
+      "climbRanks": "Lider tablosunda yükselın!",
       "yourRank": "Sıralamanız: #{rank} ({points} puan)"
     },
     "toasts": {

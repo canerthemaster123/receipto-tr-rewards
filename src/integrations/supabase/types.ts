@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
@@ -476,11 +476,11 @@ export type Database = {
     }
     Functions: {
       apply_referral_bonus: {
-        Args: { new_user_id: string; code: string }
+        Args: { code: string; new_user_id: string }
         Returns: Json
       }
       approve_receipt_with_points: {
-        Args: { receipt_id: string; points_awarded?: number }
+        Args: { points_awarded?: number; receipt_id: string }
         Returns: Json
       }
       award_badges_if_any: {
@@ -488,7 +488,7 @@ export type Database = {
         Returns: undefined
       }
       build_leaderboard_snapshot: {
-        Args: { p_period_key: string; p_start_date: string; p_end_date: string }
+        Args: { p_end_date: string; p_period_key: string; p_start_date: string }
         Returns: undefined
       }
       bytea_to_text: {
@@ -521,8 +521,8 @@ export type Database = {
       }
       has_role: {
         Args: {
-          _user_id: string
           _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
         }
         Returns: boolean
       }
@@ -532,12 +532,12 @@ export type Database = {
       }
       http_delete: {
         Args:
+          | { content: string; content_type: string; uri: string }
           | { uri: string }
-          | { uri: string; content: string; content_type: string }
         Returns: Database["public"]["CompositeTypes"]["http_response"]
       }
       http_get: {
-        Args: { uri: string } | { uri: string; data: Json }
+        Args: { data: Json; uri: string } | { uri: string }
         Returns: Database["public"]["CompositeTypes"]["http_response"]
       }
       http_head: {
@@ -556,17 +556,17 @@ export type Database = {
         }[]
       }
       http_patch: {
-        Args: { uri: string; content: string; content_type: string }
+        Args: { content: string; content_type: string; uri: string }
         Returns: Database["public"]["CompositeTypes"]["http_response"]
       }
       http_post: {
         Args:
-          | { uri: string; content: string; content_type: string }
-          | { uri: string; data: Json }
+          | { content: string; content_type: string; uri: string }
+          | { data: Json; uri: string }
         Returns: Database["public"]["CompositeTypes"]["http_response"]
       }
       http_put: {
-        Args: { uri: string; content: string; content_type: string }
+        Args: { content: string; content_type: string; uri: string }
         Returns: Database["public"]["CompositeTypes"]["http_response"]
       }
       http_reset_curlopt: {
@@ -580,10 +580,10 @@ export type Database = {
       log_admin_action: {
         Args: {
           _action: string
-          _table_name?: string
-          _record_id?: string
-          _old_values?: Json
           _new_values?: Json
+          _old_values?: Json
+          _record_id?: string
+          _table_name?: string
         }
         Returns: undefined
       }
@@ -604,7 +604,7 @@ export type Database = {
         Returns: Json
       }
       redeem_reward: {
-        Args: { reward_name: string; points_cost: number }
+        Args: { points_cost: number; reward_name: string }
         Returns: Json
       }
       set_limit: {
@@ -624,11 +624,11 @@ export type Database = {
         Returns: string
       }
       update_challenge_progress: {
-        Args: { p_user_id: string; p_goal_key: string; p_increment?: number }
+        Args: { p_goal_key: string; p_increment?: number; p_user_id: string }
         Returns: undefined
       }
       update_user_streak: {
-        Args: { p_user_id: string; p_date?: string }
+        Args: { p_date?: string; p_user_id: string }
         Returns: undefined
       }
       urlencode: {
