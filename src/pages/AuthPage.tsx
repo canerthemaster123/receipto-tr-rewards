@@ -370,6 +370,17 @@ const AuthPage: React.FC = () => {
                 </svg>
                 Google ile devam et
               </Button>
+              
+              {/* Google Setup Help Link */}
+              <div className="text-center mt-2">
+                <button
+                  type="button"
+                  onClick={() => window.open('/google-auth-setup', '_blank')}
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Google giriş sorunu mu yaşıyorsunuz? Kurulum rehberi
+                </button>
+              </div>
             </div>
 
             <div className="mt-6 text-center">
