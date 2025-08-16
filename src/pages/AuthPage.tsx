@@ -146,37 +146,66 @@ const AuthPage: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     try {
+      setIsLoading(true);
+      
+      // Log for debugging
+      console.log('Starting Google OAuth, current location:', window.location.href);
+      console.log('Is in iframe:', window.self !== window.top);
+      
       // If preview runs inside an iframe, force top-level navigation first
       if (window.self !== window.top) {
+        console.log('Breaking out of iframe...');
         if (window.top) {
-          (window.top as Window).location.href = window.location.origin;
+          (window.top as Window).location.href = `${window.location.origin}/auth`;
         }
         return;
       }
 
-      setIsLoading(true);
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      console.log('OAuth redirect URL:', redirectUrl);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account'
+          }
         },
       });
 
       if (error) {
         console.error('Google OAuth error:', error);
-        // Show a friendly TR toast
-        toast({
-          title: "Giriş Hatası",
-          description: "Google ile giriş sırasında bir hata oluştu.",
-          variant: "destructive",
-        });
+        
+        // Handle specific error types
+        if (error.message.includes('popup_blocked')) {
+          toast({
+            title: "Pop-up Engellendi",
+            description: "Lütfen pop-up engelleyicisini devre dışı bırakın ve tekrar deneyin.",
+            variant: "destructive",
+          });
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          toast({
+            title: "Bağlantı Hatası",
+            description: "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Google Giriş Hatası", 
+            description: "Google ile giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        console.log('OAuth initiated successfully');
       }
     } catch (error) {
       console.error('Google sign in error:', error);
       toast({
-        title: "Giriş Hatası",
-        description: "Google ile giriş sırasında bir hata oluştu.",
+        title: "Beklenmeyen Hata",
+        description: "Bir hata oluştu. Lütfen sayfayı yenileyin ve tekrar deneyin.",
         variant: "destructive",
       });
     } finally {
