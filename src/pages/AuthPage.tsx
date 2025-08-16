@@ -146,64 +146,43 @@ const AuthPage: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     try {
+      // If preview runs inside an iframe, force top-level navigation first
+      if (window.self !== window.top) {
+        if (window.top) {
+          (window.top as Window).location.href = window.location.origin;
+        }
+        return;
+      }
+
       setIsLoading(true);
-      
-      // First try to check if provider is available
-      const { data: providers, error: providersError } = await supabase.auth.getSession();
-      
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent'
-          }
-        }
+        },
       });
 
       if (error) {
         console.error('Google OAuth error:', error);
-        
-        // Provide clearer error messages and fallback
-        if (error.message.includes('provider is not enabled') || 
-            error.message.includes('Unsupported provider') ||
-            error.message.includes('validation_failed')) {
-          
-          toast({
-            title: "Google Giriş Henüz Aktif Değil",
-            description: "Google ile giriş özelliği yakında aktif olacak. Şimdilik email ve şifrenizle hesap oluşturabilirsiniz.",
-            variant: "destructive",
-          });
-          
-          // Auto-switch to email/password mode
-          if (!isLogin) {
-            toast({
-              title: "Email ile kayıt olun",
-              description: "Hesabınızı email ve şifre ile oluşturun, Google entegrasyonu çok yakında!",
-            });
-          }
-          
-        } else {
-          toast({
-            title: "Giriş Hatası",
-            description: error.message || "Google ile giriş yapılırken bir hata oluştu.",
-            variant: "destructive",
-          });
-        }
+        // Show a friendly TR toast
+        toast({
+          title: "Giriş Hatası",
+          description: "Google ile giriş sırasında bir hata oluştu.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Google sign in error:', error);
       toast({
-        title: "Bağlantı Hatası",
-        description: "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
+        title: "Giriş Hatası",
+        description: "Google ile giriş sırasında bir hata oluştu.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
-
   return (
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
@@ -347,6 +326,7 @@ const AuthPage: React.FC = () => {
                 type="button"
                 variant="outline"
                 className="w-full mt-4"
+                data-testid="google-auth-button"
                 onClick={handleGoogleSignIn}
                 disabled={isLoading}
               >
