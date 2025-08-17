@@ -50,16 +50,16 @@ const GoogleAuthSetup: React.FC = () => {
                   <strong>Authorized JavaScript origins:</strong>
                   <code className="block bg-background p-2 rounded mt-1">
                     https://mxrjsclpdwmrrvmzmqmo.supabase.co<br/>
-                    http://localhost:5173<br/>
-                    [Your production domain]
+                    https://receipto-tr-rewards.lovable.app<br/>
+                    http://localhost:5173
                   </code>
                 </div>
                 <div>
                   <strong>Authorized redirect URIs:</strong>
                   <code className="block bg-background p-2 rounded mt-1">
                     https://mxrjsclpdwmrrvmzmqmo.supabase.co/auth/v1/callback<br/>
-                    http://localhost:5173/auth/callback<br/>
-                    [Your production domain]/auth/callback
+                    https://receipto-tr-rewards.lovable.app/auth/callback<br/>
+                    http://localhost:5173/auth/callback
                   </code>
                 </div>
               </div>
@@ -122,15 +122,15 @@ const GoogleAuthSetup: React.FC = () => {
                 <div>
                   <strong>Site URL:</strong>
                   <code className="block bg-background p-2 rounded mt-1">
-                    http://localhost:5173 (development)<br/>
-                    [Your production domain] (production)
+                    https://receipto-tr-rewards.lovable.app (production)<br/>
+                    http://localhost:5173 (development)
                   </code>
                 </div>
                 <div>
                   <strong>Redirect URLs:</strong>
                   <code className="block bg-background p-2 rounded mt-1">
-                    http://localhost:5173/auth/callback<br/>
-                    [Your production domain]/auth/callback
+                    https://receipto-tr-rewards.lovable.app/auth/callback<br/>
+                    http://localhost:5173/auth/callback
                   </code>
                 </div>
               </div>
