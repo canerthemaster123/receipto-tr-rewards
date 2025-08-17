@@ -151,6 +151,7 @@ const AuthPage: React.FC = () => {
       // Log for debugging
       console.log('Starting Google OAuth, current location:', window.location.href);
       console.log('Is in iframe:', window.self !== window.top);
+      console.log('User agent:', navigator.userAgent);
       
       // If preview runs inside an iframe, force top-level navigation first
       if (window.self !== window.top) {
@@ -163,6 +164,7 @@ const AuthPage: React.FC = () => {
 
       const redirectUrl = `${window.location.origin}/auth/callback`;
       console.log('OAuth redirect URL:', redirectUrl);
+      console.log('Window location origin:', window.location.origin);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -177,9 +179,13 @@ const AuthPage: React.FC = () => {
 
       if (error) {
         console.error('Google OAuth error:', error);
+        console.error('Error details:', {
+          message: error.message,
+          status: error.status
+        });
         
         // Handle specific error types
-        if (error.message.includes('popup_blocked')) {
+        if (error.message.includes('popup_blocked') || error.message.includes('blocked')) {
           toast({
             title: "Pop-up Engellendi",
             description: "Lütfen pop-up engelleyicisini devre dışı bırakın ve tekrar deneyin.",
@@ -191,21 +197,27 @@ const AuthPage: React.FC = () => {
             description: "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
             variant: "destructive",
           });
+        } else if (error.message.includes('refused') || error.message.includes('X-Frame-Options')) {
+          toast({
+            title: "Google Yapılandırma Hatası",
+            description: "Google OAuth ayarlarını kontrol etmek için sorun giderme rehberine bakın.",
+            variant: "destructive",
+          });
         } else {
           toast({
             title: "Google Giriş Hatası", 
-            description: "Google ile giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.",
+            description: `Google ile giriş sırasında bir hata oluştu: ${error.message}`,
             variant: "destructive",
           });
         }
       } else {
-        console.log('OAuth initiated successfully');
+        console.log('OAuth initiated successfully, redirecting to Google...');
       }
     } catch (error) {
       console.error('Google sign in error:', error);
       toast({
         title: "Beklenmeyen Hata",
-        description: "Bir hata oluştu. Lütfen sayfayı yenileyin ve tekrar deneyin.",
+        description: `Bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`,
         variant: "destructive",
       });
     } finally {
@@ -381,13 +393,20 @@ const AuthPage: React.FC = () => {
               </Button>
               
               {/* Google Setup Help Link */}
-              <div className="text-center mt-2">
+              <div className="text-center mt-2 space-y-1">
                 <button
                   type="button"
                   onClick={() => window.open('/google-auth-setup', '_blank')}
-                  className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors block mx-auto"
                 >
-                  Google giriş sorunu mu yaşıyorsunuz? Kurulum rehberi
+                  Google kurulum rehberi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open('/google-troubleshoot', '_blank')}
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors block mx-auto"
+                >
+                  "refused to connect" hatası? Sorun giderme
                 </button>
               </div>
             </div>

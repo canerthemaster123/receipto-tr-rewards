@@ -25,6 +25,7 @@ import PointsHistory from "./pages/PointsHistory";
 import MyRewards from "./pages/MyRewards";
 import Leaderboard from "./pages/Leaderboard";
 import GoogleAuthSetup from "./pages/GoogleAuthSetup";
+import GoogleOAuthTroubleshoot from "./pages/GoogleOAuthTroubleshoot";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -224,11 +225,11 @@ const App = () => (
             />
             <Route 
               path="/google-auth-setup" 
-              element={
-                <AdminRoute>
-                  <GoogleAuthSetup />
-                </AdminRoute>
-              } 
+              element={<GoogleAuthSetup />} 
+            />
+            <Route 
+              path="/google-troubleshoot" 
+              element={<GoogleOAuthTroubleshoot />} 
             />
             <Route path="*" element={<NotFound />} />
           </Routes>
