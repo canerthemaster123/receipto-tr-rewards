@@ -168,6 +168,12 @@ const AuthPage: React.FC = () => {
       
       const site = getSiteUrl(); // e.g., https://receipto-tr-rewards.lovable.app
       const callback = `${site}/auth/callback`;
+      
+      console.log('Google OAuth Debug:');
+      console.log('- Current URL:', window.location.href);
+      console.log('- Site URL:', site);
+      console.log('- Callback URL:', callback);
+      console.log('- Is in iframe:', window.top !== window.self);
 
       // Store referral code if present
       const ref = new URLSearchParams(window.location.search).get('ref');
@@ -175,19 +181,40 @@ const AuthPage: React.FC = () => {
         sessionStorage.setItem('pending_ref', ref);
       }
 
-      // If we are inside an iframe (Lovable preview), first break out to top on the real site URL
+      // If we are inside an iframe (Lovable preview), break out safely
       if (window.top && window.top !== window.self) {
-        // Force top to the site root (not the id-preview URL)
-        (window.top as Window).location.href = site;
-        // After top-level navigation, user can click again OR we can auto-continue via /auth/callback bootstrapping
+        console.log('Breaking out of iframe to:', site);
+        try {
+          // Use postMessage to communicate with parent instead of direct navigation
+          window.top.postMessage({ type: 'NAVIGATE_TOP', url: site }, '*');
+          
+          // Fallback: try direct navigation (might fail with SecurityError)
+          setTimeout(() => {
+            try {
+              (window.top as Window).location.href = site;
+            } catch (securityError) {
+              console.log('SecurityError caught, using window.open fallback');
+              // Final fallback: open in new window
+              window.open(site, '_top');
+            }
+          }, 100);
+        } catch (error) {
+          console.error('Failed to break out of iframe:', error);
+          toast({
+            title: "Önizleme Sorunu",
+            description: "Lütfen yeni sekmede açın veya doğrudan siteyi ziyaret edin.",
+            variant: "destructive",
+          });
+        }
         return;
       }
 
+      console.log('Proceeding with OAuth...');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: callback, // explicit callback avoids preview origins
-          skipBrowserRedirect: false, // do a hard redirect (best for OAuth)
+          redirectTo: callback,
+          skipBrowserRedirect: false,
         },
       });
 
@@ -195,15 +222,17 @@ const AuthPage: React.FC = () => {
         console.error('Google OAuth error:', error);
         toast({
           title: "Google Giriş Hatası",
-          description: 'Google ile giriş sırasında bir hata oluştu.',
+          description: `Google ile giriş sırasında bir hata oluştu: ${error.message}`,
           variant: "destructive",
         });
+      } else {
+        console.log('OAuth initiated successfully');
       }
     } catch (e) {
-      console.error(e);
+      console.error('handleGoogleSignIn error:', e);
       toast({
         title: "Beklenmeyen Hata",
-        description: 'Beklenmeyen bir hata oluştu.',
+        description: `Bir hata oluştu: ${e instanceof Error ? e.message : 'Bilinmeyen hata'}`,
         variant: "destructive",
       });
     } finally {

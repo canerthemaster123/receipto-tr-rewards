@@ -7,9 +7,22 @@ export function getSiteUrl() {
 
   const current = window.location.origin;
 
-  // If we're in Lovable's id-preview iframe or a non-https localhost, use envUrl if present
+  // If we're in Lovable's preview, return the production URL
   const isPreview = current.includes('id-preview--') || current.includes('lovableproject.com');
-  if (envUrl && (isPreview || envUrl.startsWith('http'))) return envUrl.replace(/\/+$/, '');
+  
+  if (isPreview) {
+    // If env is set, use that
+    if (envUrl && envUrl.startsWith('http')) {
+      return envUrl.replace(/\/+$/, '');
+    }
+    // Otherwise, use the known production URL for this project
+    return 'https://receipto-tr-rewards.lovable.app';
+  }
+
+  // Use env URL if available and we're not in preview
+  if (envUrl && envUrl.startsWith('http')) {
+    return envUrl.replace(/\/+$/, '');
+  }
 
   // Fallback to current origin in real deployments
   return current.replace(/\/+$/, '');
