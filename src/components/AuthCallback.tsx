@@ -10,46 +10,57 @@ const AuthCallback: React.FC = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Get the current session
+        // Force fetch session; Supabase parses the hash/query automatically
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error('Auth callback error:', error);
           toast({
-            title: "Kimlik doğrulama hatası",
-            description: error.message,
+            title: "Oturum Hatası",
+            description: 'Oturum oluşturulamadı.',
             variant: "destructive",
           });
-          navigate('/auth');
+          navigate('/auth', { replace: true });
           return;
         }
 
         if (session?.user) {
-          // Check if user profile exists, if not create it
-          const { data: profile, error: profileError } = await supabase
-            .from('users_profile')
-            .select('id')
-            .eq('id', session.user.id)
-            .single();
+          // Optional: ensure profile row exists (idempotent)
+          try {
+            const { data: userRes } = await supabase.auth.getUser();
+            const user = userRes?.user;
+            if (user) {
+              await supabase.from('users_profile').upsert({
+                id: user.id,
+                display_name: user.user_metadata?.full_name
+                  ?? user.user_metadata?.name
+                  ?? (user.email?.split('@')[0] ?? 'Kullanıcı'),
+              }, { onConflict: 'id' });
+            }
+          } catch (e) {
+            console.warn('Profile upsert warning:', e);
+          }
 
-          if (profileError && profileError.code === 'PGRST116') {
-            // Profile doesn't exist, the trigger should have created it but let's ensure it exists
-            const displayName = session.user.user_metadata?.display_name || 
-                              session.user.user_metadata?.full_name || 
-                              session.user.email?.split('@')[0] || 
-                              'User';
+          // Handle pending referral code
+          const pendingRef = sessionStorage.getItem('pending_ref');
+          if (pendingRef) {
+            try {
+              const { data: bonusResult, error: bonusError } = await supabase
+                .rpc('apply_referral_bonus', {
+                  new_user_id: session.user.id,
+                  code: pendingRef.toLowerCase().replace(/\s+/g, '')
+                });
 
-            const { error: createError } = await supabase
-              .from('users_profile')
-              .upsert({
-                id: session.user.id,
-                display_name: displayName,
-                referral_code: session.user.id.substring(0, 8),
-                total_points: 0
-              });
-
-            if (createError) {
-              console.error('Profile creation error:', createError);
+              if (!bonusError && bonusResult?.success) {
+                toast({
+                  title: "🎉 Referans Bonusu!",
+                  description: "+200 puan eklendi! Siz ve arkadaşınız bonus kazandınız!",
+                });
+              }
+              sessionStorage.removeItem('pending_ref');
+            } catch (referralError) {
+              console.warn('Referral error:', referralError);
+              sessionStorage.removeItem('pending_ref');
             }
           }
 
@@ -57,9 +68,9 @@ const AuthCallback: React.FC = () => {
             title: "Başarıyla giriş yapıldı!",
             description: "Google hesabınızla giriş yaptınız.",
           });
-          navigate('/dashboard');
+          navigate('/dashboard', { replace: true });
         } else {
-          navigate('/auth');
+          navigate('/auth', { replace: true });
         }
       } catch (error) {
         console.error('Auth callback error:', error);
@@ -68,7 +79,7 @@ const AuthCallback: React.FC = () => {
           description: "Kimlik doğrulama işlemi sırasında bir hata oluştu.",
           variant: "destructive",
         });
-        navigate('/auth');
+        navigate('/auth', { replace: true });
       }
     };
 
@@ -76,10 +87,10 @@ const AuthCallback: React.FC = () => {
   }, [navigate, toast]);
 
   return (
-    <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
-      <div className="text-center text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-        <p>Giriş yapılıyor...</p>
+    <div className="flex h-screen items-center justify-center">
+      <div className="text-center">
+        <div className="animate-pulse text-lg font-medium">Giriş yapılıyor…</div>
+        <div className="mt-2 text-sm text-muted-foreground">Lütfen bekleyin.</div>
       </div>
     </div>
   );

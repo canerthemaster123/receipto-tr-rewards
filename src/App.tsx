@@ -26,6 +26,7 @@ import MyRewards from "./pages/MyRewards";
 import Leaderboard from "./pages/Leaderboard";
 import GoogleAuthSetup from "./pages/GoogleAuthSetup";
 import GoogleOAuthTroubleshoot from "./pages/GoogleOAuthTroubleshoot";
+import LeavePreview from "./pages/LeavePreview";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -230,6 +231,10 @@ const App = () => (
             <Route 
               path="/google-troubleshoot" 
               element={<GoogleOAuthTroubleshoot />} 
+            />
+            <Route 
+              path="/leave-preview" 
+              element={<LeavePreview />} 
             />
             <Route path="*" element={<NotFound />} />
           </Routes>

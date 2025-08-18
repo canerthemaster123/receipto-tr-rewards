@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/enhanced-button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Receipt, Mail, Lock, User, Loader2, UserPlus } from 'lucide-react';
+import { Receipt, Mail, Lock, User, Loader2, UserPlus, X } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '../integrations/supabase/client';
+import { getSiteUrl } from '@/lib/siteUrl';
 
 const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -16,9 +17,26 @@ const AuthPage: React.FC = () => {
   const [name, setName] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showIframeBanner, setShowIframeBanner] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Check if in iframe and show banner
+  useEffect(() => {
+    if (window.self !== window.top) {
+      setShowIframeBanner(true);
+    }
+    
+    // Check for referral code from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    const refParam = urlParams.get('ref');
+    if (refParam) {
+      setReferralCode(refParam);
+      // Store for OAuth flow
+      sessionStorage.setItem('pending_ref', refParam);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,76 +166,44 @@ const AuthPage: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Log for debugging
-      console.log('Starting Google OAuth, current location:', window.location.href);
-      console.log('Is in iframe:', window.self !== window.top);
-      console.log('User agent:', navigator.userAgent);
-      
-      // If preview runs inside an iframe, force top-level navigation first
-      if (window.self !== window.top) {
-        console.log('Breaking out of iframe...');
-        if (window.top) {
-          (window.top as Window).location.href = `${window.location.origin}/auth`;
-        }
-        return;
+      const site = getSiteUrl(); // e.g., https://receipto-tr-rewards.lovable.app
+      const callback = `${site}/auth/callback`;
+
+      // Store referral code if present
+      const ref = new URLSearchParams(window.location.search).get('ref');
+      if (ref) {
+        sessionStorage.setItem('pending_ref', ref);
       }
 
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      console.log('OAuth redirect URL:', redirectUrl);
-      console.log('Window location origin:', window.location.origin);
+      // If we are inside an iframe (Lovable preview), first break out to top on the real site URL
+      if (window.top && window.top !== window.self) {
+        // Force top to the site root (not the id-preview URL)
+        (window.top as Window).location.href = site;
+        // After top-level navigation, user can click again OR we can auto-continue via /auth/callback bootstrapping
+        return;
+      }
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'select_account'
-          }
+          redirectTo: callback, // explicit callback avoids preview origins
+          skipBrowserRedirect: false, // do a hard redirect (best for OAuth)
         },
       });
 
       if (error) {
         console.error('Google OAuth error:', error);
-        console.error('Error details:', {
-          message: error.message,
-          status: error.status
+        toast({
+          title: "Google Giriş Hatası",
+          description: 'Google ile giriş sırasında bir hata oluştu.',
+          variant: "destructive",
         });
-        
-        // Handle specific error types
-        if (error.message.includes('popup_blocked') || error.message.includes('blocked')) {
-          toast({
-            title: "Pop-up Engellendi",
-            description: "Lütfen pop-up engelleyicisini devre dışı bırakın ve tekrar deneyin.",
-            variant: "destructive",
-          });
-        } else if (error.message.includes('network') || error.message.includes('fetch')) {
-          toast({
-            title: "Bağlantı Hatası",
-            description: "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
-            variant: "destructive",
-          });
-        } else if (error.message.includes('refused') || error.message.includes('X-Frame-Options')) {
-          toast({
-            title: "Google Yapılandırma Hatası",
-            description: "Google OAuth ayarlarını kontrol etmek için sorun giderme rehberine bakın.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Google Giriş Hatası", 
-            description: `Google ile giriş sırasında bir hata oluştu: ${error.message}`,
-            variant: "destructive",
-          });
-        }
-      } else {
-        console.log('OAuth initiated successfully, redirecting to Google...');
       }
-    } catch (error) {
-      console.error('Google sign in error:', error);
+    } catch (e) {
+      console.error(e);
       toast({
         title: "Beklenmeyen Hata",
-        description: `Bir hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`,
+        description: 'Beklenmeyen bir hata oluştu.',
         variant: "destructive",
       });
     } finally {
@@ -226,7 +212,22 @@ const AuthPage: React.FC = () => {
   };
   return (
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+      {/* Iframe Banner */}
+      {showIframeBanner && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-primary text-primary-foreground p-2 text-sm text-center">
+          <div className="flex items-center justify-center gap-2">
+            <span>Tarayıcı önizlemesindesiniz. Devam etmek için yeni pencerede açılacak.</span>
+            <button
+              onClick={() => setShowIframeBanner(false)}
+              className="ml-2 hover:bg-primary-foreground/20 rounded p-1"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      
+      <div className="w-full max-w-md space-y-6" style={{ marginTop: showIframeBanner ? '3rem' : '0' }}>
         {/* Logo */}
         <div className="text-center">
           <button 
@@ -363,15 +364,15 @@ const AuthPage: React.FC = () => {
                 </div>
               </div>
               
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="w-full mt-4"
-                data-testid="google-auth-button"
                 onClick={handleGoogleSignIn}
+                data-testid="google-auth-button"
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium hover:bg-accent"
+                aria-label="Google ile devam et"
                 disabled={isLoading}
               >
-                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -390,7 +391,7 @@ const AuthPage: React.FC = () => {
                   />
                 </svg>
                 Google ile devam et
-              </Button>
+              </button>
               
               {/* Google Setup Help Link */}
               <div className="text-center mt-2 space-y-1">
