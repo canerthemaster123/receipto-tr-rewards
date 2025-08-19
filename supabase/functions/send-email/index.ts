@@ -8,10 +8,32 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Secure CORS configuration - only allow specific origins
+const ALLOWED_ORIGINS = new Set([
+  'https://receipto-tr-rewards.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+]);
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    return {
+      'Access-Control-Allow-Origin': 'https://receipto-tr-rewards.lovable.app', // fallback to production
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      'Vary': 'Origin'
+    };
+  }
+  
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 
+    'Vary': 'Origin'
+  };
+}
 
 interface EmailRequest {
   type: 'receipt_approved' | 'receipt_rejected' | 'welcome';
@@ -21,6 +43,8 @@ interface EmailRequest {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }

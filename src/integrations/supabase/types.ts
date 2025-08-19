@@ -546,6 +546,10 @@ export type Database = {
         Args: { p_end_date: string; p_period_key: string; p_start_date: string }
         Returns: undefined
       }
+      cleanup_throttle_records: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: Database["public"]["Enums"]["app_role"]
@@ -609,6 +613,10 @@ export type Database = {
       }
       redeem_reward: {
         Args: { points_cost: number; reward_name: string }
+        Returns: Json
+      }
+      secure_upload_check: {
+        Args: { p_file_size?: number }
         Returns: Json
       }
       set_limit: {
