@@ -635,6 +635,10 @@ export type Database = {
         Args: { p_goal_key: string; p_increment?: number; p_user_id: string }
         Returns: undefined
       }
+      update_user_profile_safe: {
+        Args: { p_display_name?: string; p_other_field?: string }
+        Returns: Json
+      }
       update_user_streak: {
         Args: { p_date?: string; p_user_id: string }
         Returns: undefined
