@@ -789,10 +789,15 @@ serve(async (req) => {
 
     // Test if the image URL is accessible
     try {
-      const testResponse = await fetch(imageUrl, { method: 'HEAD' });
-      console.log('Image accessibility test - Status:', testResponse.status);
+      let testResponse = await fetch(imageUrl, { method: 'HEAD' });
+      console.log('Image accessibility test (HEAD) - Status:', testResponse.status);
       if (!testResponse.ok) {
-        throw new Error(`Image not accessible: ${testResponse.status} ${testResponse.statusText}`);
+        // Fallback: try a ranged GET (fetch first bytes only)
+        const ranged = await fetch(imageUrl, { method: 'GET', headers: { 'Range': 'bytes=0-1' } });
+        console.log('Image accessibility test (GET range) - Status:', ranged.status);
+        if (!ranged.ok) {
+          throw new Error(`Image not accessible: ${ranged.status} ${ranged.statusText}`);
+        }
       }
     } catch (error) {
       console.error('Image accessibility error:', error);

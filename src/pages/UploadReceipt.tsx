@@ -116,15 +116,26 @@ const UploadReceipt: React.FC = () => {
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
-      // Get public URL for OCR processing
-      const { data: { publicUrl } } = supabase.storage
+      // Get a short-lived signed URL for OCR processing (bucket is private)
+      const { data: signedData, error: signError } = await supabase.storage
         .from('receipts')
-        .getPublicUrl(fileName);
+        .createSignedUrl(fileName, 60);
 
-      // Call OCR edge function
+      if (signError || !signedData?.signedUrl) {
+        throw new Error(`Failed to create signed URL: ${signError?.message || 'unknown error'}`);
+      }
+
+      // Call OCR edge function with signed URL
       const fakeOcr = localStorage.getItem('qa.fakeOcr') === '1';
+      const ocrImageUrl = fakeOcr
+        ? (signedData.signedUrl.includes('?')
+            ? `${signedData.signedUrl}&qa-fake-ocr=1`
+            : `${signedData.signedUrl}?qa-fake-ocr=1`)
+        : signedData.signedUrl;
+
       const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
-        body: { imageUrl: publicUrl + (fakeOcr ? '?qa-fake-ocr=1' : '') }
+        body: { imageUrl: signedData.signedUrl },
+        headers: fakeOcr ? { 'x-qa-fake-ocr': '1' } : undefined,
       });
 
       if (ocrError) {
