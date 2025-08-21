@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Secure CORS configuration - only allow specific origins
 const ALLOWED_ORIGINS = new Set([
   'https://receipto-tr-rewards.lovable.app',
+  'https://loving-warmth-production.lovable.app',
   'http://localhost:5173', 
   'http://localhost:3000',
 ]);
