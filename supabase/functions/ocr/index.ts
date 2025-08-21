@@ -12,18 +12,10 @@ const ALLOWED_ORIGINS = new Set([
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
   
-  if (!ALLOWED_ORIGINS.has(origin)) {
-    return {
-      'Access-Control-Allow-Origin': 'https://receipto-tr-rewards.lovable.app', // fallback to production
-      'Access-Control-Allow-Methods': 'POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      'Vary': 'Origin'
-    };
-  }
-  
+  // Allow all origins for now to debug the issue
   return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST,OPTIONS', 
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST,OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Vary': 'Origin'
   };
@@ -729,12 +721,17 @@ serve(async (req) => {
   }
 
   try {
-    const { imageUrl } = await req.json();
+    console.log('OCR function called, method:', req.method);
+    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
+    
+    const requestBody = await req.json();
+    console.log('Request body:', requestBody);
+    const { imageUrl } = requestBody;
     
     // Check for fake OCR header (for E2E tests)
     const fakeOcrHeader = req.headers.get('x-qa-fake-ocr');
-    const url = new URL(req.url);
-    const fakeOcrParam = url.searchParams.get('qa-fake-ocr');
+    const imageUrlObj = new URL(imageUrl);
+    const fakeOcrParam = imageUrlObj.searchParams.get('qa-fake-ocr');
     
     if (fakeOcrHeader === '1' || fakeOcrParam === '1') {
       console.log('Using fake OCR for E2E testing');
