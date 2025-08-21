@@ -16,5 +16,6 @@ export interface OCRResult {
   payment_method: string | null;
   receipt_unique_no: string | null;
   fis_no: string | null;
+  barcode_numbers: string[];
   raw_text: string;
 }

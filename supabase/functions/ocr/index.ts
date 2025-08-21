@@ -39,6 +39,7 @@ interface OCRResult {
   payment_method: string | null;
   receipt_unique_no: string | null;
   fis_no: string | null;
+  barcode_numbers: string[];
   raw_text: string;
 }
 
@@ -712,6 +713,72 @@ function extractPaymentMethod(text: string): string | null {
   return null;
 }
 
+/**
+ * Extract numbers appearing below barcode on receipts
+ */
+function extractBarcodeNumbers(text: string): string[] {
+  console.log('Extracting barcode numbers from text');
+  
+  const barcodeNumbers: string[] = [];
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  
+  // Look for numeric sequences in the bottom portion of the receipt
+  const bottomLines = lines.slice(-15); // Last 15 lines
+  
+  for (const line of bottomLines) {
+    // Look for long numeric sequences (8+ digits) that appear below barcode/product codes
+    const numericSequences = line.match(/\b\d{8,}\b/g);
+    
+    if (numericSequences) {
+      numericSequences.forEach(seq => {
+        // Filter out common non-barcode numbers
+        if (!isCommonNonBarcodeNumber(seq)) {
+          barcodeNumbers.push(seq);
+          console.log(`Found barcode number: ${seq}`);
+        }
+      });
+    }
+    
+    // Also look for spaced numeric patterns (e.g., "4195 0929 004 003")
+    const spacedMatch = line.match(/\b(\d{4}\s+\d{4}\s+\d{3}\s+\d{3})\b/);
+    if (spacedMatch) {
+      const spacedNumber = spacedMatch[1].replace(/\s+/g, '');
+      if (spacedNumber.length >= 8 && !isCommonNonBarcodeNumber(spacedNumber)) {
+        barcodeNumbers.push(spacedNumber);
+        console.log(`Found spaced barcode number: ${spacedNumber}`);
+      }
+    }
+  }
+  
+  // Remove duplicates
+  const uniqueBarcodeNumbers = [...new Set(barcodeNumbers)];
+  console.log(`Total unique barcode numbers found: ${uniqueBarcodeNumbers.length}`);
+  
+  return uniqueBarcodeNumbers;
+}
+
+/**
+ * Check if a number sequence is likely NOT a barcode (e.g., terminal ID, timestamp, etc.)
+ */
+function isCommonNonBarcodeNumber(numericString: string): boolean {
+  // Skip if it looks like a timestamp (starts with 20 for year)
+  if (numericString.startsWith('20') && numericString.length === 8) {
+    return true;
+  }
+  
+  // Skip if it's too short or too long for typical barcodes
+  if (numericString.length < 8 || numericString.length > 24) {
+    return true;
+  }
+  
+  // Skip sequences that are all the same digit or simple patterns
+  if (/^(\d)\1+$/.test(numericString) || numericString === '00000000') {
+    return true;
+  }
+  
+  return false;
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
@@ -750,6 +817,7 @@ serve(async (req) => {
         ],
         receipt_unique_no: "09290044195241222",
         fis_no: "0078",
+        barcode_numbers: ["09290044195241222", "41950929004003"],
         raw_text: "M GROS KO? SN VERS TES MAZAZASI\nFİŞ NO: 0078\nMIGROS SIYAH ZEYTIN 1 99,50\nTWIX 50 GR 1 29,90\nPIKO PIRINC PATLAKLI 2 14,00\nTOPLAM: 464,25\n494314******4645\n09290044195241222"
       };
       
@@ -897,6 +965,7 @@ serve(async (req) => {
       payment_method: extractPaymentMethod(fullText),
       receipt_unique_no: extractReceiptUniqueNo(fullText),
       fis_no: extractFisNo(fullText),
+      barcode_numbers: extractBarcodeNumbers(fullText),
       raw_text: fullText
     };
 
