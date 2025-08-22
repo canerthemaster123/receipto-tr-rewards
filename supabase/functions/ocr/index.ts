@@ -714,12 +714,12 @@ function extractPaymentMethod(text: string): string | null {
 }
 
 /**
- * Extract numbers appearing below barcode on receipts
+ * Extract and categorize numbers appearing below barcode on receipts
  */
 function extractBarcodeNumbers(text: string): string[] {
   console.log('Extracting barcode numbers from text');
   
-  const barcodeNumbers: string[] = [];
+  const categorizedNumbers: string[] = [];
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
   
   // Look for numeric sequences in the bottom portion of the receipt
@@ -733,8 +733,9 @@ function extractBarcodeNumbers(text: string): string[] {
       numericSequences.forEach(seq => {
         // Filter out common non-barcode numbers
         if (!isCommonNonBarcodeNumber(seq)) {
-          barcodeNumbers.push(seq);
-          console.log(`Found barcode number: ${seq}`);
+          const categorized = categorizeNumber(seq, text);
+          categorizedNumbers.push(categorized);
+          console.log(`Found categorized number: ${categorized}`);
         }
       });
     }
@@ -744,17 +745,55 @@ function extractBarcodeNumbers(text: string): string[] {
     if (spacedMatch) {
       const spacedNumber = spacedMatch[1].replace(/\s+/g, '');
       if (spacedNumber.length >= 8 && !isCommonNonBarcodeNumber(spacedNumber)) {
-        barcodeNumbers.push(spacedNumber);
-        console.log(`Found spaced barcode number: ${spacedNumber}`);
+        const categorized = categorizeNumber(spacedNumber, text);
+        categorizedNumbers.push(categorized);
+        console.log(`Found spaced categorized number: ${categorized}`);
       }
     }
   }
   
   // Remove duplicates
-  const uniqueBarcodeNumbers = [...new Set(barcodeNumbers)];
-  console.log(`Total unique barcode numbers found: ${uniqueBarcodeNumbers.length}`);
+  const uniqueNumbers = [...new Set(categorizedNumbers)];
+  console.log(`Total unique categorized numbers found: ${uniqueNumbers.length}`);
   
-  return uniqueBarcodeNumbers;
+  return uniqueNumbers;
+}
+
+/**
+ * Categorize a number based on its context and format
+ */
+function categorizeNumber(number: string, text: string): string {
+  // 17 haneli barkod numarası
+  if (number.length === 17) {
+    return `Barkod Numarası: ${number}`;
+  }
+  
+  // Check if it's near "REF NO" or "REFERANS" text
+  if (text.toLowerCase().includes(`ref no: ${number}`) || 
+      text.toLowerCase().includes(`referans: ${number}`) ||
+      text.toLowerCase().includes(`ref no:${number}`)) {
+    return `Referans Numarası: ${number}`;
+  }
+  
+  // Check if it's near "Isyeri ID" or "İş yeri" text
+  if (text.toLowerCase().includes(`isyeri id:${number}`) || 
+      text.toLowerCase().includes(`iş yeri id:${number}`) ||
+      text.toLowerCase().includes(`isyeri id: ${number}`)) {
+    return `İş Yeri ID: ${number}`;
+  }
+  
+  // For 10-digit numbers, likely to be reference numbers
+  if (number.length === 10) {
+    return `Referans Numarası: ${number}`;
+  }
+  
+  // For 8-10 digit numbers that aren't 10 digits, likely to be business IDs
+  if (number.length >= 8 && number.length <= 9) {
+    return `İş Yeri ID: ${number}`;
+  }
+  
+  // Default to barkod numarası for longer sequences
+  return `Barkod Numarası: ${number}`;
 }
 
 /**

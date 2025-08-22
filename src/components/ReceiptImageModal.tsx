@@ -306,11 +306,13 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
               <div className="border-t pt-3">
                 <div className="flex items-start gap-2">
                   <Barcode className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <span className="font-medium">Barcode Numbers:</span>
-                    <div className="mt-1 flex flex-wrap gap-2">
+                  <div className="w-full">
+                    <span className="font-medium">Tespit Edilen Numaralar:</span>
+                    <div className="mt-2 space-y-2">
                       {barcodeNumbers.map((code, idx) => (
-                        <span key={idx} className="text-xs font-mono px-2 py-1 rounded bg-muted text-foreground/80">{code}</span>
+                        <div key={idx} className="text-sm px-3 py-2 rounded bg-muted border">
+                          <span className="font-mono text-foreground">{code}</span>
+                        </div>
                       ))}
                     </div>
                   </div>
