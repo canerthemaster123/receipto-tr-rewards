@@ -275,6 +275,7 @@ export type Database = {
       }
       receipts: {
         Row: {
+          barcode_numbers: string[] | null
           created_at: string | null
           fis_no: string | null
           id: string
@@ -294,6 +295,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          barcode_numbers?: string[] | null
           created_at?: string | null
           fis_no?: string | null
           id?: string
@@ -313,6 +315,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          barcode_numbers?: string[] | null
           created_at?: string | null
           fis_no?: string | null
           id?: string
