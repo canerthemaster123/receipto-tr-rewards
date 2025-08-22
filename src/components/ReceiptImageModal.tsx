@@ -16,6 +16,7 @@ interface ReceiptImageModalProps {
   receiptId: string;
   receiptUniqueNo?: string;
   fisNo?: string;
+  barcodeNumbers?: string[];
 }
 
 export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
@@ -28,7 +29,8 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
   purchaseDate,
   receiptId,
   receiptUniqueNo,
-  fisNo
+  fisNo,
+  barcodeNumbers
 }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -296,6 +298,22 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {barcodeNumbers && barcodeNumbers.length > 0 && (
+              <div className="border-t pt-3">
+                <div className="flex items-start gap-2">
+                  <Barcode className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <span className="font-medium">Barcode Numbers:</span>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {barcodeNumbers.map((code, idx) => (
+                        <span key={idx} className="text-xs font-mono px-2 py-1 rounded bg-muted text-foreground/80">{code}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

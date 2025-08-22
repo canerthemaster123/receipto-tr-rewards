@@ -17,6 +17,7 @@ interface ReceiptData {
   image_url?: string;
   receipt_unique_no?: string;
   fis_no?: string;
+  barcode_numbers?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -49,7 +50,7 @@ export const useReceiptData = (): UseReceiptDataReturn => {
       
       const { data: receiptsData, error } = await supabase
         .from('receipts')
-        .select('id, merchant, merchant_brand, total, purchase_date, purchase_time, store_address, payment_method, status, points, items, image_url, receipt_unique_no, fis_no, created_at, updated_at')
+        .select('id, merchant, merchant_brand, total, purchase_date, purchase_time, store_address, payment_method, status, points, items, image_url, receipt_unique_no, fis_no, barcode_numbers, created_at, updated_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 

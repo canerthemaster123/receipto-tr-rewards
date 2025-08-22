@@ -47,6 +47,7 @@ interface ReceiptRecord {
   image_url?: string;
   receipt_unique_no?: string;
   fis_no?: string;
+  barcode_numbers?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +82,7 @@ const ReceiptHistory: React.FC = () => {
     receiptId: string;
     receiptUniqueNo?: string;
     fisNo?: string;
+    barcodeNumbers?: string[];
   } | null>(null);
 
   const [filters, setFilters] = useState<AdvancedFilters>({
@@ -192,7 +194,8 @@ const ReceiptHistory: React.FC = () => {
       purchaseDate: receipt.purchase_date,
       receiptId: receipt.id,
       receiptUniqueNo: receipt.receipt_unique_no,
-      fisNo: receipt.fis_no
+      fisNo: receipt.fis_no,
+      barcodeNumbers: receipt.barcode_numbers
     });
     setImageModalOpen(true);
   };
@@ -712,21 +715,22 @@ const ReceiptHistory: React.FC = () => {
 
       {/* Image Modal */}
       {imageModalData && (
-        <ReceiptImageModal
-          isOpen={imageModalOpen}
-          onClose={() => {
-            setImageModalOpen(false);
-            setImageModalData(null);
-          }}
-          imageUrl={imageModalData.imageUrl}
-          fileName={imageModalData.fileName}
-          merchant={imageModalData.merchant}
-          merchantBrand={imageModalData.merchantBrand}
-          purchaseDate={imageModalData.purchaseDate}
-          receiptId={imageModalData.receiptId}
-          receiptUniqueNo={imageModalData.receiptUniqueNo}
-          fisNo={imageModalData.fisNo}
-        />
+          <ReceiptImageModal
+            isOpen={imageModalOpen}
+            onClose={() => {
+              setImageModalOpen(false);
+              setImageModalData(null);
+            }}
+            imageUrl={imageModalData.imageUrl}
+            fileName={imageModalData.fileName}
+            merchant={imageModalData.merchant}
+            merchantBrand={imageModalData.merchantBrand}
+            purchaseDate={imageModalData.purchaseDate}
+            receiptId={imageModalData.receiptId}
+            receiptUniqueNo={imageModalData.receiptUniqueNo}
+            fisNo={imageModalData.fisNo}
+            barcodeNumbers={imageModalData.barcodeNumbers}
+          />
       )}
     </div>
   );

@@ -321,6 +321,9 @@ const UploadReceipt: React.FC = () => {
         insertData.merchant_brand = ocrResult.merchant_brand;
         insertData.receipt_unique_no = ocrResult.receipt_unique_no;
         insertData.fis_no = ocrResult.fis_no;
+        if (ocrResult.barcode_numbers && ocrResult.barcode_numbers.length > 0) {
+          insertData.barcode_numbers = ocrResult.barcode_numbers;
+        }
       }
 
       const { error: dbError } = await supabase
@@ -535,7 +538,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.storeName}
                     onChange={(e) => setReceiptData({...receiptData, storeName: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                   />
                 </div>
               </div>
@@ -550,7 +553,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.date}
                     onChange={(e) => setReceiptData({...receiptData, date: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                   />
                 </div>
               </div>
@@ -563,7 +566,7 @@ const UploadReceipt: React.FC = () => {
                     placeholder="14:32"
                     value={receiptData.purchaseTime}
                     onChange={(e) => setReceiptData({...receiptData, purchaseTime: e.target.value})}
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                   />
                 </div>
                 <div className="space-y-2">
@@ -573,7 +576,7 @@ const UploadReceipt: React.FC = () => {
                     placeholder="Store location"
                     value={receiptData.storeAddress}
                     onChange={(e) => setReceiptData({...receiptData, storeAddress: e.target.value})}
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                   />
                 </div>
               </div>
@@ -590,7 +593,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.totalAmount}
                     onChange={(e) => setReceiptData({...receiptData, totalAmount: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                   />
                 </div>
               </div>
@@ -605,7 +608,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.paymentMethod}
                     onChange={(e) => setReceiptData({...receiptData, paymentMethod: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed}
+                    disabled={!isProcessed || !!ocrResult}
                     required
                   />
                 </div>
@@ -622,9 +625,20 @@ const UploadReceipt: React.FC = () => {
                   value={receiptData.items}
                   onChange={(e) => setReceiptData({...receiptData, items: e.target.value})}
                   className="min-h-20"
-                  disabled={!isProcessed}
+                  disabled={!isProcessed || !!ocrResult}
                 />
               </div>
+
+              {ocrResult?.barcode_numbers?.length ? (
+                <div className="space-y-2">
+                  <Label>Detected Barcode Numbers</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {ocrResult.barcode_numbers.map((code, idx) => (
+                      <span key={idx} className="text-xs font-mono px-2 py-1 rounded bg-muted text-foreground/80">{code}</span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {isProcessed && (
                 <div className="bg-secondary-light p-4 rounded-lg">
