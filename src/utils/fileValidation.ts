@@ -6,7 +6,7 @@ export const ALLOWED_IMAGE_TYPES = [
   'image/webp'
 ] as const;
 
-export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+export const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40MB
 
 export interface FileValidationResult {
   isValid: boolean;
