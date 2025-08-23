@@ -523,6 +523,12 @@ function parseItems(text: string): {
     // Skip obvious non-item words
     if (/SATIŞ|SATIS|E-ARŞ[İI]V|ADRES[İI]|MÜŞTER[İI]/i.test(line)) continue;
 
+    // Skip receipt metadata lines (fatura bilgileri)
+    if (/F[İI]Ş\s*NO|B[İI]LG[İI]\s*F[İI]Ş[İI]|FATURA.*SER[İI]|İRSAL[İI]YE.*SER[İI]|TÜR\s*:|MÜŞTER[İI]\s*TCKN/i.test(line)) continue;
+    
+    // Skip discount lines using the isDiscountLine function
+    if (isDiscountLine(line)) continue;
+
     // Handle product code starting with #
     const codeMatch = line.match(/^#(\d{6,})/);
     let product_code: string | undefined;
