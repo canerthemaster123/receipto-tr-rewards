@@ -523,8 +523,17 @@ function parseItems(text: string): {
     // Skip obvious non-item words
     if (/SATIŞ|SATIS|E-ARŞ[İI]V|ADRES[İI]|MÜŞTER[İI]/i.test(line)) continue;
 
-    // Skip receipt metadata lines (fatura bilgileri)
-    if (/F[İI]Ş\s*NO|B[İI]LG[İI]\s*F[İI]Ş[İI]|FATURA.*SER[İI]|İRSAL[İI]YE.*SER[İI]|TÜR\s*:|MÜŞTER[İI]\s*TCKN/i.test(line)) continue;
+    // Skip ALL receipt metadata and fatura information lines
+    if (/F[İI]Ş\s*NO|B[İI]LG[İI]\s*F[İI]Ş[İI]|FATURA.*SER[İI]|İRSAL[İI]YE.*SER[İI]|TÜR\s*:|MÜŞTER[İI]\s*TCKN|TCKN|E-ARŞ[İI]V|EARSIV|E-ARSIV/i.test(line)) continue;
+    
+    // Skip date and time related lines
+    if (/TAR[İI]H\s*:|SAAT\s*:|TARIH|SAAT/i.test(line)) continue;
+    
+    // Skip merchant and store info
+    if (/MAĞAZA|MAGAZA|ŞUBE|SUBE|M[İI]GROS|BİM|A101|ŞOK|SOK|MERKEZ\s*ADRES/i.test(line)) continue;
+    
+    // Skip tax and legal info
+    if (/VERGİ|VERGI|V\.?D\.?|BÜYÜK\s*MÜKELLEFL|BUYUK\s*MUKELLEFL|MERSIS|MERSİS/i.test(line)) continue;
     
     // Skip discount lines using the isDiscountLine function
     if (isDiscountLine(line)) continue;
