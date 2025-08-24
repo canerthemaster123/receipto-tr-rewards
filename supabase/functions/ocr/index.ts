@@ -334,10 +334,11 @@ function extractTotal(text: string): number {
     return isNaN(n) ? null : n;
   };
 
-  // PRIORITY 1: Find exact "TOPLAM" keyword and number on same line or adjacent line
+  // PRIORITY 1: Find exact "TOPLAM" keyword (NOT TOPKDV) and number on same line or adjacent line
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/\bTOPLAM\b/i.test(line) && !/ARA\s*TOPLAM|TOPKDV|KDV/i.test(line)) {
+    // Must contain TOPLAM but NOT TOPKDV, ARA TOPLAM, or other compound forms
+    if (/\bTOPLAM\b/i.test(line) && !/TOPKDV|ARA\s*TOPLAM|GENEL\s*TOPLAM|KDV.*TOPLAM|TOPLAM.*KDV/i.test(line)) {
       console.log(`Found TOPLAM line: "${line}"`);
       
       // First check same line for amount
@@ -633,33 +634,53 @@ function extractPaymentMethod(text: string): string | null {
   // Migros pattern: 494314******4645 (middle 6 digits masked)
   const migrosPattern = /(\d{6}\*{6}\d{4})/;
   
-  // Carrefour pattern: ****1234 or 5112 **** 6023 (first 12 digits masked, last 4 visible)
-  const carrefourPatterns = [
-    /(\d{4}\s+\*{4}\s+\d{4})/,  // 5112 **** 6023 format
-    /(\*{12}\d{4})/,             // ************1234 format
-    /(\d{1,4}\*{8,12}\d{4})/     // Generic: few digits + many stars + last 4
+  // Carrefour credit card patterns: exactly 16 digits with first 12 masked, last 4 visible
+  const carrefourCreditPatterns = [
+    /\*{4}\s+\*{4}\s+\*{4}\s+(\d{4})/,  // **** **** **** 1234
+    /\*{12}(\d{4})/,                     // ************1234
+    /(\d{4})\s+\*{4}\s+\*{4}\s+(\d{4})/, // 1234 **** **** 5678 (capture both parts)
+  ];
+  
+  // Standard 16-digit masked card patterns
+  const standardPatterns = [
+    /(\d{4}\s+\*{4}\s+\*{4}\s+\d{4})/,   // 1234 **** **** 5678
+    /(\*{4}\s+\*{4}\s+\*{4}\s+\d{4})/,   // **** **** **** 1234
   ];
   
   // All credit card patterns
-  const allPatterns = [migrosPattern, ...carrefourPatterns];
+  const allPatterns = [migrosPattern, ...carrefourCreditPatterns, ...standardPatterns];
   
   // Look for actual credit card patterns
   for (const line of lines) {
-    // Skip lines that are clearly not credit cards (like store loyalty cards)
-    if (/carrefour.*kart|migros.*kart|bim.*kart|şok.*kart/i.test(line)) {
-      // This is a store card, check if it contains actual credit card number
-      const storeLine = line;
-      for (const pattern of allPatterns) {
-        const match = storeLine.match(pattern);
+    // Handle CarrefourSA store card vs credit card distinction
+    if (/carrefour.*kart/i.test(line)) {
+      console.log(`Processing Carrefour line: ${line}`);
+      
+      // Look for 16-digit credit card pattern in this line
+      for (const pattern of carrefourCreditPatterns) {
+        const match = line.match(pattern);
         if (match) {
-          const cardNumber = match[1];
-          console.log(`Found credit card in store card line: ${cardNumber}`);
+          let cardNumber;
+          if (match[2]) {
+            // Pattern with two capture groups (first 4 and last 4)
+            cardNumber = `${match[1]} **** **** ${match[2]}`;
+          } else {
+            // Pattern with last 4 digits only
+            cardNumber = `**** **** **** ${match[1]}`;
+          }
+          console.log(`Found Carrefour credit card: ${cardNumber}`);
           return cardNumber;
         }
       }
       
-      // If no credit card pattern found, log it but don't return store card info
-      console.log(`Store card detected (not credit card): ${line}`);
+      // If no 16-digit credit card pattern found, this is just store loyalty card
+      console.log(`CarrefourSA loyalty card detected (not credit card): ${line}`);
+      continue;
+    }
+    
+    // Skip other store loyalty cards
+    if (/migros.*kart|bim.*kart|şok.*kart/i.test(line)) {
+      console.log(`Store loyalty card detected: ${line}`);
       continue;
     }
     
