@@ -233,37 +233,47 @@ function extractPurchaseTime(text: string): string | null {
 // Extract store address from receipt header
 function extractStoreAddress(text: string): string | null {
   const lines = text.split('\n');
-  const headerLines = lines.slice(0, 8); // First ~8 lines for header
+  const headerLines = lines.slice(0, 15); // Look at more lines for address
   
   for (const line of headerLines) {
     const cleanLine = line.trim();
     
-    // Skip empty lines or lines that are clearly not addresses
-    if (!cleanLine || cleanLine.length < 5) continue;
+    // Skip empty lines or very short lines
+    if (!cleanLine || cleanLine.length < 10) continue;
     
-    // Skip lines that look like merchant names, phone numbers, or other non-address info
-    if (/^(MİGROS|MIGROS|BİM|A101|ŞOK|TEL|TELEFON|VERGİ|MERSIS)/i.test(cleanLine)) continue;
+    // Skip merchant names and metadata
+    if (/^(CARREFOUR|MİGROS|MIGROS|BİM|A101|ŞOK|SABANCI|TIC|MRK|A\.?S\.?|Ş\.?T\.?İ\.?)/i.test(cleanLine)) continue;
+    if (/^(TEL|TELEFON|VERGİ|MERSIS|TARIH|SAAT|FİŞ)/i.test(cleanLine)) continue;
     
-    // Look for street indicators
-    if (/\b(Cad\.|Caddesi|Mah\.|Mahallesi|Sk\.|Sokak|No\b|Blok)\b/i.test(cleanLine)) {
+    // Look for definitive address indicators
+    if (/\b(Cad\.|Caddesi|Mah\.|Mahallesi|Sk\.|Sokak|No\s*[:.]?\s*\d|Bulv\.|Bulvarı)\b/i.test(cleanLine)) {
+      console.log(`Found address with street indicator: ${cleanLine}`);
       return cleanLine;
     }
     
-    // Look for postal code pattern (5 digits)
-    if (/\b\d{5}\b/.test(cleanLine)) {
-      return cleanLine;
-    }
-    
-    // Look for lines that contain multiple words and seem address-like
-    const words = cleanLine.split(/\s+/);
-    if (words.length >= 3 && !/^\d+$/.test(cleanLine) && !/^[A-Z]{2,}$/.test(cleanLine)) {
-      // Additional check for common Turkish address words
-      if (/\b(İSTANBUL|ANKARA|İZMİR|BURSA|ANTALYA|ADANA|KONYA|GAZİANTEP|MERSİN|DİYARBAKIR|KAYSERİ|ESKİŞEHİR|URFA|MALATYA|ERZURUM|VAN|BATMAN|ELAZIĞ|TEKİRDAĞ|SİVAS|KAHRAMANMARAŞ|MUĞLA|SAKARYA|DENİZLİ|TRABZİN|AFYON|RİZE|ISPARTA|MANİSA|KOCAELİ|ADIYAMAN|ÇAN|ORDU|SİNOP|KİLİS|NEVŞEHİR|EDİRNE|KİRKLARELİ|UŞAK|DÜZCEMLı|AKSARAY|AMASYA|ARTVIN|AYDIN|BALIKESİR|BARTIN|BAYBURT|BİLECİK|BİNGÖL|BİTLİS|BOLU|BURDUR|ÇANAKKALE|ÇANKIRI|ÇORUM|GEBZE|GİRESUN|GÜMÜŞHANE|HAKKARİ|HATAY|IĞDIR|K|MARAŞ|KARAMAN|KARŞ|KASTAMONU|KIRŞEHIR|KÜTAHYA|MALATYA|OSMANİYE|RIZE|SAMSUN|SİİRT|ŞANLIURFA|ŞIRNAK|TUNCELİ|YALOVA|YOZGAT|ZONGULDAK)/i.test(cleanLine)) {
+    // Look for Turkish city names
+    if (/\b(İSTANBUL|ANKARA|İZMİR|BURSA|ANTALYA|ADANA|KONYA|GAZİANTEP|MERSİN|KAYSERİ|ESKİŞEHİR|AYAZAĞA|ATAŞEHİR|BEŞIKTAŞ|BEYOĞLU|KADIKÖY|ÜSKÜDAR)/i.test(cleanLine)) {
+      // Make sure it's a proper address line, not just containing city name
+      if (cleanLine.split(/\s+/).length >= 3) {
+        console.log(`Found address with city name: ${cleanLine}`);
         return cleanLine;
       }
     }
+    
+    // Look for postal codes (5 digits)
+    if (/\b\d{5}\b/.test(cleanLine) && cleanLine.split(/\s+/).length >= 3) {
+      console.log(`Found address with postal code: ${cleanLine}`);
+      return cleanLine;
+    }
+    
+    // Look for lines with "Cumhuriyet", "Demokrasi" type street names
+    if (/\b(Cumhuriyet|Demokrasi|Huzur|Atatürk|Gazi|Millet)\b/i.test(cleanLine) && cleanLine.split(/\s+/).length >= 4) {
+      console.log(`Found address with common street name: ${cleanLine}`);
+      return cleanLine;
+    }
   }
   
+  console.log('No store address found');
   return null;
 }
 
@@ -324,98 +334,93 @@ function extractTotal(text: string): number {
     return isNaN(n) ? null : n;
   };
 
-  // Collect candidates with a score
-  type Cand = { value: number; score: number; idx: number; src: string };
-  const candidates: Cand[] = [];
+  // PRIORITY 1: Find exact "TOPLAM" keyword and number on same line or adjacent line
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/\bTOPLAM\b/i.test(line) && !/ARA\s*TOPLAM|TOPKDV|KDV/i.test(line)) {
+      console.log(`Found TOPLAM line: "${line}"`);
+      
+      // First check same line for amount
+      const sameLineAmount = parseAmount(line);
+      if (sameLineAmount) {
+        console.log(`Found total on same line as TOPLAM: ${sameLineAmount}`);
+        return sameLineAmount;
+      }
+      
+      // Check next 3 lines for amount
+      for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
+        const nextAmount = parseAmount(lines[j]);
+        if (nextAmount) {
+          console.log(`Found total ${j - i} lines after TOPLAM: ${nextAmount}`);
+          return nextAmount;
+        }
+      }
+    }
+  }
 
-  const keywordPref = [
-    /k?dv['’`\s-]*li\s*toplam/i, // KDV'Lİ TOPLAM variants
+  // PRIORITY 2: KDV'Lİ TOPLAM and similar compound keywords
+  const compoundKeywords = [
+    /k?dv[''`\s-]*li\s*toplam/i,
     /genel\s*toplam/i,
     /toplam\s*tutar/i,
   ];
 
-  const isMaskedCard = (s: string) => /(\d{4,6}\*{4,6}\d{2,4})/.test(s.replace(/\s+/g, ''));
-
-  // Pass 1: Strong keywords on same line
-  lines.forEach((line, i) => {
-    for (const rx of keywordPref) {
-      if (rx.test(line)) {
-        const amt = parseAmount(line);
-        if (amt) candidates.push({ value: amt, score: 10, idx: i, src: 'keyword_same' });
-      }
-    }
-  });
-
-  // Pass 2: Strong keywords in next 1-3 lines
-  lines.forEach((line, i) => {
-    for (const rx of keywordPref) {
-      if (rx.test(line)) {
+  for (const keyword of compoundKeywords) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (keyword.test(line)) {
+        console.log(`Found compound keyword line: "${line}"`);
+        
+        const sameLineAmount = parseAmount(line);
+        if (sameLineAmount) {
+          console.log(`Found total with compound keyword: ${sameLineAmount}`);
+          return sameLineAmount;
+        }
+        
         for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
-          const amt = parseAmount(lines[j]);
-          if (amt) candidates.push({ value: amt, score: 9 - (j - i), idx: j, src: 'keyword_next' });
+          const nextAmount = parseAmount(lines[j]);
+          if (nextAmount) {
+            console.log(`Found total after compound keyword: ${nextAmount}`);
+            return nextAmount;
+          }
         }
       }
     }
-  });
+  }
 
-  // Pass 3: Generic TOPLAM but not ARA TOPLAM / TOPKDV
-  lines.forEach((line, i) => {
-    if (/toplam/i.test(line) && !/ara\s*toplam/i.test(line) && !/topkdv/i.test(line)) {
-      const here = parseAmount(line);
-      if (here) candidates.push({ value: here, score: 7, idx: i, src: 'toplam_same' });
-      for (let j = i + 1; j <= Math.min(i + 5, lines.length - 1); j++) {
-        const amt = parseAmount(lines[j]);
-        if (amt) candidates.push({ value: amt, score: 6 - (j - i), idx: j, src: 'toplam_next' });
-      }
-    }
-  });
-
-  // Pass 4: Payment section (ORTAK POS / POS / masked card)
-  lines.forEach((line, i) => {
+  // PRIORITY 3: Payment section with card numbers
+  const isMaskedCard = (s: string) => /(\d{4,6}\*{4,6}\d{2,4})/.test(s.replace(/\s+/g, ''));
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/ortak\s*pos|\bpos\b/i.test(line) || isMaskedCard(line)) {
-      // same line and nearby — prioritize as highest confidence
+      console.log(`Found payment section line: "${line}"`);
+      
       for (let j = Math.max(0, i - 2); j <= Math.min(i + 3, lines.length - 1); j++) {
         const amt = parseAmount(lines[j]);
-        if (amt) candidates.push({ value: amt, score: 12 - Math.abs(j - i), idx: j, src: 'payment' });
+        if (amt) {
+          console.log(`Found total in payment section: ${amt}`);
+          return amt;
+        }
       }
     }
-  });
+  }
 
-  // Pass 5: Bottom area fallback (last 20 lines) – pick the largest
+  // PRIORITY 4: Bottom area fallback - largest reasonable amount
+  console.log('Using bottom area fallback');
   const bottomStart = Math.max(0, lines.length - 20);
+  let maxAmount = 0;
+  
   for (let i = bottomStart; i < lines.length; i++) {
     const amt = parseAmount(lines[i]);
-    if (amt) candidates.push({ value: amt, score: 3, idx: i, src: 'bottom' });
-  }
-
-  // Filter candidates: keep reasonable amounts
-  const filtered = candidates.filter(c => c.value > 0 && c.value < 100000);
-
-  if (filtered.length) {
-    // Prefer highest score, then highest value, then last occurrence (idx)
-    filtered.sort((a, b) =>
-      b.score - a.score || b.value - a.value || b.idx - a.idx
-    );
-    const chosen = filtered[0];
-    console.log(`Chosen total: ${chosen.value} (src=${chosen.src}, idx=${chosen.idx}, score=${chosen.score})`);
-    return chosen.value;
-  }
-
-  // Ultimate fallback: global max amount in text
-  let globalMax = 0;
-  lines.forEach((l) => {
-    const all = l.match(/\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2}|\d+[\.,]\d{2}/g);
-    if (all) {
-      all.forEach(a => {
-        const v = parseFloat(a.replace(/\./g, '').replace(',', '.'));
-        if (!isNaN(v)) globalMax = Math.max(globalMax, v);
-      });
+    if (amt && amt > maxAmount && amt < 100000) {
+      maxAmount = amt;
     }
-  });
+  }
 
-  if (globalMax > 0) {
-    console.log('Fallback global max amount:', globalMax);
-    return globalMax;
+  if (maxAmount > 0) {
+    console.log(`Bottom area fallback total: ${maxAmount}`);
+    return maxAmount;
   }
 
   console.log('No total found, returning 0');
@@ -523,17 +528,17 @@ function parseItems(text: string): {
     // Skip obvious non-item words
     if (/SATIŞ|SATIS|E-ARŞ[İI]V|ADRES[İI]|MÜŞTER[İI]/i.test(line)) continue;
 
-    // Skip ALL receipt metadata and fatura information lines
+    // Skip ALL receipt metadata and invoice information
     if (/F[İI]Ş\s*NO|B[İI]LG[İI]\s*F[İI]Ş[İI]|FATURA.*SER[İI]|İRSAL[İI]YE.*SER[İI]|TÜR\s*:|MÜŞTER[İI]\s*TCKN|TCKN|E-ARŞ[İI]V|EARSIV|E-ARSIV/i.test(line)) continue;
     
-    // Skip date and time related lines
-    if (/TAR[İI]H\s*:|SAAT\s*:|TARIH|SAAT/i.test(line)) continue;
+    // Skip date, time, address related lines 
+    if (/TAR[İI]H\s*:|SAAT\s*:|TARIH|SAAT|ADRES/i.test(line)) continue;
     
-    // Skip merchant and store info
-    if (/MAĞAZA|MAGAZA|ŞUBE|SUBE|M[İI]GROS|BİM|A101|ŞOK|SOK|MERKEZ\s*ADRES/i.test(line)) continue;
+    // Skip merchant, store, and branch info
+    if (/MAĞAZA|MAGAZA|ŞUBE|SUBE|M[İI]GROS|BİM|A101|ŞOK|SOK|MERKEZ|CARREFOUR|SABANCI|TIC|MRK/i.test(line)) continue;
     
-    // Skip tax and legal info
-    if (/VERGİ|VERGI|V\.?D\.?|BÜYÜK\s*MÜKELLEFL|BUYUK\s*MUKELLEFL|MERSIS|MERSİS/i.test(line)) continue;
+    // Skip tax, legal, and registration info
+    if (/VERGİ|VERGI|V\.?D\.?|BÜYÜK\s*MÜKELLEFL|BUYUK\s*MUKELLEFL|MERSIS|MERSİS|MAH\.|MAHALLESI|CD\.|CADDESI/i.test(line)) continue;
     
     // Skip discount lines using the isDiscountLine function
     if (isDiscountLine(line)) continue;
@@ -623,37 +628,53 @@ function extractFisNo(text: string): string | null {
 function extractPaymentMethod(text: string): string | null {
   console.log('Extracting payment method from text');
   
-  // Turkish receipt masked card patterns
-  const cardPatterns = [
-    // Pattern: #494314******4645 ORTAK POS
-    /#(\d{4,6}\*{4,6}\d{4})/i,
-    // Pattern: 494314******4645 (standalone)
-    /(\d{4,6}\*{4,6}\d{4})/,
-    // Pattern: 1234 **** 7890 or 5310 **** **** 1234 (with spaces)
-    /(\d{4}\s+\*{4}\s+\d{4})/,
-    /(\d{4}\s+\*{4}\s+\*{4}\s+\d{4})/,
-    // Pattern: 1234****7890 (no spaces)
-    /(\d{4}\*{4}\d{4})/,
-    // Pattern with X instead of *
-    /(\d{4,6}X{4,6}\d{4})/i,
-    /(\d{4}\s+X{4}\s+\d{4})/i
-  ];
-  
   const lines = text.split('\n').map(line => line.trim());
   
-  // Look for card patterns in each line
+  // Migros pattern: 494314******4645 (middle 6 digits masked)
+  const migrosPattern = /(\d{6}\*{6}\d{4})/;
+  
+  // Carrefour pattern: ****1234 or 5112 **** 6023 (first 12 digits masked, last 4 visible)
+  const carrefourPatterns = [
+    /(\d{4}\s+\*{4}\s+\d{4})/,  // 5112 **** 6023 format
+    /(\*{12}\d{4})/,             // ************1234 format
+    /(\d{1,4}\*{8,12}\d{4})/     // Generic: few digits + many stars + last 4
+  ];
+  
+  // All credit card patterns
+  const allPatterns = [migrosPattern, ...carrefourPatterns];
+  
+  // Look for actual credit card patterns
   for (const line of lines) {
-    for (const pattern of cardPatterns) {
+    // Skip lines that are clearly not credit cards (like store loyalty cards)
+    if (/carrefour.*kart|migros.*kart|bim.*kart|şok.*kart/i.test(line)) {
+      // This is a store card, check if it contains actual credit card number
+      const storeLine = line;
+      for (const pattern of allPatterns) {
+        const match = storeLine.match(pattern);
+        if (match) {
+          const cardNumber = match[1];
+          console.log(`Found credit card in store card line: ${cardNumber}`);
+          return cardNumber;
+        }
+      }
+      
+      // If no credit card pattern found, log it but don't return store card info
+      console.log(`Store card detected (not credit card): ${line}`);
+      continue;
+    }
+    
+    // Look for credit card patterns in regular lines
+    for (const pattern of allPatterns) {
       const match = line.match(pattern);
       if (match) {
         const cardNumber = match[1];
-        console.log('Found payment method:', cardNumber);
+        console.log(`Found credit card payment method: ${cardNumber}`);
         return cardNumber;
       }
     }
   }
   
-  console.log('No payment method found');
+  console.log('No credit card payment method found');
   return null;
 }
 
@@ -666,37 +687,57 @@ function extractBarcodeNumbers(text: string): string[] {
   const categorizedNumbers: string[] = [];
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
   
-  // Look for numeric sequences in the bottom portion of the receipt
-  const bottomLines = lines.slice(-15); // Last 15 lines
+  // Look for İş Yeri ID specifically mentioned
+  for (const line of lines) {
+    const workplaceIdMatch = line.match(/(?:iş\s*yeri|işyeri)\s*(?:id|no)\s*[:.]?\s*(\d{8,})/i);
+    if (workplaceIdMatch) {
+      categorizedNumbers.push(`İş Yeri ID: ${workplaceIdMatch[1]}`);
+      console.log(`Found explicit workplace ID: İş Yeri ID: ${workplaceIdMatch[1]}`);
+    }
+  }
   
-  for (const line of bottomLines) {
-    // Look for long numeric sequences (8+ digits) that appear below barcode/product codes
+  // Look for receipt number under barcode (bottom area)
+  const bottomLines = lines.slice(-10);
+  for (let i = 0; i < bottomLines.length; i++) {
+    const line = bottomLines[i];
+    
+    // Look for barcode-like patterns (long numbers) 
+    const barcodeMatch = line.match(/\b(\d{17,24})\b/);
+    if (barcodeMatch) {
+      const barcode = barcodeMatch[1];
+      categorizedNumbers.push(`Barkod Numarası: ${barcode}`);
+      console.log(`Found barcode: ${barcode}`);
+      
+      // Look for receipt number in next few lines after barcode
+      for (let j = i + 1; j < Math.min(i + 3, bottomLines.length); j++) {
+        const nextLine = bottomLines[j];
+        const receiptMatch = nextLine.match(/\b(\d{8,16})\b/);
+        if (receiptMatch && receiptMatch[1] !== barcode) {
+          categorizedNumbers.push(`Fiş Numarası: ${receiptMatch[1]}`);
+          console.log(`Found receipt number under barcode: ${receiptMatch[1]}`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // Look for other numeric sequences with proper categorization
+  const bottomLines15 = lines.slice(-15);
+  for (const line of bottomLines15) {
     const numericSequences = line.match(/\b\d{8,}\b/g);
     
     if (numericSequences) {
       numericSequences.forEach(seq => {
-        // Filter out common non-barcode numbers
-        if (!isCommonNonBarcodeNumber(seq)) {
+        if (!isCommonNonBarcodeNumber(seq) && !categorizedNumbers.some(cat => cat.includes(seq))) {
           const categorized = categorizeNumber(seq, text);
           categorizedNumbers.push(categorized);
           console.log(`Found categorized number: ${categorized}`);
         }
       });
     }
-    
-    // Also look for spaced numeric patterns (e.g., "4195 0929 004 003")
-    const spacedMatch = line.match(/\b(\d{4}\s+\d{4}\s+\d{3}\s+\d{3})\b/);
-    if (spacedMatch) {
-      const spacedNumber = spacedMatch[1].replace(/\s+/g, '');
-      if (spacedNumber.length >= 8 && !isCommonNonBarcodeNumber(spacedNumber)) {
-        const categorized = categorizeNumber(spacedNumber, text);
-        categorizedNumbers.push(categorized);
-        console.log(`Found spaced categorized number: ${categorized}`);
-      }
-    }
   }
   
-  // Remove duplicates
+  // Remove duplicates while preserving order
   const uniqueNumbers = [...new Set(categorizedNumbers)];
   console.log(`Total unique categorized numbers found: ${uniqueNumbers.length}`);
   
