@@ -14,3 +14,15 @@ external_url = "https://mxrjsclpdwmrrvmzmqmo.supabase.co"
 
 [functions.ocr]
 verify_jwt = true
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.reports]
+verify_jwt = true
+
+[functions.dev-seed]
+verify_jwt = true
+
+[functions.run-rollups]
+verify_jwt = true

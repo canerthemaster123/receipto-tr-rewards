@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./components/AuthContext";
 import { RealtimeNotifications } from "./components/RealtimeNotifications";
+import { RequireAdmin } from "./components/RequireAdmin";
 import { useUserRole } from "./hooks/useUserRole";
 import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n';
@@ -146,28 +147,17 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/admin" 
-              element={
-                <AdminRoute>
-                  <AdminPanel />
-                </AdminRoute>
-              } 
-            />
+            {/* Admin routes with proper nesting */}
+            <Route path="/admin" element={<RequireAdmin />}>
+              <Route index element={<AdminPanel />} />
+              <Route path="analytics" element={<Analytics />} />
+            </Route>
             <Route 
               path="/admin/help" 
               element={
                 <ProtectedRoute>
                   <AdminHelp />
                 </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/admin/analytics" 
-              element={
-                <AdminRoute>
-                  <Analytics />
-                </AdminRoute>
               } 
             />
             <Route

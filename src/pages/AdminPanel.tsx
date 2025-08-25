@@ -285,7 +285,7 @@ const AdminPanel: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <Button
-            onClick={() => navigate('/analytics')}
+            onClick={() => navigate('/admin/analytics')}
             variant="outline"
             className="flex items-center gap-2"
           >
