@@ -194,7 +194,14 @@ const AdminPanel: React.FC = () => {
   const handleReceiptAction = async (receiptId: string, action: 'approve' | 'reject') => {
     try {
       const receipt = pendingReceipts.find(r => r.id === receiptId);
-      if (!receipt) return;
+      if (!receipt) {
+        toast({
+          title: "Hata",
+          description: "Fiş bulunamadı",
+          variant: "destructive",
+        });
+        return;
+      }
 
       if (action === 'approve') {
         // Use the new approve function that handles points in transaction
@@ -204,7 +211,10 @@ const AdminPanel: React.FC = () => {
             points_awarded: 100
           });
 
-        if (approveError) throw approveError;
+        if (approveError) {
+          console.error('Approve error:', approveError);
+          throw new Error(approveError.message || 'Approval failed');
+        }
 
         if (!approveResult?.success) {
           throw new Error(approveResult?.error || 'Approval failed');
@@ -212,16 +222,23 @@ const AdminPanel: React.FC = () => {
 
         toast({
           title: "Başarılı",
-          description: `Onaylandı (+100 puan)`,
+          description: `Fiş onaylandı ve 100 puan verildi`,
         });
       } else {
-        // Simple reject - just update status
-        const { error } = await supabase
-          .from('receipts')
-          .update({ status: 'rejected' })
-          .eq('id', receiptId);
+        // Use the new reject function with logging
+        const { data: rejectResult, error: rejectError } = await supabase
+          .rpc('reject_receipt', {
+            p_receipt_id: receiptId
+          });
 
-        if (error) throw error;
+        if (rejectError) {
+          console.error('Reject error:', rejectError);
+          throw new Error(rejectError.message || 'Rejection failed');
+        }
+
+        if (!rejectResult?.success) {
+          throw new Error(rejectResult?.error || 'Rejection failed');
+        }
 
         toast({
           title: "Başarılı",
@@ -229,30 +246,22 @@ const AdminPanel: React.FC = () => {
         });
       }
 
-      // Note: For approve action, logging is handled in approve_receipt_with_points
-      // For reject action, log admin action (non-blocking)
-      if (action === 'reject') {
-        try {
-          await supabase.rpc('log_admin_action', {
-            _action: 'reject_receipt',
-            _table_name: 'receipts',
-            _record_id: receiptId,
-            _old_values: { status: 'pending' },
-            _new_values: { status: 'rejected' }
-          });
-        } catch (logErr) {
-          console.warn('log_admin_action failed (non-blocking):', logErr);
-        }
-      }
-
-      // Update local state
+      // Update local state by removing the processed receipt
       setPendingReceipts(prev => prev.filter(r => r.id !== receiptId));
 
     } catch (error) {
       console.error(`Error ${action}ing receipt:`, error);
+      
+      let errorMessage = 'Bilinmeyen hata';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+
       toast({
         title: "Hata",
-        description: `Fiş ${action === 'approve' ? 'onaylanırken' : 'reddedilirken'} hata oluştu.`,
+        description: `Fiş ${action === 'approve' ? 'onaylanırken' : 'reddedilirken'} hata oluştu: ${errorMessage}`,
         variant: "destructive",
       });
     }

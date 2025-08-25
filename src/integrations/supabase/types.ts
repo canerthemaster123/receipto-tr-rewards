@@ -833,13 +833,21 @@ export type Database = {
         Returns: boolean
       }
       log_admin_action: {
-        Args: {
-          _action: string
-          _new_values?: Json
-          _old_values?: Json
-          _record_id?: string
-          _table_name?: string
-        }
+        Args:
+          | {
+              _action: string
+              _new_values?: Json
+              _old_values?: Json
+              _record_id?: string
+              _table_name?: string
+            }
+          | {
+              _action: string
+              _new_values?: Json
+              _old_values?: Json
+              _record_id?: string
+              _table_name?: string
+            }
         Returns: undefined
       }
       mask_name: {
@@ -864,6 +872,10 @@ export type Database = {
       }
       redeem_reward: {
         Args: { points_cost: number; reward_name: string }
+        Returns: Json
+      }
+      reject_receipt: {
+        Args: { p_receipt_id: string }
         Returns: Json
       }
       secure_upload_check: {
