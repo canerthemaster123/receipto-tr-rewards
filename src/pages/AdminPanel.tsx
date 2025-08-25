@@ -229,14 +229,18 @@ const AdminPanel: React.FC = () => {
         });
       }
 
-      // Log admin action
-      await supabase.rpc('log_admin_action', {
-        _action: `${action}_receipt`,
-        _table_name: 'receipts',
-        _record_id: receiptId,
-        _old_values: { status: 'pending' },
-        _new_values: { status: action === 'approve' ? 'approved' : 'rejected' }
-      });
+      // Log admin action (non-blocking)
+      try {
+        await supabase.rpc('log_admin_action', {
+          _action: `${action}_receipt`,
+          _table_name: 'receipts',
+          _record_id: receiptId,
+          _old_values: { status: 'pending' },
+          _new_values: { status: action === 'approve' ? 'approved' : 'rejected' }
+        });
+      } catch (logErr) {
+        console.warn('log_admin_action failed (non-blocking):', logErr);
+      }
 
       // Update local state
       setPendingReceipts(prev => prev.filter(r => r.id !== receiptId));
