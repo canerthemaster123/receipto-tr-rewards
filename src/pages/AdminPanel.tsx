@@ -229,17 +229,20 @@ const AdminPanel: React.FC = () => {
         });
       }
 
-      // Log admin action (non-blocking)
-      try {
-        await supabase.rpc('log_admin_action', {
-          _action: `${action}_receipt`,
-          _table_name: 'receipts',
-          _record_id: receiptId,
-          _old_values: { status: 'pending' },
-          _new_values: { status: action === 'approve' ? 'approved' : 'rejected' }
-        });
-      } catch (logErr) {
-        console.warn('log_admin_action failed (non-blocking):', logErr);
+      // Note: For approve action, logging is handled in approve_receipt_with_points
+      // For reject action, log admin action (non-blocking)
+      if (action === 'reject') {
+        try {
+          await supabase.rpc('log_admin_action', {
+            _action: 'reject_receipt',
+            _table_name: 'receipts',
+            _record_id: receiptId,
+            _old_values: { status: 'pending' },
+            _new_values: { status: 'rejected' }
+          });
+        } catch (logErr) {
+          console.warn('log_admin_action failed (non-blocking):', logErr);
+        }
       }
 
       // Update local state

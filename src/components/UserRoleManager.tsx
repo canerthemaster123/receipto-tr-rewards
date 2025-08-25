@@ -75,14 +75,18 @@ const UserRoleManager: React.FC<UserRoleManagerProps> = ({ users, onUserRoleChan
         if (error) throw error;
       }
 
-      // Log admin action
-      await supabase.rpc('log_admin_action', {
-        _action: 'update_user_role',
-        _table_name: 'user_roles',
-        _record_id: userId,
-        _old_values: { role: user.current_role },
-        _new_values: { role: newRole }
-      });
+      // Log admin action (non-blocking)
+      try {
+        await supabase.rpc('log_admin_action', {
+          _action: 'update_user_role',
+          _table_name: 'user_roles',
+          _record_id: userId,
+          _old_values: { role: user.current_role },
+          _new_values: { role: newRole }
+        });
+      } catch (logErr) {
+        console.warn('log_admin_action failed (non-blocking):', logErr);
+      }
 
       toast({
         title: 'Success',

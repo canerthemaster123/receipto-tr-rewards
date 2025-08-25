@@ -822,7 +822,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       has_admin: {
-        Args: { p_user: string }
+        Args: Record<PropertyKey, never> | { p_user: string }
         Returns: boolean
       }
       has_role: {
