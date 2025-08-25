@@ -213,11 +213,11 @@ const AdminPanel: React.FC = () => {
 
         if (approveError) {
           console.error('Approve error:', approveError);
-          throw new Error(approveError.message || 'Approval failed');
+          throw new Error(approveError.message || 'Onaylama başarısız');
         }
 
         if (!approveResult?.success) {
-          throw new Error(approveResult?.error || 'Approval failed');
+          throw new Error(approveResult?.error || 'Onaylama başarısız');
         }
 
         toast({
@@ -233,11 +233,11 @@ const AdminPanel: React.FC = () => {
 
         if (rejectError) {
           console.error('Reject error:', rejectError);
-          throw new Error(rejectError.message || 'Rejection failed');
+          throw new Error(rejectError.message || 'Reddetme başarısız');
         }
 
         if (!rejectResult?.success) {
-          throw new Error(rejectResult?.error || 'Rejection failed');
+          throw new Error(rejectResult?.error || 'Reddetme başarısız');
         }
 
         toast({
