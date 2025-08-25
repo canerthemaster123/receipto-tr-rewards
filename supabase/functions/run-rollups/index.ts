@@ -14,10 +14,8 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Validate admin access
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -27,8 +25,13 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
@@ -36,9 +39,8 @@ serve(async (req) => {
       });
     }
 
-    // Check admin status
-    const { data: isAdmin, error: adminError } = await supabase.rpc('has_admin');
-    
+    // Check admin status with user context
+    const { data: isAdmin, error: adminError } = await supabaseUser.rpc('has_admin');
     if (adminError || !isAdmin) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
@@ -50,7 +52,7 @@ serve(async (req) => {
 
     // Try to run the master rollup function first
     try {
-      const { data, error } = await supabase.rpc('fn_run_weekly_rollups');
+      const { data, error } = await supabaseUser.rpc('fn_run_weekly_rollups');
       
       if (error) {
         console.warn('Master rollup function failed, running individual functions:', error);
@@ -60,12 +62,12 @@ serve(async (req) => {
         const startDate = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const endDate = new Date().toISOString().split('T')[0];
         
-        await supabase.rpc('fn_fill_period_user_merchant_week', {
+        await supabaseUser.rpc('fn_fill_period_user_merchant_week', {
           p_start_date: startDate,
           p_end_date: endDate
         });
 
-        await supabase.rpc('fn_fill_period_geo_merchant_week', {
+        await supabaseUser.rpc('fn_fill_period_geo_merchant_week', {
           p_start_date: startDate,
           p_end_date: endDate
         });
@@ -73,7 +75,7 @@ serve(async (req) => {
         const currentWeek = new Date();
         currentWeek.setDate(currentWeek.getDate() - currentWeek.getDay());
         
-        await supabase.rpc('fn_detect_alerts_for_week', {
+        await supabaseUser.rpc('fn_detect_alerts_for_week', {
           p_week_start: currentWeek.toISOString().split('T')[0]
         });
       }

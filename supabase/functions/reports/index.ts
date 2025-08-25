@@ -45,13 +45,11 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    // Get chain_group from URL path
-    const url = new URL(req.url);
-    const pathParts = url.pathname.split('/');
-    const chainGroup = pathParts[pathParts.length - 1];
+    // Parse request body for chain group
+    const { chain_group } = await req.json().catch(() => ({ chain_group: undefined }));
+    const chainGroup = chain_group as string | undefined;
 
     if (!chainGroup) {
       return new Response(JSON.stringify({ error: 'Chain group is required' }), {
@@ -60,7 +58,7 @@ serve(async (req) => {
       });
     }
 
-    // Validate admin access
+    // Validate auth header and build user-context client
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -70,8 +68,13 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
@@ -79,9 +82,8 @@ serve(async (req) => {
       });
     }
 
-    // Check admin status
-    const { data: isAdmin, error: adminError } = await supabase.rpc('has_admin');
-    
+    // Check admin status with user JWT context
+    const { data: isAdmin, error: adminError } = await supabaseUser.rpc('has_admin');
     if (adminError || !isAdmin) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
@@ -89,8 +91,7 @@ serve(async (req) => {
       });
     }
 
-    // Get latest available week from period_geo_merchant_week
-    const { data: latestWeekData, error: weekError } = await supabase
+    const { data: latestWeekData, error: weekError } = await supabaseUser
       .from('period_geo_merchant_week')
       .select('week_start')
       .eq('chain_group', chainGroup)
@@ -117,8 +118,7 @@ serve(async (req) => {
 
     const latestWeek = latestWeekData[0].week_start;
 
-    // Get KPIs for the latest week
-    const { data: geoData, error: geoError } = await supabase
+    const { data: geoData, error: geoError } = await supabaseUser
       .from('period_geo_merchant_week')
       .select('*')
       .eq('chain_group', chainGroup)
@@ -148,8 +148,7 @@ serve(async (req) => {
       net_flow: newUsers - (totalUsers - newUsers - returningUsers)
     };
 
-    // Get alerts for this week
-    const { data: alertsData, error: alertsError } = await supabase
+    const { data: alertsData, error: alertsError } = await supabaseUser
       .from('alerts')
       .select('*')
       .eq('chain_group', chainGroup)
