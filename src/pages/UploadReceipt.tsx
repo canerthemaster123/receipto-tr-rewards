@@ -400,62 +400,86 @@ const UploadReceipt: React.FC = () => {
       {!file && (
         <Card className="shadow-card">
           <CardContent className="p-8">
-            <div
-              className="border-2 border-dashed border-border rounded-xl p-8 text-center transition-all hover:border-primary hover:bg-primary/5"
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-            >
-              <div className="flex flex-col items-center gap-4">
-                <div className="p-4 bg-primary/10 rounded-full">
-                  <Camera className="h-8 w-8 text-primary" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Take Receipt Photo</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Use your camera to capture receipt images only
-                  </p>
-                  <div className="flex gap-3 justify-center">
-                    <Button 
-                      variant="default"
-                       onClick={() => {
-                         // Check if camera is available for web capture
-                         if (navigator.mediaDevices?.getUserMedia) {
-                           setIsCameraModalOpen(true);
-                         } else {
-                           // Fallback to file input with capture attribute
-                           const el = document.getElementById('camera-input') as HTMLInputElement | null;
-                           el?.click();
-                         }
-                      }}
-                    >
-                      <Camera className="h-4 w-4" />
-                      Take Photo
-                    </Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Camera option */}
+              <div className="border-2 border-dashed border-border rounded-xl p-8 text-center transition-all hover:border-primary hover:bg-primary/5">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <Camera className="h-8 w-8 text-primary" />
                   </div>
-                  <input
-                    id="camera-input"
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                      const selectedFile = e.target.files?.[0];
-                      if (selectedFile) handleFileSelect(selectedFile);
-                    }}
-                  />
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Kamerayla Çek</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Kameranızı kullanarak fişin fotoğrafını çekin
+                    </p>
+                    <div className="flex gap-3 justify-center">
+                      <Button 
+                        variant="default"
+                        onClick={() => {
+                          if (navigator.mediaDevices?.getUserMedia) {
+                            setIsCameraModalOpen(true);
+                          } else {
+                            const el = document.getElementById('camera-input') as HTMLInputElement | null;
+                            el?.click();
+                          }
+                        }}
+                      >
+                        <Camera className="h-4 w-4" />
+                        Kamerayı Aç
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const selectedFile = e.target.files?.[0];
-                  if (selectedFile) handleFileSelect(selectedFile);
-                }}
-              />
+
+              {/* File upload option */}
+              <div
+                className="border-2 border-dashed border-border rounded-xl p-8 text-center transition-all hover:border-primary hover:bg-primary/5"
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+              >
+                <div className="flex flex-col items-center gap-4">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <Upload className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Dosyadan Yükle</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Fiş görselini sürükleyip bırakın ya da dosya seçin
+                    </p>
+                    <div className="flex gap-3 justify-center">
+                      <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                        <ImageIcon className="h-4 w-4" />
+                        Dosya Seç
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+
+            {/* Hidden inputs */}
+            <input
+              id="camera-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const selectedFile = e.target.files?.[0];
+                if (selectedFile) handleFileSelect(selectedFile);
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const selectedFile = e.target.files?.[0];
+                if (selectedFile) handleFileSelect(selectedFile);
+              }}
+            />
           </CardContent>
         </Card>
       )}

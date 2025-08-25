@@ -49,6 +49,8 @@ export default function Analytics() {
   const [loading, setLoading] = useState(false);
   const [rollupsLoading, setRollupsLoading] = useState(false);
   const [seedLoading, setSeedLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const allowDevSeed = import.meta.env.VITE_ALLOW_DEV_SEED === 'true';
 
@@ -61,6 +63,17 @@ export default function Analytics() {
       loadReport();
     }
   }, [selectedChain]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('has_admin');
+        if (!error) setIsAdmin(Boolean(data));
+      } catch (_) {
+        setIsAdmin(false);
+      }
+    })();
+  }, []);
 
   const loadChainGroups = async () => {
     try {
@@ -159,6 +172,30 @@ export default function Analytics() {
     }
   };
 
+  const handleResetAndSeed = async () => {
+    setResetLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) throw new Error('Not authenticated');
+
+      const resetRes = await supabase.functions.invoke('reset-receipts');
+      if (resetRes.error) throw resetRes.error;
+
+      const seedRes = await supabase.functions.invoke('dev-seed');
+      if (seedRes.error) throw seedRes.error;
+
+      toast.success('Veriler sıfırlandı ve test verisi eklendi');
+      await loadChainGroups();
+      if (selectedChain) await loadReport();
+    } catch (error) {
+      console.error('Reset+Seed error:', error);
+      toast.error('Sıfırlama/seed işlemi başarısız');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+
   const handleDownloadCSV = () => {
     if (!report) return;
     
@@ -199,6 +236,20 @@ export default function Analytics() {
             </p>
           </div>
           <div className="flex gap-2">
+            {isAdmin && (
+              <Button
+                onClick={handleResetAndSeed}
+                disabled={resetLoading}
+                variant="destructive"
+              >
+                {resetLoading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                )}
+                Sıfırla + Test Verisi
+              </Button>
+            )}
             {allowDevSeed && (
               <Button
                 onClick={handleSeedDemo}
