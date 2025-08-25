@@ -263,13 +263,25 @@ const AdminPanel: React.FC = () => {
     <AdminRoute>
       <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-          Admin Panel
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Manage users, receipts, and platform analytics
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+            Admin Panel
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Manage users, receipts, and platform analytics
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => window.open('/admin/analytics', '_blank')}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <BarChart className="h-4 w-4" />
+            B2B Analytics
+          </Button>
+        </div>
       </div>
 
       {/* Stats Overview */}

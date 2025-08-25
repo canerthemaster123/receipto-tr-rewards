@@ -801,6 +801,22 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      fn_detect_alerts_for_week: {
+        Args: { p_week_start: string }
+        Returns: undefined
+      }
+      fn_fill_period_geo_merchant_week: {
+        Args: { p_end_date: string; p_start_date: string }
+        Returns: undefined
+      }
+      fn_fill_period_user_merchant_week: {
+        Args: { p_end_date: string; p_start_date: string }
+        Returns: undefined
+      }
+      fn_run_weekly_rollups: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: Database["public"]["Enums"]["app_role"]

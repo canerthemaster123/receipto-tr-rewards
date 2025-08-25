@@ -27,6 +27,7 @@ import Leaderboard from "./pages/Leaderboard";
 import GoogleAuthSetup from "./pages/GoogleAuthSetup";
 import GoogleOAuthTroubleshoot from "./pages/GoogleOAuthTroubleshoot";
 import LeavePreview from "./pages/LeavePreview";
+import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -162,6 +163,14 @@ const App = () => (
               } 
             />
             <Route 
+              path="/admin/analytics" 
+              element={
+                <AdminRoute>
+                  <Analytics />
+                </AdminRoute>
+              } 
+            />
+            <Route
               path="/profile" 
               element={
                 <ProtectedRoute>
