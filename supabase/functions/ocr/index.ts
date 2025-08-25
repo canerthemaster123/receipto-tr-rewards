@@ -1,20 +1,35 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.53.0';
 
-// Secure CORS configuration - only allow specific origins
-const ALLOWED_ORIGINS = new Set([
-  'https://receipto-tr-rewards.lovable.app',
-  'https://loving-warmth-production.lovable.app',
-  'http://localhost:5173', 
-  'http://localhost:3000',
-]);
+// Get Supabase client for analytics operations
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// CORS configuration with allowlist from environment
+const getAllowedOrigins = () => {
+  const allowedOriginsEnv = Deno.env.get('ALLOWED_ORIGINS');
+  if (allowedOriginsEnv) {
+    return allowedOriginsEnv.split(',').map(origin => origin.trim());
+  }
+  // Default fallback for development
+  return [
+    'https://receipto-tr-rewards.lovable.app',
+    'https://loving-warmth-production.lovable.app', 
+    'https://id-preview--90fb07b9-7b58-43af-8664-049e890948e4.lovable.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
+};
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
+  const allowedOrigins = getAllowedOrigins();
+  const isAllowed = allowedOrigins.includes(origin);
   
-  // Allow all origins for now to debug the issue
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
     'Access-Control-Allow-Methods': 'POST,OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Vary': 'Origin'
@@ -41,6 +56,45 @@ interface OCRResult {
   fis_no: string | null;
   barcode_numbers: string[];
   raw_text: string;
+}
+
+/**
+ * Normalize merchant to chain group using local patterns
+ */
+function normalizeMerchantLocal(merchantRaw: string): string {
+  if (!merchantRaw || typeof merchantRaw !== 'string') {
+    return 'Unknown';
+  }
+
+  const merchant = merchantRaw.trim().toLowerCase();
+
+  // Migros patterns
+  if (merchant.includes('migros')) {
+    return 'Migros';
+  }
+
+  // A101 patterns  
+  if (merchant.includes('a101') || merchant.includes('a-101')) {
+    return 'A101';
+  }
+
+  // BIM patterns
+  if (merchant.includes('bim') || merchant.includes('bİm')) {
+    return 'BIM';
+  }
+
+  // SOK patterns
+  if (merchant.includes('sok') || merchant.includes('şok')) {
+    return 'SOK';
+  }
+
+  // CarrefourSA patterns
+  if (merchant.includes('carrefour')) {
+    return 'CarrefourSA';
+  }
+
+  // Return original if no match
+  return merchantRaw.trim();
 }
 
 /**
@@ -824,6 +878,66 @@ function isCommonNonBarcodeNumber(numericString: string): boolean {
   return false;
 }
 
+/**
+ * Simple geocoding function to extract city/district from address
+ */
+async function geocodeAddress(address: string): Promise<{
+  city?: string;
+  district?: string; 
+  neighborhood?: string;
+  lat?: number;
+  lng?: number;
+} | null> {
+  if (!address || address.trim() === '') {
+    return null;
+  }
+
+  try {
+    // Simple pattern-based extraction for Turkish addresses
+    const addressLower = address.toLowerCase();
+    
+    let city, district, neighborhood;
+    
+    // Extract city
+    const cityPatterns = [
+      'istanbul', 'ankara', 'izmir', 'bursa', 'antalya', 'adana', 
+      'konya', 'gaziantep', 'mersin', 'kayseri', 'eskişehir'
+    ];
+    
+    for (const cityPattern of cityPatterns) {
+      if (addressLower.includes(cityPattern)) {
+        city = cityPattern.charAt(0).toUpperCase() + cityPattern.slice(1);
+        break;
+      }
+    }
+    
+    // Extract district from common Istanbul districts
+    const districtPatterns = [
+      'ataşehir', 'besiktas', 'beşiktaş', 'beyoglu', 'beyoğlu', 'kadikoy', 
+      'kadıköy', 'uskudar', 'üsküdar', 'sisli', 'şişli', 'fatih', 'bakirkoy',
+      'bakırköy', 'maltepe', 'pendik', 'kartal', 'tuzla', 'ayazaga', 'ayazağa'
+    ];
+    
+    for (const districtPattern of districtPatterns) {
+      if (addressLower.includes(districtPattern)) {
+        district = districtPattern.charAt(0).toUpperCase() + districtPattern.slice(1);
+        break;
+      }
+    }
+    
+    // Extract neighborhood from mahalle patterns
+    const mahalleMatch = address.match(/(\w+)\s*mah(?:allesi)?/i);
+    if (mahalleMatch) {
+      neighborhood = mahalleMatch[1];
+    }
+    
+    return { city, district, neighborhood };
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
@@ -1015,6 +1129,118 @@ serve(async (req) => {
     };
 
     console.log('OCR result:', result);
+
+    // Enhanced analytics: Insert receipt items and update store dimensions if requested
+    try {
+      const { receiptId, userId } = requestBody;
+      
+      if (receiptId && userId) {
+        console.log(`Processing analytics for receipt ${receiptId}`);
+        
+        // 1. Normalize merchant to chain group
+        const chainGroup = normalizeMerchantLocal(merchantRaw);
+        console.log(`Normalized merchant "${merchantRaw}" to chain group: ${chainGroup}`);
+        
+        // 2. Process store address and geocode
+        let storeId = null;
+        let h3_8 = null;
+        
+        if (result.store_address) {
+          const geoData = await geocodeAddress(result.store_address);
+          if (geoData) {
+            console.log('Geocoded address:', geoData);
+            
+            // Upsert store dimension
+            const { data: storeUuid, error: storeError } = await supabase
+              .rpc('upsert_store_dim', {
+                p_chain_group: chainGroup,
+                p_city: geoData.city,
+                p_district: geoData.district,
+                p_neighborhood: geoData.neighborhood,
+                p_address: result.store_address,
+                p_lat: geoData.lat,
+                p_lng: geoData.lng,
+                p_h3_8: h3_8
+              });
+            
+            if (storeError) {
+              console.error('Error upserting store dimension:', storeError);
+            } else {
+              storeId = storeUuid;
+              console.log('Upserted store dimension with ID:', storeId);
+            }
+          }
+        }
+        
+        // 3. Update receipt with store_id and h3_8
+        if (storeId || h3_8) {
+          const { error: receiptUpdateError } = await supabase
+            .from('receipts')
+            .update({
+              store_id: storeId,
+              h3_8: h3_8,
+              merchant_brand: chainGroup
+            })
+            .eq('id', receiptId);
+          
+          if (receiptUpdateError) {
+            console.error('Error updating receipt with store info:', receiptUpdateError);
+          } else {
+            console.log('Updated receipt with store information');
+          }
+        }
+        
+        // 4. Insert receipt items if any were parsed
+        if (result.items && result.items.length > 0) {
+          const itemsToInsert = result.items.map(item => ({
+            receipt_id: receiptId,
+            item_name: item.name,
+            qty: item.qty,
+            unit_price: item.unit_price,
+            line_total: item.line_total,
+            product_code: item.product_code,
+            raw_line: item.raw_line
+          }));
+          
+          const { error: itemsError } = await supabase
+            .from('receipt_items')
+            .insert(itemsToInsert);
+          
+          if (itemsError) {
+            console.error('Error inserting receipt items:', itemsError);
+          } else {
+            console.log(`Inserted ${itemsToInsert.length} receipt items`);
+          }
+        }
+        
+        // 5. Seed merchant mapping if this is a new merchant
+        const { data: existingMapping } = await supabase
+          .from('merchant_map')
+          .select('id')
+          .eq('raw_merchant', merchantRaw)
+          .single();
+        
+        if (!existingMapping && merchantRaw && chainGroup) {
+          const { error: mappingError } = await supabase
+            .from('merchant_map')
+            .insert({
+              raw_merchant: merchantRaw,
+              chain_group: chainGroup,
+              priority: 100,
+              active: true
+            });
+          
+          if (mappingError) {
+            console.error('Error inserting merchant mapping:', mappingError);
+          } else {
+            console.log(`Added new merchant mapping: ${merchantRaw} -> ${chainGroup}`);
+          }
+        }
+      }
+    } catch (analyticsError) {
+      console.error('Analytics processing error:', analyticsError);
+      // Don't fail the OCR request if analytics fails
+    }
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

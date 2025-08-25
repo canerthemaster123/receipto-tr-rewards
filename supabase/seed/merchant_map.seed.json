@@ -1,0 +1,82 @@
+[
+  {
+    "raw_merchant": "Migros",
+    "chain_group": "Migros",
+    "priority": 1
+  },
+  {
+    "raw_merchant": "MigroS",
+    "chain_group": "Migros", 
+    "priority": 2
+  },
+  {
+    "raw_merchant": "MIGROS",
+    "chain_group": "Migros",
+    "priority": 2
+  },
+  {
+    "raw_merchant": "Migros Ticaret",
+    "chain_group": "Migros",
+    "priority": 3
+  },
+  {
+    "raw_merchant": "A101",
+    "chain_group": "A101",
+    "priority": 1
+  },
+  {
+    "raw_merchant": "A-101",
+    "chain_group": "A101",
+    "priority": 2
+  },
+  {
+    "raw_merchant": "BIM",
+    "chain_group": "BIM",
+    "priority": 1
+  },
+  {
+    "raw_merchant": "BİM",
+    "chain_group": "BIM",
+    "priority": 2
+  },
+  {
+    "raw_merchant": "BIM BIRLESIK MAGAZALAR",
+    "chain_group": "BIM",
+    "priority": 3
+  },
+  {
+    "raw_merchant": "SOK",
+    "chain_group": "SOK",
+    "priority": 1
+  },
+  {
+    "raw_merchant": "ŞOK",
+    "chain_group": "SOK",
+    "priority": 2
+  },
+  {
+    "raw_merchant": "ŞOK MARKETLERI",
+    "chain_group": "SOK",
+    "priority": 3
+  },
+  {
+    "raw_merchant": "CarrefourSA",
+    "chain_group": "CarrefourSA",
+    "priority": 1
+  },
+  {
+    "raw_merchant": "CARREFOURSA",
+    "chain_group": "CarrefourSA",
+    "priority": 2
+  },
+  {
+    "raw_merchant": "CARREFOUR",
+    "chain_group": "CarrefourSA",
+    "priority": 3
+  },
+  {
+    "raw_merchant": "CARREFOUR SABANCI",
+    "chain_group": "CarrefourSA",
+    "priority": 4
+  }
+]

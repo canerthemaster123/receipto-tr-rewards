@@ -47,6 +47,54 @@ export type Database = {
         }
         Relationships: []
       }
+      alerts: {
+        Row: {
+          alert_type: string
+          chain_group: string
+          created_at: string | null
+          current_value: number
+          geo_level: string
+          geo_value: string
+          id: string
+          metric_name: string
+          previous_value: number
+          sample_size: number
+          severity: string
+          week_start: string
+          z_score: number
+        }
+        Insert: {
+          alert_type: string
+          chain_group: string
+          created_at?: string | null
+          current_value: number
+          geo_level: string
+          geo_value: string
+          id?: string
+          metric_name: string
+          previous_value: number
+          sample_size: number
+          severity?: string
+          week_start: string
+          z_score: number
+        }
+        Update: {
+          alert_type?: string
+          chain_group?: string
+          created_at?: string | null
+          current_value?: number
+          geo_level?: string
+          geo_value?: string
+          id?: string
+          metric_name?: string
+          previous_value?: number
+          sample_size?: number
+          severity?: string
+          week_start?: string
+          z_score?: number
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action: string
@@ -246,6 +294,114 @@ export type Database = {
           },
         ]
       }
+      merchant_map: {
+        Row: {
+          active: boolean | null
+          chain_group: string
+          created_at: string | null
+          id: string
+          priority: number | null
+          raw_merchant: string
+        }
+        Insert: {
+          active?: boolean | null
+          chain_group: string
+          created_at?: string | null
+          id?: string
+          priority?: number | null
+          raw_merchant: string
+        }
+        Update: {
+          active?: boolean | null
+          chain_group?: string
+          created_at?: string | null
+          id?: string
+          priority?: number | null
+          raw_merchant?: string
+        }
+        Relationships: []
+      }
+      period_geo_merchant_week: {
+        Row: {
+          avg_basket_value: number | null
+          chain_group: string
+          city: string
+          created_at: string | null
+          district: string
+          neighborhood: string
+          new_users: number | null
+          receipt_count: number | null
+          returning_users: number | null
+          total_spend: number | null
+          unique_users: number | null
+          week_start: string
+        }
+        Insert: {
+          avg_basket_value?: number | null
+          chain_group: string
+          city: string
+          created_at?: string | null
+          district: string
+          neighborhood: string
+          new_users?: number | null
+          receipt_count?: number | null
+          returning_users?: number | null
+          total_spend?: number | null
+          unique_users?: number | null
+          week_start: string
+        }
+        Update: {
+          avg_basket_value?: number | null
+          chain_group?: string
+          city?: string
+          created_at?: string | null
+          district?: string
+          neighborhood?: string
+          new_users?: number | null
+          receipt_count?: number | null
+          returning_users?: number | null
+          total_spend?: number | null
+          unique_users?: number | null
+          week_start?: string
+        }
+        Relationships: []
+      }
+      period_user_merchant_week: {
+        Row: {
+          avg_basket_value: number | null
+          chain_group: string
+          created_at: string | null
+          first_visit_week: boolean | null
+          last_visit_week: boolean | null
+          receipt_count: number | null
+          total_spend: number | null
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          avg_basket_value?: number | null
+          chain_group: string
+          created_at?: string | null
+          first_visit_week?: boolean | null
+          last_visit_week?: boolean | null
+          receipt_count?: number | null
+          total_spend?: number | null
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          avg_basket_value?: number | null
+          chain_group?: string
+          created_at?: string | null
+          first_visit_week?: boolean | null
+          last_visit_week?: boolean | null
+          receipt_count?: number | null
+          total_spend?: number | null
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       points_ledger: {
         Row: {
           created_at: string | null
@@ -273,11 +429,56 @@ export type Database = {
         }
         Relationships: []
       }
+      receipt_items: {
+        Row: {
+          created_at: string | null
+          id: string
+          item_name: string
+          line_total: number | null
+          product_code: string | null
+          qty: number | null
+          raw_line: string | null
+          receipt_id: string
+          unit_price: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          item_name: string
+          line_total?: number | null
+          product_code?: string | null
+          qty?: number | null
+          raw_line?: string | null
+          receipt_id: string
+          unit_price?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          item_name?: string
+          line_total?: number | null
+          product_code?: string | null
+          qty?: number | null
+          raw_line?: string | null
+          receipt_id?: string
+          unit_price?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_items_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       receipts: {
         Row: {
           barcode_numbers: string[] | null
           created_at: string | null
           fis_no: string | null
+          h3_8: string | null
           id: string
           image_url: string | null
           items: string | null
@@ -290,6 +491,7 @@ export type Database = {
           receipt_unique_no: string | null
           status: string | null
           store_address: string | null
+          store_id: string | null
           total: number | null
           updated_at: string | null
           user_id: string
@@ -298,6 +500,7 @@ export type Database = {
           barcode_numbers?: string[] | null
           created_at?: string | null
           fis_no?: string | null
+          h3_8?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
@@ -310,6 +513,7 @@ export type Database = {
           receipt_unique_no?: string | null
           status?: string | null
           store_address?: string | null
+          store_id?: string | null
           total?: number | null
           updated_at?: string | null
           user_id: string
@@ -318,6 +522,7 @@ export type Database = {
           barcode_numbers?: string[] | null
           created_at?: string | null
           fis_no?: string | null
+          h3_8?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
@@ -330,6 +535,7 @@ export type Database = {
           receipt_unique_no?: string | null
           status?: string | null
           store_address?: string | null
+          store_id?: string | null
           total?: number | null
           updated_at?: string | null
           user_id?: string
@@ -402,6 +608,48 @@ export type Database = {
           action?: string
           created_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      store_dim: {
+        Row: {
+          address: string | null
+          chain_group: string
+          city: string | null
+          created_at: string | null
+          district: string | null
+          h3_8: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          neighborhood: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          chain_group: string
+          city?: string | null
+          created_at?: string | null
+          district?: string | null
+          h3_8?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          neighborhood?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          chain_group?: string
+          city?: string | null
+          created_at?: string | null
+          district?: string | null
+          h3_8?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          neighborhood?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -582,6 +830,10 @@ export type Database = {
         Args: { display_name: string }
         Returns: string
       }
+      normalize_merchant_to_chain: {
+        Args: { p_raw_merchant: string }
+        Returns: string
+      }
       process_referral: {
         Args: { referral_code: string }
         Returns: Json
@@ -613,6 +865,19 @@ export type Database = {
       update_user_streak: {
         Args: { p_date?: string; p_user_id: string }
         Returns: undefined
+      }
+      upsert_store_dim: {
+        Args: {
+          p_address?: string
+          p_chain_group: string
+          p_city?: string
+          p_district?: string
+          p_h3_8?: string
+          p_lat?: number
+          p_lng?: number
+          p_neighborhood?: string
+        }
+        Returns: string
       }
     }
     Enums: {
