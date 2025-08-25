@@ -62,6 +62,9 @@ const AdminPanel: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   // ⚠️ QA ONLY – disable before production release
   const [allowDuplicates, setAllowDuplicates] = useState(config.ALLOW_DUPLICATE_RECEIPTS);
+  // Analytics state (dynamic instead of hard-coded)
+  const [monthlyReceipts, setMonthlyReceipts] = useState<{ label: string; count: number; ratio: number }[]>([]);
+  const [topRetailers, setTopRetailers] = useState<{ name: string; count: number; percentage: number }[]>([]);
   const { toast } = useToast();
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -171,6 +174,61 @@ const AdminPanel: React.FC = () => {
       }));
 
       setUsers(transformedUsers);
+
+      // ----- Analytics (dynamic) -----
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setMonth(start.getMonth() - 2, 1); // first day of month, 3-month window
+      const startISO = start.toISOString().split('T')[0];
+
+      const { data: recentReceipts, error: recentErr } = await supabase
+        .from('receipts')
+        .select('purchase_date, merchant, merchant_brand, status')
+        .gte('purchase_date', startISO)
+        .eq('status', 'approved');
+
+      if (!recentErr && recentReceipts) {
+        // Prepare month keys for 3 months range
+        const monthKeys: { key: string; label: string }[] = [];
+        const tmp = new Date(start);
+        for (let i = 0; i < 3; i++) {
+          const key = `${tmp.getFullYear()}-${String(tmp.getMonth() + 1).padStart(2, '0')}`;
+          const label = tmp.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+          monthKeys.push({ key, label });
+          tmp.setMonth(tmp.getMonth() + 1, 1);
+        }
+
+        const counts = new Map<string, number>();
+        recentReceipts.forEach((r: any) => {
+          const d = new Date(r.purchase_date);
+          const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          counts.set(mk, (counts.get(mk) || 0) + 1);
+        });
+
+        const maxVal = Math.max(1, ...monthKeys.map((m) => counts.get(m.key) || 0));
+        const monthly = monthKeys
+          .slice() // copy
+          .reverse() // show newest first
+          .map((m) => ({
+            label: m.label.charAt(0).toUpperCase() + m.label.slice(1),
+            count: counts.get(m.key) || 0,
+            ratio: Math.round(((counts.get(m.key) || 0) / maxVal) * 100),
+          }));
+        setMonthlyReceipts(monthly);
+
+        // Top retailers
+        const brandCounts = new Map<string, number>();
+        recentReceipts.forEach((r: any) => {
+          const name = r.merchant_brand || r.merchant || 'Unknown';
+          brandCounts.set(name, (brandCounts.get(name) || 0) + 1);
+        });
+        const total = Array.from(brandCounts.values()).reduce((a, b) => a + b, 0) || 1;
+        const top = Array.from(brandCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([name, count]) => ({ name, count, percentage: Math.round((count / total) * 100) }));
+        setTopRetailers(top);
+      }
     } catch (error) {
       console.error('Error fetching admin data:', error);
       toast({
@@ -582,29 +640,21 @@ const AdminPanel: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>January 2024</span>
-                    <span className="font-semibold">1,248 receipts</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full" style={{width: '85%'}}></div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center">
-                    <span>December 2023</span>
-                    <span className="font-semibold">1,156 receipts</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full" style={{width: '78%'}}></div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center">
-                    <span>November 2023</span>
-                    <span className="font-semibold">1,089 receipts</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full" style={{width: '73%'}}></div>
-                  </div>
+                  {monthlyReceipts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Veri yok</p>
+                  ) : (
+                    monthlyReceipts.map((m) => (
+                      <div key={m.label} className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span>{m.label}</span>
+                          <span className="font-semibold">{m.count.toLocaleString()} receipts</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div className="bg-primary h-2 rounded-full" style={{ width: `${m.ratio}%` }}></div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -616,23 +666,21 @@ const AdminPanel: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[
-                    { name: 'Migros', count: 342, percentage: 28 },
-                    { name: 'CarrefourSA', count: 289, percentage: 23 },
-                    { name: 'BIM', count: 256, percentage: 21 },
-                    { name: 'A101', count: 198, percentage: 16 },
-                    { name: 'ŞOK', count: 163, percentage: 13 }
-                  ].map((store) => (
-                    <div key={store.name} className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{store.name}</p>
-                        <p className="text-sm text-muted-foreground">{store.count} receipts</p>
+                  {topRetailers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Veri yok</p>
+                  ) : (
+                    topRetailers.map((store) => (
+                      <div key={store.name} className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{store.name}</p>
+                          <p className="text-sm text-muted-foreground">{store.count} receipts</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">{store.percentage}%</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold">{store.percentage}%</p>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
