@@ -221,6 +221,24 @@ const UploadReceipt: React.FC = () => {
       return;
     }
 
+    // Check for missing critical data
+    const missingFields = [];
+    if (!receiptData.storeName.trim()) missingFields.push('Store name');
+    if (!receiptData.totalAmount.trim()) missingFields.push('Total amount');
+    if (!receiptData.date.trim()) missingFields.push('Purchase date');
+    if (!receiptData.paymentMethod.trim()) missingFields.push('Payment method');
+    if (!receiptData.storeAddress.trim()) missingFields.push('Store address');
+    if (!receiptData.items.trim()) missingFields.push('Items');
+
+    if (missingFields.length > 0) {
+      toast({
+        title: "Missing Required Information",
+        description: `Please fill in: ${missingFields.join(', ')}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Validate and sanitize input data
     const validation = validateReceiptData(receiptData);
     if (!validation.isValid) {
@@ -389,23 +407,16 @@ const UploadReceipt: React.FC = () => {
             >
               <div className="flex flex-col items-center gap-4">
                 <div className="p-4 bg-primary/10 rounded-full">
-                  <Upload className="h-8 w-8 text-primary" />
+                  <Camera className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">{t('upload.uploadReceiptImage')}</h3>
+                  <h3 className="text-lg font-semibold mb-2">Take Receipt Photo</h3>
                   <p className="text-muted-foreground mb-4">
-                    {t('upload.dragAndDrop')}
+                    Use your camera to capture receipt images only
                   </p>
                   <div className="flex gap-3 justify-center">
-                    <Button
-                      onClick={() => fileInputRef.current?.click()}
-                      variant="default"
-                    >
-                      <ImageIcon className="h-4 w-4" />
-                      {t('upload.chooseFile')}
-                    </Button>
                     <Button 
-                      variant="outline"
+                      variant="default"
                        onClick={() => {
                          // Check if camera is available for web capture
                          if (navigator.mediaDevices?.getUserMedia) {
@@ -418,7 +429,7 @@ const UploadReceipt: React.FC = () => {
                       }}
                     >
                       <Camera className="h-4 w-4" />
-                      {t('upload.takePhoto')}
+                      Take Photo
                     </Button>
                   </div>
                   <input
@@ -470,11 +481,12 @@ const UploadReceipt: React.FC = () => {
                   />
                   <div className="flex gap-2">
                     <Button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => setIsCameraModalOpen(true)}
                       variant="outline"
                       size="sm"
                     >
-                      {t('upload.changeImage')}
+                      <Camera className="h-4 w-4" />
+                      Take New Photo
                     </Button>
                     {!isProcessed && (
                       <Button
@@ -538,7 +550,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.storeName}
                     onChange={(e) => setReceiptData({...receiptData, storeName: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                   />
                 </div>
               </div>
@@ -553,7 +565,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.date}
                     onChange={(e) => setReceiptData({...receiptData, date: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                   />
                 </div>
               </div>
@@ -566,7 +578,7 @@ const UploadReceipt: React.FC = () => {
                     placeholder="14:32"
                     value={receiptData.purchaseTime}
                     onChange={(e) => setReceiptData({...receiptData, purchaseTime: e.target.value})}
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                   />
                 </div>
                 <div className="space-y-2">
@@ -576,7 +588,7 @@ const UploadReceipt: React.FC = () => {
                     placeholder="Store location"
                     value={receiptData.storeAddress}
                     onChange={(e) => setReceiptData({...receiptData, storeAddress: e.target.value})}
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                   />
                 </div>
               </div>
@@ -593,7 +605,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.totalAmount}
                     onChange={(e) => setReceiptData({...receiptData, totalAmount: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                   />
                 </div>
               </div>
@@ -608,7 +620,7 @@ const UploadReceipt: React.FC = () => {
                     value={receiptData.paymentMethod}
                     onChange={(e) => setReceiptData({...receiptData, paymentMethod: e.target.value})}
                     className="pl-10"
-                    disabled={!isProcessed || !!ocrResult}
+                    disabled={!isProcessed}
                     required
                   />
                 </div>
@@ -625,7 +637,7 @@ const UploadReceipt: React.FC = () => {
                   value={receiptData.items}
                   onChange={(e) => setReceiptData({...receiptData, items: e.target.value})}
                   className="min-h-20"
-                  disabled={!isProcessed || !!ocrResult}
+                  disabled={!isProcessed}
                 />
               </div>
 

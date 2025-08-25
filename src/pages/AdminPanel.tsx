@@ -11,6 +11,7 @@ import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import AdminRoute from '../components/AdminRoute';
 import UserRoleManager from '../components/UserRoleManager';
+import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
   Receipt, 
@@ -23,7 +24,8 @@ import {
   DollarSign,
   Calendar,
   Loader2,
-  Settings
+  Settings,
+  LogOut
 } from 'lucide-react';
 import GamificationAdmin from '../components/GamificationAdmin';
 import { Switch } from '../components/ui/switch';
@@ -61,6 +63,8 @@ const AdminPanel: React.FC = () => {
   // ⚠️ QA ONLY – disable before production release
   const [allowDuplicates, setAllowDuplicates] = useState(config.ALLOW_DUPLICATE_RECEIPTS);
   const { toast } = useToast();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
   // Handle QA toggle for duplicate receipts
   const handleDuplicateToggle = (checked: boolean) => {
@@ -274,12 +278,23 @@ const AdminPanel: React.FC = () => {
         </div>
         <div className="flex gap-2">
           <Button
-            onClick={() => window.open('/admin/analytics', '_blank')}
+            onClick={() => navigate('/analytics')}
             variant="outline"
             className="flex items-center gap-2"
           >
             <BarChart className="h-4 w-4" />
             B2B Analytics
+          </Button>
+          <Button
+            onClick={() => {
+              logout();
+              navigate('/auth');
+            }}
+            variant="destructive"
+            className="flex items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
           </Button>
         </div>
       </div>

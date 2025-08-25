@@ -1113,6 +1113,23 @@ serve(async (req) => {
 
     // Parse the extracted text
     const merchantRaw = extractMerchant(fullText);
+    const rawPaymentMethod = extractPaymentMethod(fullText);
+    
+    // Process payment method to normalize credit card format
+    let normalizedPaymentMethod = '';
+    if (rawPaymentMethod) {
+      // Remove any non-digit characters to get just numbers
+      const digits = rawPaymentMethod.replace(/\D/g, '');
+      if (digits.length >= 4) {
+        // Always format as ****-****-****-XXXX where XXXX are the last 4 digits
+        const lastFour = digits.slice(-4);
+        normalizedPaymentMethod = `****-****-****-${lastFour}`;
+      } else {
+        // Keep original if not enough digits
+        normalizedPaymentMethod = rawPaymentMethod;
+      }
+    }
+    
     const result: OCRResult = {
       merchant_raw: merchantRaw,
       merchant_brand: normalizeBrand(merchantRaw),
@@ -1121,7 +1138,7 @@ serve(async (req) => {
       store_address: extractStoreAddress(fullText),
       total: extractTotal(fullText),
       items: parseItems(fullText),
-      payment_method: extractPaymentMethod(fullText),
+      payment_method: normalizedPaymentMethod || null,
       receipt_unique_no: extractReceiptUniqueNo(fullText),
       fis_no: extractFisNo(fullText),
       barcode_numbers: extractBarcodeNumbers(fullText),
