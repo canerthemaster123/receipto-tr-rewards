@@ -636,7 +636,7 @@ const AdminPanel: React.FC = () => {
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle>Receipt Analytics</CardTitle>
-                <CardDescription>Monthly receipt submission trends</CardDescription>
+                <CardDescription>Aylık fiş trendi (alışveriş tarihi bazlı)</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
