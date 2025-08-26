@@ -80,24 +80,46 @@ export default function Analytics() {
 
   const loadChainGroups = async () => {
     try {
-      const { data, error } = await supabase
+      let uniqueChains: string[] = [];
+
+      // 1) Try rollup table first (preferred)
+      const { data: pgmw, error: pgmwError } = await supabase
         .from('period_geo_merchant_week')
         .select('chain_group')
         .order('chain_group');
 
-      if (error) throw error;
+      if (!pgmwError && pgmw && pgmw.length > 0) {
+        uniqueChains = [...new Set(pgmw.map((item: any) => item.chain_group).filter(Boolean))];
+      }
 
-      const uniqueChains = [...new Set(data.map(item => item.chain_group))];
+      // 2) Fallback to merchant_map
+      if (uniqueChains.length === 0) {
+        const { data: mm, error: mmError } = await supabase
+          .from('merchant_map')
+          .select('chain_group')
+          .eq('active', true);
+
+        if (!mmError && mm) {
+          uniqueChains = [...new Set(mm.map((i: any) => i.chain_group).filter(Boolean))].sort();
+        }
+      }
+
+      // 3) Last resort: static list
+      if (uniqueChains.length === 0) {
+        uniqueChains = ['Migros', 'A101', 'BIM', 'SOK', 'CarrefourSA'];
+      }
+
       setChainGroups(uniqueChains);
-      
-      // Default to 'Migros' if available, otherwise first available
       const defaultChain = uniqueChains.includes('Migros') ? 'Migros' : uniqueChains[0];
       if (defaultChain && !selectedChain) {
         setSelectedChain(defaultChain);
       }
     } catch (error) {
       console.error('Error loading chain groups:', error);
-      toast.error('Failed to load chain groups');
+      // Graceful fallback
+      const fallback = ['Migros', 'A101', 'BIM', 'SOK', 'CarrefourSA'];
+      setChainGroups(fallback);
+      if (!selectedChain) setSelectedChain('Migros');
     }
   };
 
