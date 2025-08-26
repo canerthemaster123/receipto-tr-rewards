@@ -115,8 +115,9 @@ export default function Analytics() {
       if (defaultChain && !selectedChain) {
         setSelectedChain(defaultChain);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading chain groups:', error);
+      toast.error(`Zincir listesi yüklenemedi: ${error?.message || ''}`);
       // Graceful fallback
       const fallback = ['Migros', 'A101', 'BIM', 'SOK', 'CarrefourSA'];
       setChainGroups(fallback);
