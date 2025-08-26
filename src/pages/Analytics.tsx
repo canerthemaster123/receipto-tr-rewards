@@ -63,7 +63,7 @@ export default function Analytics() {
   useEffect(() => {
     if (selectedChain) {
       loadReport();
-      loadAIAnalysis();
+      // Don't auto-load AI analysis anymore
     }
   }, [selectedChain]);
 
@@ -110,6 +110,7 @@ export default function Analytics() {
       }
 
       setChainGroups(uniqueChains);
+      // Auto-select Migros if available, otherwise first available
       const defaultChain = uniqueChains.includes('Migros') ? 'Migros' : uniqueChains[0];
       if (defaultChain && !selectedChain) {
         setSelectedChain(defaultChain);
@@ -287,16 +288,17 @@ export default function Analytics() {
           <div className="flex gap-2">
             {isAdmin && (
               <Button
-                onClick={handleResetAndSeed}
-                disabled={resetLoading}
-                variant="destructive"
+                onClick={loadAIAnalysis}
+                disabled={analysisLoading || !selectedChain}
+                variant="default"
+                className="bg-primary hover:bg-primary/90"
               >
-                {resetLoading ? (
+                {analysisLoading ? (
                   <RefreshCw className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <AlertTriangle className="h-4 w-4 mr-2" />
                 )}
-                Sıfırla + Test Verisi
+                Rapor Oluştur
               </Button>
             )}
             {allowDevSeed && (
@@ -598,16 +600,21 @@ export default function Analytics() {
                     </div>
                   ) : aiAnalysis ? (
                     <div className="prose max-w-none">
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/50 p-4 rounded-lg">
                         {aiAnalysis}
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-8">
                       <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-muted-foreground">
-                        AI analizi henüz yüklenmedi. Lütfen bir market seçin.
+                      <p className="text-muted-foreground mb-4">
+                        AI analizi henüz oluşturulmadı.
                       </p>
+                      {isAdmin && (
+                        <Button onClick={loadAIAnalysis} disabled={!selectedChain}>
+                          Rapor Oluştur
+                        </Button>
+                      )}
                     </div>
                   )}
                 </CardContent>
