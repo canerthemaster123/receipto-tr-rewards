@@ -51,6 +51,8 @@ export default function Analytics() {
   const [seedLoading, setSeedLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string>('');
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   const allowDevSeed = import.meta.env.VITE_ALLOW_DEV_SEED === 'true';
 
@@ -61,6 +63,7 @@ export default function Analytics() {
   useEffect(() => {
     if (selectedChain) {
       loadReport();
+      loadAIAnalysis();
     }
   }, [selectedChain]);
 
@@ -122,6 +125,30 @@ export default function Analytics() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAIAnalysis = async () => {
+    if (!selectedChain) return;
+    
+    setAnalysisLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) throw new Error('Not authenticated');
+
+      const response = await supabase.functions.invoke('market-analysis', {
+        body: { chain_group: selectedChain }
+      });
+
+      if (response.error) throw response.error;
+
+      setAiAnalysis(response.data.analysis || 'Analiz oluşturulamadı.');
+    } catch (error) {
+      console.error('Error loading AI analysis:', error);
+      toast.error('AI analizi yüklenirken hata oluştu');
+      setAiAnalysis('AI analizi şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.');
+    } finally {
+      setAnalysisLoading(false);
     }
   };
 
@@ -296,12 +323,14 @@ export default function Analytics() {
             <div className="flex-1">
               <label className="text-sm font-medium mb-2 block">Chain Group</label>
               <Select value={selectedChain} onValueChange={setSelectedChain}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select chain group" />
+                <SelectTrigger className="bg-background border-border">
+                  <SelectValue placeholder="Market seçin" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-background border-border z-50">
                   {chainGroups.map(chain => (
-                    <SelectItem key={chain} value={chain}>{chain}</SelectItem>
+                    <SelectItem key={chain} value={chain} className="hover:bg-accent">
+                      {chain}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -344,6 +373,7 @@ export default function Analytics() {
               <TabsTrigger value="kpis">KPIs</TabsTrigger>
               <TabsTrigger value="geographic">Geographic Changes</TabsTrigger>
               <TabsTrigger value="alerts">Alerts</TabsTrigger>
+              <TabsTrigger value="ai-analysis">AI Analizi</TabsTrigger>
             </TabsList>
 
             <TabsContent value="kpis" className="space-y-4">
@@ -524,6 +554,38 @@ export default function Analytics() {
                           </AlertDescription>
                         </Alert>
                       ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="ai-analysis" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Market Analizi</CardTitle>
+                  <CardDescription>
+                    {selectedChain} marketi için AI destekli rekabet analizi ve öneriler
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {analysisLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                      <span>AI analizi hazırlanıyor...</span>
+                    </div>
+                  ) : aiAnalysis ? (
+                    <div className="prose max-w-none">
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                        {aiAnalysis}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        AI analizi henüz yüklenmedi. Lütfen bir market seçin.
+                      </p>
                     </div>
                   )}
                 </CardContent>
