@@ -476,7 +476,9 @@ export type Database = {
       receipts: {
         Row: {
           barcode_numbers: string[] | null
+          city: string | null
           created_at: string | null
+          district: string | null
           fis_no: string | null
           h3_8: string | null
           id: string
@@ -484,6 +486,7 @@ export type Database = {
           items: string | null
           merchant: string | null
           merchant_brand: string | null
+          neighborhood: string | null
           payment_method: string | null
           points: number | null
           purchase_date: string | null
@@ -492,13 +495,16 @@ export type Database = {
           status: string | null
           store_address: string | null
           store_id: string | null
+          street: string | null
           total: number | null
           updated_at: string | null
           user_id: string
         }
         Insert: {
           barcode_numbers?: string[] | null
+          city?: string | null
           created_at?: string | null
+          district?: string | null
           fis_no?: string | null
           h3_8?: string | null
           id?: string
@@ -506,6 +512,7 @@ export type Database = {
           items?: string | null
           merchant?: string | null
           merchant_brand?: string | null
+          neighborhood?: string | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
@@ -514,13 +521,16 @@ export type Database = {
           status?: string | null
           store_address?: string | null
           store_id?: string | null
+          street?: string | null
           total?: number | null
           updated_at?: string | null
           user_id: string
         }
         Update: {
           barcode_numbers?: string[] | null
+          city?: string | null
           created_at?: string | null
+          district?: string | null
           fis_no?: string | null
           h3_8?: string | null
           id?: string
@@ -528,6 +538,7 @@ export type Database = {
           items?: string | null
           merchant?: string | null
           merchant_brand?: string | null
+          neighborhood?: string | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
@@ -536,6 +547,7 @@ export type Database = {
           status?: string | null
           store_address?: string | null
           store_id?: string | null
+          street?: string | null
           total?: number | null
           updated_at?: string | null
           user_id?: string
@@ -783,6 +795,10 @@ export type Database = {
       }
       apply_referral_bonus: {
         Args: { code: string; new_user_id: string }
+        Returns: Json
+      }
+      approve_all_pending_for_merchant: {
+        Args: { p_merchant: string }
         Returns: Json
       }
       approve_receipt_with_points: {

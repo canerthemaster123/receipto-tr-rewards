@@ -53,6 +53,7 @@ export default function Analytics() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [approveLoading, setApproveLoading] = useState(false);
 
   const allowDevSeed = import.meta.env.VITE_ALLOW_DEV_SEED === 'true';
 
@@ -223,6 +224,39 @@ export default function Analytics() {
     }
   };
 
+  const handleApproveAllPending = async () => {
+    if (!selectedChain) return;
+    
+    setApproveLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) throw new Error('Not authenticated');
+
+      const response = await supabase.rpc('approve_all_pending_for_merchant', {
+        p_merchant: selectedChain
+      });
+
+      if (response.error) throw response.error;
+
+      const result = response.data;
+      if (result.success) {
+        toast.success(`${result.receipts_approved} fiş onaylandı, ${result.total_points_awarded} puan verildi`);
+        await loadReport(); // Refresh data
+      } else {
+        if (result.error === 'no_pending_receipts') {
+          toast.info(`${selectedChain} için bekleyen fiş bulunamadı`);
+        } else {
+          toast.error(`Onaylama hatası: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error approving pending receipts:', error);
+      toast.error('Toplu onaylama işlemi başarısız');
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
   const handleResetAndSeed = async () => {
     setResetLoading(true);
     try {
@@ -288,19 +322,34 @@ export default function Analytics() {
           </div>
           <div className="flex gap-2">
             {isAdmin && (
-              <Button
-                onClick={loadAIAnalysis}
-                disabled={analysisLoading || !selectedChain}
-                variant="default"
-                className="bg-primary hover:bg-primary/90"
-              >
-                {analysisLoading ? (
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                )}
-                Rapor Oluştur
-              </Button>
+              <>
+                <Button
+                  onClick={handleApproveAllPending}
+                  disabled={approveLoading || !selectedChain}
+                  variant="outline"
+                  className="border-green-500 text-green-600 hover:bg-green-50"
+                >
+                  {approveLoading ? (
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Users className="h-4 w-4 mr-2" />
+                  )}
+                  {selectedChain} Onaylarını Toplu Yap
+                </Button>
+                <Button
+                  onClick={loadAIAnalysis}
+                  disabled={analysisLoading || !selectedChain}
+                  variant="default"
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  {analysisLoading ? (
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                  )}
+                  Rapor Oluştur
+                </Button>
+              </>
             )}
             {allowDevSeed && (
               <Button

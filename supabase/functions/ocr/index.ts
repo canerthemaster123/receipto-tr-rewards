@@ -384,54 +384,30 @@ function extractTotal(text: string): number {
     return isNaN(n) ? null : n;
   };
 
-  // PRIORITY 1: Find exact "TOPLAM" keyword (NOT TOPKDV) and number on same line or adjacent line
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Must contain TOPLAM but NOT TOPKDV, ARA TOPLAM, or other compound forms
-    if (/\bTOPLAM\b/i.test(line) && !/TOPKDV|ARA\s*TOPLAM|GENEL\s*TOPLAM|KDV.*TOPLAM|TOPLAM.*KDV/i.test(line)) {
-      console.log(`Found TOPLAM line: "${line}"`);
-      
-      // First check same line for amount
-      const sameLineAmount = parseAmount(line);
-      if (sameLineAmount) {
-        console.log(`Found total on same line as TOPLAM: ${sameLineAmount}`);
-        return sameLineAmount;
-      }
-      
-      // Check next 3 lines for amount
-      for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
-        const nextAmount = parseAmount(lines[j]);
-        if (nextAmount) {
-          console.log(`Found total ${j - i} lines after TOPLAM: ${nextAmount}`);
-          return nextAmount;
-        }
-      }
-    }
-  }
-
-  // PRIORITY 2: KDV'Lİ TOPLAM and similar compound keywords
-  const compoundKeywords = [
-    /k?dv[''`\s-]*li\s*toplam/i,
-    /genel\s*toplam/i,
-    /toplam\s*tutar/i,
+  // PRIORITY 1: Exact final total keywords (most specific)
+  const finalTotalKeywords = [
+    /\bGENEL\s*TOPLAM\b/i,
+    /\bTOPLAM\s*TUTAR\b/i,
+    /\bNET\s*TOPLAM\b/i,
+    /\bÖDENECEK\s*TUTAR\b/i
   ];
 
-  for (const keyword of compoundKeywords) {
+  for (const keyword of finalTotalKeywords) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (keyword.test(line)) {
-        console.log(`Found compound keyword line: "${line}"`);
+        console.log(`Found final total keyword line: "${line}"`);
         
         const sameLineAmount = parseAmount(line);
         if (sameLineAmount) {
-          console.log(`Found total with compound keyword: ${sameLineAmount}`);
+          console.log(`Found total with final keyword: ${sameLineAmount}`);
           return sameLineAmount;
         }
         
-        for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
+        for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
           const nextAmount = parseAmount(lines[j]);
           if (nextAmount) {
-            console.log(`Found total after compound keyword: ${nextAmount}`);
+            console.log(`Found total after final keyword: ${nextAmount}`);
             return nextAmount;
           }
         }
@@ -439,32 +415,87 @@ function extractTotal(text: string): number {
     }
   }
 
-  // PRIORITY 3: Payment section with card numbers
+  // PRIORITY 2: Payment section keywords
+  const paymentKeywords = [
+    /\bÖDEME\s*TÜRÜ\b/i,
+    /\bÖDEME\s*BİLGİSİ\b/i,
+    /\bKREDİ\s*KARTI\b/i,
+    /\bNAKİT\b/i,
+    /\bPOS\s*SATIŞ\b/i
+  ];
+
+  for (const keyword of paymentKeywords) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (keyword.test(line)) {
+        console.log(`Found payment keyword line: "${line}"`);
+        
+        // Check current and next few lines for amount
+        for (let j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
+          const amt = parseAmount(lines[j]);
+          if (amt && amt > 0) {
+            console.log(`Found total in payment section: ${amt}`);
+            return amt;
+          }
+        }
+      }
+    }
+  }
+
+  // PRIORITY 3: Card number patterns (masked cards indicate payment section)
   const isMaskedCard = (s: string) => /(\d{4,6}\*{4,6}\d{2,4})/.test(s.replace(/\s+/g, ''));
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/ortak\s*pos|\bpos\b/i.test(line) || isMaskedCard(line)) {
-      console.log(`Found payment section line: "${line}"`);
+    if (isMaskedCard(line)) {
+      console.log(`Found payment card line: "${line}"`);
       
       for (let j = Math.max(0, i - 2); j <= Math.min(i + 3, lines.length - 1); j++) {
         const amt = parseAmount(lines[j]);
         if (amt) {
-          console.log(`Found total in payment section: ${amt}`);
+          console.log(`Found total near card info: ${amt}`);
           return amt;
         }
       }
     }
   }
 
-  // PRIORITY 4: Bottom area fallback - largest reasonable amount
+  // PRIORITY 4: Simple TOPLAM (but exclude discount/tax variants)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Must contain TOPLAM but NOT discount/tax compound forms
+    if (/\bTOPLAM\b/i.test(line) && 
+        !/TOPKDV|ARA\s*TOPLAM|KDV.*TOPLAM|TOPLAM.*KDV|İNDİRİM|KAMPANYA/i.test(line)) {
+      console.log(`Found simple TOPLAM line: "${line}"`);
+      
+      const sameLineAmount = parseAmount(line);
+      if (sameLineAmount) {
+        console.log(`Found total on TOPLAM line: ${sameLineAmount}`);
+        return sameLineAmount;
+      }
+      
+      for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
+        const nextAmount = parseAmount(lines[j]);
+        if (nextAmount) {
+          console.log(`Found total after TOPLAM: ${nextAmount}`);
+          return nextAmount;
+        }
+      }
+    }
+  }
+
+  // PRIORITY 5: Bottom area fallback - largest reasonable amount
   console.log('Using bottom area fallback');
-  const bottomStart = Math.max(0, lines.length - 20);
+  const bottomStart = Math.max(0, lines.length - 15);
   let maxAmount = 0;
   
   for (let i = bottomStart; i < lines.length; i++) {
-    const amt = parseAmount(lines[i]);
-    if (amt && amt > maxAmount && amt < 100000) {
+    const line = lines[i];
+    // Skip obvious discount/tax lines in bottom search
+    if (/KDV|İNDİRİM|KAMPANYA|İADE/i.test(line)) continue;
+    
+    const amt = parseAmount(line);
+    if (amt && amt > maxAmount && amt < 50000) { // More conservative upper limit
       maxAmount = amt;
     }
   }
@@ -875,12 +906,13 @@ function isCommonNonBarcodeNumber(numericString: string): boolean {
 }
 
 /**
- * Simple geocoding function to extract city/district from address
+ * Enhanced address parsing to extract location components
  */
-async function geocodeAddress(address: string): Promise<{
+async function parseAddressComponents(address: string): Promise<{
   city?: string;
   district?: string; 
   neighborhood?: string;
+  street?: string;
   lat?: number;
   lng?: number;
 } | null> {
@@ -889,29 +921,54 @@ async function geocodeAddress(address: string): Promise<{
   }
 
   try {
-    // Simple pattern-based extraction for Turkish addresses
-    const addressLower = address.toLowerCase();
+    const addressLower = address.toLowerCase().trim();
+    let city, district, neighborhood, street;
     
-    let city, district, neighborhood;
-    
-    // Extract city
+    // Extract city (expanded list for Turkey)
     const cityPatterns = [
-      'istanbul', 'ankara', 'izmir', 'bursa', 'antalya', 'adana', 
-      'konya', 'gaziantep', 'mersin', 'kayseri', 'eskişehir'
+      'adana', 'adıyaman', 'afyon', 'afyonkarahisar', 'ağrı', 'aksaray', 'amasya',
+      'ankara', 'antalya', 'ardahan', 'artvin', 'aydın', 'balıkesir', 'bartın',
+      'batman', 'bayburt', 'bilecik', 'bingöl', 'bitlis', 'bolu', 'burdur',
+      'bursa', 'çanakkale', 'çankırı', 'çorum', 'denizli', 'diyarbakır',
+      'düzce', 'edirne', 'elazığ', 'erzincan', 'erzurum', 'eskişehir',
+      'gaziantep', 'giresun', 'gümüşhane', 'hakkari', 'hatay', 'ığdır',
+      'isparta', 'istanbul', 'izmir', 'izmit', 'karabük', 'karaman', 'kars',
+      'kastamonu', 'kayseri', 'kilis', 'kırıkkale', 'kırklareli', 'kırşehir',
+      'kocaeli', 'konya', 'kütahya', 'malatya', 'manisa', 'mardin', 'mersin',
+      'muğla', 'muş', 'nevşehir', 'niğde', 'ordu', 'osmaniye', 'rize',
+      'sakarya', 'samsun', 'şanlıurfa', 'siirt', 'sinop', 'sivas', 'şırnak',
+      'tekirdağ', 'tokat', 'trabzon', 'tunceli', 'uşak', 'van', 'yalova',
+      'yozgat', 'zonguldak'
     ];
     
     for (const cityPattern of cityPatterns) {
       if (addressLower.includes(cityPattern)) {
         city = cityPattern.charAt(0).toUpperCase() + cityPattern.slice(1);
+        if (city === 'Izmit') city = 'Kocaeli'; // Normalize
         break;
       }
     }
     
-    // Extract district from common Istanbul districts
+    // Extract district (comprehensive Istanbul + major cities)
     const districtPatterns = [
-      'ataşehir', 'besiktas', 'beşiktaş', 'beyoglu', 'beyoğlu', 'kadikoy', 
-      'kadıköy', 'uskudar', 'üsküdar', 'sisli', 'şişli', 'fatih', 'bakirkoy',
-      'bakırköy', 'maltepe', 'pendik', 'kartal', 'tuzla', 'ayazaga', 'ayazağa'
+      // Istanbul districts
+      'adalar', 'arnavutköy', 'ataşehir', 'avcılar', 'bağcılar', 'bahçelievler',
+      'bakırköy', 'beşiktaş', 'beykoz', 'beylikdüzü', 'beyoğlu', 'büyükçekmece',
+      'çatalca', 'çekmeköy', 'esenler', 'esenyurt', 'eyüp', 'fatih', 'gaziosmanpaşa',
+      'güngören', 'kadıköy', 'kağıthane', 'kartal', 'küçükçekmece', 'maltepe',
+      'pendik', 'sancaktepe', 'sarıyer', 'silivri', 'sultanbeyli', 'sultangazi',
+      'şile', 'şişli', 'tuzla', 'ümraniye', 'üsküdar', 'zeytinburnu',
+      // Ankara districts
+      'altındağ', 'ayaş', 'bala', 'beypazarı', 'çamlıdere', 'çankaya', 'çubuk',
+      'elmadağ', 'etimesgut', 'evren', 'gölbaşı', 'güdül', 'haymana', 'kalecik',
+      'kazan', 'keçiören', 'kızılcahamam', 'mamak', 'nallıhan', 'polatlı',
+      'pursaklar', 'sincan', 'şereflikoçhisar', 'yenimahalle',
+      // Izmir districts
+      'aliağa', 'balçova', 'bayındır', 'bayraklı', 'bergama', 'beydağ', 'bornova',
+      'buca', 'çeşme', 'çiğli', 'dikili', 'foça', 'gaziemir', 'güzelbahçe',
+      'karabağlar', 'karaburun', 'karşıyaka', 'kemalpaşa', 'kınık', 'kiraz',
+      'konak', 'menderes', 'menemen', 'narlıdere', 'ödemiş', 'seferihisar',
+      'selçuk', 'tire', 'torbalı', 'urla'
     ];
     
     for (const districtPattern of districtPatterns) {
@@ -921,17 +978,55 @@ async function geocodeAddress(address: string): Promise<{
       }
     }
     
-    // Extract neighborhood from mahalle patterns
-    const mahalleMatch = address.match(/(\w+)\s*mah(?:allesi)?/i);
-    if (mahalleMatch) {
-      neighborhood = mahalleMatch[1];
+    // Extract neighborhood from mahalle patterns (more comprehensive)
+    const neighborhoodPatterns = [
+      /(\w+)\s*mah(?:allesi|\.)?/i,
+      /(\w+)\s*neighborhood/i,
+      /(\w+)\s*district/i
+    ];
+    
+    for (const pattern of neighborhoodPatterns) {
+      const match = address.match(pattern);
+      if (match && match[1] && match[1].length > 2) {
+        neighborhood = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+        break;
+      }
     }
     
-    return { city, district, neighborhood };
+    // Extract street information
+    const streetPatterns = [
+      /(\w+(?:\s+\w+)*)\s*(?:cad|caddesi|sk|sokak|bulv|bulvarı)(?:\s|\.|\d|$)/i,
+      /(\w+(?:\s+\w+)*)\s*(?:street|avenue|boulevard)/i
+    ];
+    
+    for (const pattern of streetPatterns) {
+      const match = address.match(pattern);
+      if (match && match[1] && match[1].length > 2) {
+        street = match[1].trim();
+        break;
+      }
+    }
+    
+    // If no specific street found, try to extract first meaningful part
+    if (!street) {
+      const firstLine = address.split(/[,\n]/)[0].trim();
+      if (firstLine.length > 5 && firstLine.length < 100) {
+        street = firstLine;
+      }
+    }
+    
+    console.log(`Parsed address "${address}" into:`, { city, district, neighborhood, street });
+    
+    return { city, district, neighborhood, street };
   } catch (error) {
-    console.error('Geocoding error:', error);
+    console.error('Address parsing error:', error);
     return null;
   }
+}
+
+// Backward compatibility alias
+async function geocodeAddress(address: string) {
+  return await parseAddressComponents(address);
 }
 
 serve(async (req) => {
@@ -1159,9 +1254,9 @@ serve(async (req) => {
         let h3_8 = null;
         
         if (result.store_address) {
-          const geoData = await geocodeAddress(result.store_address);
+          const geoData = await parseAddressComponents(result.store_address);
           if (geoData) {
-            console.log('Geocoded address:', geoData);
+            console.log('Parsed address components:', geoData);
             
             // Upsert store dimension
             const { data: storeUuid, error: storeError } = await supabase
@@ -1185,22 +1280,36 @@ serve(async (req) => {
           }
         }
         
-        // 3. Update receipt with store_id and h3_8
-        if (storeId || h3_8) {
-          const { error: receiptUpdateError } = await supabase
-            .from('receipts')
-            .update({
-              store_id: storeId,
-              h3_8: h3_8,
-              merchant_brand: chainGroup
-            })
-            .eq('id', receiptId);
-          
-          if (receiptUpdateError) {
-            console.error('Error updating receipt with store info:', receiptUpdateError);
-          } else {
-            console.log('Updated receipt with store information');
+        // 3. Update receipt with store_id, h3_8, and parsed location data
+        const updateData: any = {
+          merchant_brand: chainGroup,
+          h3_8: h3_8
+        };
+
+        if (storeId) {
+          updateData.store_id = storeId;
+        }
+
+        // Add parsed location data directly to receipt
+        if (result.store_address) {
+          const addressData = await parseAddressComponents(result.store_address);
+          if (addressData) {
+            if (addressData.city) updateData.city = addressData.city;
+            if (addressData.district) updateData.district = addressData.district;
+            if (addressData.neighborhood) updateData.neighborhood = addressData.neighborhood;
+            if (addressData.street) updateData.street = addressData.street;
           }
+        }
+
+        const { error: receiptUpdateError } = await supabase
+          .from('receipts')
+          .update(updateData)
+          .eq('id', receiptId);
+        
+        if (receiptUpdateError) {
+          console.error('Error updating receipt with store and location info:', receiptUpdateError);
+        } else {
+          console.log('Updated receipt with location data:', updateData);
         }
         
         // 4. Insert receipt items if any were parsed
