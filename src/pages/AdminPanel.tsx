@@ -60,6 +60,7 @@ const AdminPanel: React.FC = () => {
   const [pendingReceipts, setPendingReceipts] = useState<ReceiptSubmission[]>([]);
   const [users, setUsers] = useState<UserStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   // ⚠️ QA ONLY – disable before production release
   const [allowDuplicates, setAllowDuplicates] = useState(config.ALLOW_DUPLICATE_RECEIPTS);
   // Analytics state (dynamic instead of hard-coded)
@@ -68,6 +69,18 @@ const AdminPanel: React.FC = () => {
   const { toast } = useToast();
   const { logout } = useAuth();
   const navigate = useNavigate();
+
+  // Check admin status
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('has_admin');
+        if (!error) setIsAdmin(Boolean(data));
+      } catch (_) {
+        setIsAdmin(false);
+      }
+    })();
+  }, []);
 
   // Handle QA toggle for duplicate receipts
   const handleDuplicateToggle = (checked: boolean) => {
@@ -84,6 +97,43 @@ const AdminPanel: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Set up realtime subscription for admin panel updates
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const receiptsChannel = supabase
+      .channel('admin-receipts-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'receipts'
+        },
+        () => {
+          console.log('Receipt changed, refreshing admin data');
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'users_profile'
+        },
+        () => {
+          console.log('User profile changed, refreshing admin data');
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(receiptsChannel);
+    };
+  }, [isAdmin]);
 
   const fetchData = async () => {
     try {
