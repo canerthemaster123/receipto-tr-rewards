@@ -2,15 +2,426 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.53.0';
 
-// Import shared utilities
-import { normalizeNumber, isMoney, extractMoneyValues, parseQuantityUnit, fixOcrDigits } from '../_shared/numeric.ts';
-import { 
-  extractDates, extractTimes, extractReceiptNumbers, extractVAT,
-  TOTAL_PATTERNS, SUBTOTAL_PATTERNS, DISCOUNT_PATTERNS, PAN_PATTERN, PAYMENT_PATTERNS
-} from '../_shared/regex-tr.ts';
-import { luhnValid, getCardLast4, detectCardScheme, maskCardNumber } from '../_shared/luhn.ts';
-import { normalizeMerchantToChain, extractMerchantBrand, cleanMerchantName } from '../_shared/merchant-normalize.ts';
-import { matchStore, upsertStore, parseAddressComponents } from '../_shared/store-match.ts';
+// ============= UTILITIES (INLINE) =============
+
+/**
+ * Fix common OCR character errors in numeric contexts only
+ */
+function fixOcrDigits(str: string): string {
+  if (!str) return str;
+  
+  // Only apply fixes in contexts that look numeric
+  const numericPattern = /[\d₺TL,.\s\-*]/;
+  if (!numericPattern.test(str)) return str;
+  
+  return str
+    .replace(/O/gi, '0')  // O -> 0
+    .replace(/[Il]/g, '1') // I, l -> 1
+    .replace(/S/g, '5')    // S -> 5 (only uppercase)
+    .replace(/B/g, '8');   // B -> 8 (only uppercase)
+}
+
+/**
+ * Normalize Turkish currency strings to numbers
+ */
+function normalizeNumber(str: string): number | null {
+  if (!str || typeof str !== 'string') return null;
+  
+  let normalized = fixOcrDigits(str.trim());
+  
+  // Remove currency symbols and extra spaces
+  normalized = normalized
+    .replace(/₺/g, '')
+    .replace(/\bTL\b/gi, '')
+    .replace(/\s+/g, '');
+  
+  // Handle Turkish decimal notation (comma as decimal separator)
+  const commaDecimalMatch = normalized.match(/^(\d{1,4}),(\d{2})$/);
+  if (commaDecimalMatch) {
+    return parseFloat(`${commaDecimalMatch[1]}.${commaDecimalMatch[2]}`);
+  }
+  
+  // Handle thousands separator: digits.digits,digits
+  const thousandsMatch = normalized.match(/^(\d{1,3})\.(\d{3}),(\d{2})$/);
+  if (thousandsMatch) {
+    return parseFloat(`${thousandsMatch[1]}${thousandsMatch[2]}.${thousandsMatch[3]}`);
+  }
+  
+  // Convert comma to period and parse
+  normalized = normalized.replace(',', '.');
+  const num = parseFloat(normalized);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Check if a string looks like a money amount
+ */
+function isMoney(str: string): boolean {
+  if (!str) return false;
+  
+  const normalized = fixOcrDigits(str.trim());
+  const patterns = [
+    /₺\s*\d{1,4}[.,]\d{2}/,
+    /\d{1,4}[.,]\d{2}\s*₺/,
+    /\d{1,4}[.,]\d{2}\s*TL/i,
+    /\bTL\b\s*\d{1,4}[.,]\d{2}/i,
+    /^\d{1,4}[.,]\d{2}$/
+  ];
+  
+  return patterns.some(pattern => pattern.test(normalized));
+}
+
+/**
+ * Extract all money-like values from a string
+ */
+function extractMoneyValues(str: string): number[] {
+  if (!str) return [];
+  
+  const normalized = fixOcrDigits(str);
+  const values: number[] = [];
+  
+  const patterns = [
+    /₺\s*(\d{1,4}[.,]\d{2})/g,
+    /(\d{1,4}[.,]\d{2})\s*₺/g,
+    /(\d{1,4}[.,]\d{2})\s*TL/gi,
+    /TL\s*(\d{1,4}[.,]\d{2})/gi
+  ];
+  
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      const value = normalizeNumber(match[1]);
+      if (value !== null) {
+        values.push(value);
+      }
+    }
+  });
+  
+  return values;
+}
+
+/**
+ * Parse quantity and unit from Turkish text
+ */
+function parseQuantityUnit(str: string): { qty?: number; unit?: string } {
+  if (!str) return {};
+  
+  const normalized = fixOcrDigits(str.trim());
+  const qtyUnitPattern = /(\d+(?:[.,]\d+)?)\s*(adet|kg|gr|g|lt|l|ml|cl|pk|paket|kutu)?/i;
+  const match = normalized.match(qtyUnitPattern);
+  
+  if (!match) return {};
+  
+  const qty = normalizeNumber(match[1]);
+  const unit = match[2] ? match[2].toLowerCase() : undefined;
+  
+  return { qty: qty || undefined, unit };
+}
+
+// ============= REGEX PATTERNS =============
+
+const DATE_PATTERN = /(?:(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{4}))/gi;
+const TIME_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/g;
+const VAT_PATTERN = /KDV\s*%?(\d{1,2})\s*[:=]?\s*(\d+[.,]\d{2})/gi;
+const RECEIPT_PATTERN = /(?:Fiş|FIS|Seri.*?Sıra|Seri\s*No|Belge\s*No|Z\s*No)\s*[:#]?\s*([A-Z0-9\-\/]{6,})/gi;
+const PAN_PATTERN = /\b(?:\d[\s\-\*]*){10,19}\b/g;
+
+const TOTAL_PATTERNS = [
+  /(?:GENEL\s*)?TOPLAM\s*[:=]?\s*(\d+[.,]\d{2})/gi,
+  /TOTAL\s*[:=]?\s*(\d+[.,]\d{2})/gi,
+  /(?:NET\s*)?TUTAR\s*[:=]?\s*(\d+[.,]\d{2})/gi
+];
+
+const SUBTOTAL_PATTERNS = [
+  /(?:ARA\s*)?TOPLAM\s*[:=]?\s*(\d+[.,]\d{2})/gi,
+  /SUBTOTAL\s*[:=]?\s*(\d+[.,]\d{2})/gi
+];
+
+const DISCOUNT_PATTERNS = [
+  /(?:İNDİRİM|DISCOUNT)\s*[:=]?\s*(\d+[.,]\d{2})/gi,
+  /(?:İSKONTO|REBATE)\s*[:=]?\s*(\d+[.,]\d{2})/gi
+];
+
+/**
+ * Extract dates from text
+ */
+function extractDates(text: string): Array<{ day: number; month: number; year: number }> {
+  const dates: Array<{ day: number; month: number; year: number }> = [];
+  let match;
+  
+  DATE_PATTERN.lastIndex = 0;
+  while ((match = DATE_PATTERN.exec(text)) !== null) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const year = parseInt(match[3], 10);
+    
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 2020 && year <= 2030) {
+      dates.push({ day, month, year });
+    }
+  }
+  
+  return dates;
+}
+
+/**
+ * Extract times from text
+ */
+function extractTimes(text: string): Array<{ hour: number; minute: number }> {
+  const times: Array<{ hour: number; minute: number }> = [];
+  let match;
+  
+  TIME_PATTERN.lastIndex = 0;
+  while ((match = TIME_PATTERN.exec(text)) !== null) {
+    const hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    times.push({ hour, minute });
+  }
+  
+  return times;
+}
+
+/**
+ * Extract receipt numbers from text
+ */
+function extractReceiptNumbers(text: string): string[] {
+  const numbers: string[] = [];
+  let match;
+  
+  RECEIPT_PATTERN.lastIndex = 0;
+  while ((match = RECEIPT_PATTERN.exec(text)) !== null) {
+    if (match[1] && match[1].length >= 6) {
+      numbers.push(match[1].trim());
+    }
+  }
+  
+  return numbers;
+}
+
+/**
+ * Extract VAT information from text
+ */
+function extractVAT(text: string): Array<{ rate: number; amount: number }> {
+  const vatInfo: Array<{ rate: number; amount: number }> = [];
+  let match;
+  
+  VAT_PATTERN.lastIndex = 0;
+  while ((match = VAT_PATTERN.exec(text)) !== null) {
+    const rate = parseInt(match[1], 10);
+    const amountStr = match[2].replace(',', '.');
+    const amount = parseFloat(amountStr);
+    
+    if (!isNaN(rate) && !isNaN(amount)) {
+      vatInfo.push({ rate, amount });
+    }
+  }
+  
+  return vatInfo;
+}
+
+// ============= LUHN VALIDATION =============
+
+/**
+ * Validate a card number using Luhn algorithm
+ */
+function luhnValid(cardNumber: string): boolean {
+  if (!cardNumber) return false;
+  
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 12) return false;
+  
+  let sum = 0;
+  let alternate = false;
+  
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits[i], 10);
+    
+    if (alternate) {
+      digit *= 2;
+      if (digit > 9) {
+        digit = Math.floor(digit / 10) + (digit % 10);
+      }
+    }
+    
+    sum += digit;
+    alternate = !alternate;
+  }
+  
+  return (sum % 10) === 0;
+}
+
+/**
+ * Detect card scheme from card number
+ */
+function detectCardScheme(cardNumber: string): string | null {
+  if (!cardNumber) return null;
+  
+  const digits = cardNumber.replace(/\D/g, '');
+  
+  if (digits.startsWith('4')) return 'Visa';
+  if (digits.startsWith('5') || digits.startsWith('2')) return 'Mastercard';
+  if (digits.startsWith('37') || digits.startsWith('34')) return 'American Express';
+  if (digits.startsWith('6011') || digits.startsWith('65')) return 'Discover';
+  
+  return null;
+}
+
+/**
+ * Create masked PAN display
+ */
+function maskCardNumber(cardNumber: string): string | null {
+  if (!cardNumber) return null;
+  
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 12) return null;
+  
+  const last4 = digits.slice(-4);
+  const maskedLength = Math.max(0, digits.length - 4);
+  const masked = '*'.repeat(maskedLength);
+  
+  if (digits.length === 16) {
+    return `${masked.slice(0, 4)}-${masked.slice(4, 8)}-${masked.slice(8, 12)}-${last4}`;
+  }
+  
+  return `${masked}-${last4}`;
+}
+
+// ============= MERCHANT NORMALIZATION =============
+
+/**
+ * Normalize merchant name to chain group
+ */
+function normalizeMerchantToChain(merchantRaw: string): string {
+  if (!merchantRaw || typeof merchantRaw !== 'string') {
+    return 'Unknown';
+  }
+  
+  const normalized = merchantRaw.toLowerCase().trim();
+  
+  const chains = [
+    { patterns: ['migros', 'mıgros'], name: 'Migros' },
+    { patterns: ['a101', 'a-101', 'a 101'], name: 'A101' },
+    { patterns: ['bim', 'bİm', 'b.i.m'], name: 'BIM' },
+    { patterns: ['sok', 'şok', 's.o.k'], name: 'SOK' },
+    { patterns: ['carrefour', 'carrefoursa'], name: 'CarrefourSA' },
+    { patterns: ['metro'], name: 'Metro' },
+    { patterns: ['real'], name: 'Real' },
+    { patterns: ['macro', 'macrocenter'], name: 'Macrocenter' }
+  ];
+  
+  for (const chain of chains) {
+    for (const pattern of chain.patterns) {
+      if (normalized.includes(pattern)) {
+        return chain.name;
+      }
+    }
+  }
+  
+  return merchantRaw.trim();
+}
+
+/**
+ * Extract merchant brand from raw text
+ */
+function extractMerchantBrand(text: string): string | null {
+  if (!text) return null;
+  
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    const line = lines[i];
+    
+    if (/^\d+/.test(line) || /(?:CAD|SOK|MAH|NO)/i.test(line)) continue;
+    
+    const normalized = normalizeMerchantToChain(line);
+    if (normalized !== 'Unknown' && normalized !== line) {
+      return normalized;
+    }
+    
+    if (line.length > 3 && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line)) {
+      return line;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Clean merchant name for display
+ */
+function cleanMerchantName(merchantName: string): string {
+  if (!merchantName) return '';
+  
+  return merchantName
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\sÇĞİÖŞÜçğıöşü\-\.]/g, '')
+    .replace(/\b(LTD|ŞTI|A\.Ş|AŞ|SAN|TIC)\b\.?/gi, '')
+    .trim();
+}
+
+// ============= STORE MATCHING =============
+
+/**
+ * Parse Turkish address components from raw text
+ */
+function parseAddressComponents(addressRaw: string): { city?: string; district?: string; neighborhood?: string; street?: string } {
+  if (!addressRaw) return {};
+  
+  const normalized = addressRaw.toLowerCase().trim();
+  const components: any = {};
+  
+  const cities = [
+    'istanbul', 'ankara', 'izmir', 'bursa', 'antalya', 'adana', 'konya', 'gaziantep'
+  ];
+  
+  for (const city of cities) {
+    if (normalized.includes(city)) {
+      components.city = city.charAt(0).toUpperCase() + city.slice(1);
+      break;
+    }
+  }
+  
+  const mahMatch = normalized.match(/([a-zçğıöşü\s]+)(?:\s+mah\.?|\s+mahalle)/i);
+  if (mahMatch) {
+    components.neighborhood = mahMatch[1].trim();
+  }
+  
+  return components;
+}
+
+/**
+ * Upsert store with location components
+ */
+async function upsertStore(
+  supabase: any,
+  chainGroup: string,
+  addressRaw?: string
+): Promise<string | null> {
+  try {
+    const components = addressRaw ? parseAddressComponents(addressRaw) : {};
+    
+    const { data, error } = await supabase.rpc('upsert_store_dim', {
+      p_chain_group: chainGroup,
+      p_city: components.city || null,
+      p_district: components.district || null,
+      p_neighborhood: components.neighborhood || null,
+      p_address: addressRaw || null,
+      p_lat: null,
+      p_lng: null,
+      p_h3_8: null
+    });
+    
+    if (error) {
+      console.error('Store upsert error:', error);
+      return null;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Store upsert error:', error);
+    return null;
+  }
+}
 
 // Supabase client setup
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
