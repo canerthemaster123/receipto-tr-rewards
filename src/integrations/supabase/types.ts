@@ -431,37 +431,61 @@ export type Database = {
       }
       receipt_items: {
         Row: {
+          bbox: Json | null
           created_at: string | null
+          ean13: string | null
           id: string
           item_name: string
+          item_name_norm: string | null
+          item_name_raw: string | null
+          line_no: number | null
           line_total: number | null
           product_code: string | null
           qty: number | null
           raw_line: string | null
           receipt_id: string
+          unit: string | null
           unit_price: number | null
+          vat_amount: number | null
+          vat_rate: number | null
         }
         Insert: {
+          bbox?: Json | null
           created_at?: string | null
+          ean13?: string | null
           id?: string
           item_name: string
+          item_name_norm?: string | null
+          item_name_raw?: string | null
+          line_no?: number | null
           line_total?: number | null
           product_code?: string | null
           qty?: number | null
           raw_line?: string | null
           receipt_id: string
+          unit?: string | null
           unit_price?: number | null
+          vat_amount?: number | null
+          vat_rate?: number | null
         }
         Update: {
+          bbox?: Json | null
           created_at?: string | null
+          ean13?: string | null
           id?: string
           item_name?: string
+          item_name_norm?: string | null
+          item_name_raw?: string | null
+          line_no?: number | null
           line_total?: number | null
           product_code?: string | null
           qty?: number | null
           raw_line?: string | null
           receipt_id?: string
+          unit?: string | null
           unit_price?: number | null
+          vat_amount?: number | null
+          vat_rate?: number | null
         }
         Relationships: [
           {
@@ -475,18 +499,25 @@ export type Database = {
       }
       receipts: {
         Row: {
+          address_raw: string | null
           barcode_numbers: string[] | null
+          card_scheme: string | null
           city: string | null
           created_at: string | null
+          discount_total: number | null
           district: string | null
           fis_no: string | null
           h3_8: string | null
           id: string
           image_url: string | null
           items: string | null
+          masked_pan: string | null
           merchant: string | null
           merchant_brand: string | null
           neighborhood: string | null
+          ocr_engine: string | null
+          ocr_json: Json | null
+          parse_confidence: number | null
           payment_method: string | null
           points: number | null
           purchase_date: string | null
@@ -496,23 +527,32 @@ export type Database = {
           store_address: string | null
           store_id: string | null
           street: string | null
+          subtotal: number | null
           total: number | null
           updated_at: string | null
           user_id: string
+          vat_total: number | null
         }
         Insert: {
+          address_raw?: string | null
           barcode_numbers?: string[] | null
+          card_scheme?: string | null
           city?: string | null
           created_at?: string | null
+          discount_total?: number | null
           district?: string | null
           fis_no?: string | null
           h3_8?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
+          masked_pan?: string | null
           merchant?: string | null
           merchant_brand?: string | null
           neighborhood?: string | null
+          ocr_engine?: string | null
+          ocr_json?: Json | null
+          parse_confidence?: number | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
@@ -522,23 +562,32 @@ export type Database = {
           store_address?: string | null
           store_id?: string | null
           street?: string | null
+          subtotal?: number | null
           total?: number | null
           updated_at?: string | null
           user_id: string
+          vat_total?: number | null
         }
         Update: {
+          address_raw?: string | null
           barcode_numbers?: string[] | null
+          card_scheme?: string | null
           city?: string | null
           created_at?: string | null
+          discount_total?: number | null
           district?: string | null
           fis_no?: string | null
           h3_8?: string | null
           id?: string
           image_url?: string | null
           items?: string | null
+          masked_pan?: string | null
           merchant?: string | null
           merchant_brand?: string | null
           neighborhood?: string | null
+          ocr_engine?: string | null
+          ocr_json?: Json | null
+          parse_confidence?: number | null
           payment_method?: string | null
           points?: number | null
           purchase_date?: string | null
@@ -548,9 +597,11 @@ export type Database = {
           store_address?: string | null
           store_id?: string | null
           street?: string | null
+          subtotal?: number | null
           total?: number | null
           updated_at?: string | null
           user_id?: string
+          vat_total?: number | null
         }
         Relationships: []
       }

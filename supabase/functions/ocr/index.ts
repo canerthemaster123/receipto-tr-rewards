@@ -2,18 +2,27 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.53.0';
 
-// Get Supabase client for analytics operations
+// Import shared utilities
+import { normalizeNumber, isMoney, extractMoneyValues, parseQuantityUnit, fixOcrDigits } from '../_shared/numeric.ts';
+import { 
+  extractDates, extractTimes, extractReceiptNumbers, extractVAT,
+  TOTAL_PATTERNS, SUBTOTAL_PATTERNS, DISCOUNT_PATTERNS, PAN_PATTERN, PAYMENT_PATTERNS
+} from '../_shared/regex-tr.ts';
+import { luhnValid, getCardLast4, detectCardScheme, maskCardNumber } from '../_shared/luhn.ts';
+import { normalizeMerchantToChain, extractMerchantBrand, cleanMerchantName } from '../_shared/merchant-normalize.ts';
+import { matchStore, upsertStore, parseAddressComponents } from '../_shared/store-match.ts';
+
+// Supabase client setup
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// CORS configuration with allowlist from environment
+// CORS configuration
 const getAllowedOrigins = () => {
   const allowedOriginsEnv = Deno.env.get('ALLOWED_ORIGINS');
   if (allowedOriginsEnv) {
     return allowedOriginsEnv.split(',').map(origin => origin.trim());
   }
-  // Default fallback for development
   return [
     'https://receipto-tr-rewards.lovable.app',
     'https://loving-warmth-production.lovable.app', 
@@ -32,1367 +41,737 @@ function getCorsHeaders(_req: Request) {
   };
 }
 
-interface OCRResult {
-  merchant_raw: string;
-  merchant_brand: string;
-  purchase_date: string;
-  purchase_time: string | null;
-  store_address: string | null;
-  total: number;
-  items: {
-    name: string;
-    qty?: number;
-    unit_price?: number;
-    line_total?: number;
-    raw_line: string;
-    product_code?: string;
-  }[];
-  payment_method: string | null;
-  receipt_unique_no: string | null;
-  fis_no: string | null;
-  barcode_numbers: string[];
-  raw_text: string;
-}
-
-/**
- * Normalize merchant to chain group using local patterns
- */
-function normalizeMerchantLocal(merchantRaw: string): string {
-  if (!merchantRaw || typeof merchantRaw !== 'string') {
-    return 'Unknown';
-  }
-
-  const merchant = merchantRaw.trim().toLowerCase();
-
-  // Migros patterns
-  if (merchant.includes('migros')) {
-    return 'Migros';
-  }
-
-  // A101 patterns  
-  if (merchant.includes('a101') || merchant.includes('a-101')) {
-    return 'A101';
-  }
-
-  // BIM patterns
-  if (merchant.includes('bim') || merchant.includes('bİm')) {
-    return 'BIM';
-  }
-
-  // SOK patterns
-  if (merchant.includes('sok') || merchant.includes('şok')) {
-    return 'SOK';
-  }
-
-  // CarrefourSA patterns
-  if (merchant.includes('carrefour')) {
-    return 'CarrefourSA';
-  }
-
-  // Return original if no match
-  return merchantRaw.trim();
-}
-
-/**
- * Normalize merchant brand (fuzzy) — show brand only
- */
-function normalizeBrand(merchantRaw: string): string {
-  if (!merchantRaw || typeof merchantRaw !== 'string') {
-    return '';
-  }
-
-  let normalized = merchantRaw.toLowerCase();
-
-  // Replace Turkish characters with base equivalents
-  const turkishCharMap: Record<string, string> = {
-    'İ': 'i', 'ı': 'i', 'I': 'i',
-    'Ğ': 'g', 'ğ': 'g',
-    'Ş': 's', 'ş': 's', 
-    'Ç': 'c', 'ç': 'c',
-    'Ö': 'o', 'ö': 'o',
-    'Ü': 'u', 'ü': 'u'
+// Types
+interface OcrTextAnnotation {
+  description: string;
+  boundingPoly?: {
+    vertices: Array<{ x?: number; y?: number }>;
   };
-  
-  Object.entries(turkishCharMap).forEach(([turkish, base]) => {
-    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
-  });
+}
 
-  // Remove spaces and punctuation
-  normalized = normalized.replace(/[\s\.\-_,;:!@#$%^&*()+={}|\[\]\\\/?"'<>~`]/g, '');
-
-  // Strip company suffix words
-  const suffixesToRemove = [
-    'ticaret', 'as', 'ase', 'ltd', 'sti', 'sanayi', 've', 'vb',
-    'gida', 'market', 'magazasi', 'perakende', 'satis'
-  ];
-  
-  suffixesToRemove.forEach(suffix => {
-    normalized = normalized.replace(new RegExp(`\\b${suffix}\\b`, 'g'), '');
-  });
-
-  // Brand dictionary with common variants and broken OCR forms
-  const brandDictionary: Record<string, string> = {
-    // Migros variants
-    'migros': 'Migros',
-    'mgros': 'Migros', 
-    'mıgros': 'Migros',
-    'mıgr0s': 'Migros',
-    
-    // BİM variants  
-    'bim': 'BİM',
-    'b1m': 'BİM',
-    'bım': 'BİM',
-    
-    // A101 variants
-    'a101': 'A101',
-    'a1o1': 'A101',
-    'a10l': 'A101',
-    
-    // ŞOK variants
-    'sok': 'ŞOK',
-    'şok': 'ŞOK',
-    's0k': 'ŞOK',
-    
-    // CarrefourSA variants
-    'carrefour': 'CarrefourSA',
-    'carrefoursa': 'CarrefourSA',
-    'carref0ur': 'CarrefourSA',
-    
-    // Other major chains
-    'metro': 'Metro',
-    'macr0': 'Macro',
-    'macro': 'Macro',
-    'real': 'Real',
-    'teknosa': 'Teknosa',
-    'vatan': 'Vatan',
-    'mediamarkt': 'MediaMarkt'
+interface OcrDoc {
+  textAnnotations: OcrTextAnnotation[];
+  fullTextAnnotation?: {
+    text: string;
   };
-
-  // Direct match
-  if (brandDictionary[normalized]) {
-    return brandDictionary[normalized];
-  }
-
-  // Fuzzy matching for broken OCR (simple includes)
-  for (const [key, brand] of Object.entries(brandDictionary)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      return brand;
-    }
-  }
-
-  // Levenshtein distance ≤2 fallback (simplified version)
-  for (const [key, brand] of Object.entries(brandDictionary)) {
-    if (Math.abs(normalized.length - key.length) <= 2) {
-      let distance = 0;
-      const maxLen = Math.max(normalized.length, key.length);
-      for (let i = 0; i < maxLen; i++) {
-        if (normalized[i] !== key[i]) distance++;
-      }
-      if (distance <= 2) {
-        return brand;
-      }
-    }
-  }
-
-  // Fallback: return cleaned version of original
-  return merchantRaw.trim();
 }
 
-// Parsing helpers
-function extractMerchant(text: string): string {
-  const lines = text.split('\n').filter(line => line.trim().length > 0);
-  
-  // Look for common Turkish store names in the text
-  const storePatterns = [
-    { pattern: /MİGROS|MIGROS/i, name: 'Migros' },
-    { pattern: /BİM/i, name: 'BİM' },
-    { pattern: /A101/i, name: 'A101' },
-    { pattern: /ŞOK/i, name: 'ŞOK' },
-    { pattern: /CARREFOUR/i, name: 'CarrefourSA' },
-    { pattern: /TEKNOSA/i, name: 'Teknosa' },
-    { pattern: /REAL/i, name: 'Real' },
-    { pattern: /METRO/i, name: 'Metro' }
-  ];
-  
-  // Check entire text for store patterns
-  for (const store of storePatterns) {
-    if (store.pattern.test(text)) {
-      return store.name;
-    }
-  }
-  
-  // Look for company indicators in lines
-  for (const line of lines) {
-    if ((line.includes('A.Ş.') || line.includes('A.S.') || line.includes('LTD') || line.includes('ŞTİ')) 
-        && line.length > 5 && line.length < 50) {
-      return line.trim();
-    }
-  }
-  
-  // Look for lines that might contain store name (avoid receipt header junk)
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
-    const line = lines[i].trim();
-    
-    // Skip obvious non-store lines
-    if (line.match(/^\d+$/) || line.includes('TEL:') || line.includes('THIS') || 
-        line.includes('GRIZON') || line.length < 3 || line.length > 50) {
-      continue;
-    }
-    
-    // If it contains letters and is substantial, might be store name
-    if (line.match(/[A-Za-zÇĞİÖŞÜçğıöşü]/) && line.length > 3) {
-      return line;
-    }
-  }
-  
-  return lines[0]?.trim() || '';
+interface LineCluster {
+  y_center: number;
+  y_min: number;
+  y_max: number;
+  spans: Array<{
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
 }
 
-// Extract purchase time from receipt text
-function extractPurchaseTime(text: string): string | null {
-  const lines = text.split('\n');
-  
-  for (const line of lines) {
-    const cleanLine = line.trim();
-    
-    // Look for SAAT, Saat, TIME keywords
-    if (/\b(SAAT|Saat|TIME)\b/i.test(cleanLine)) {
-      const timeMatch = cleanLine.match(/\b([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?\b/);
-      if (timeMatch) {
-        return timeMatch[0];
-      }
-    }
-    
-    // Look for standalone time patterns
-    const timeMatch = cleanLine.match(/\b([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?\b/);
-    if (timeMatch) {
-      // Make sure it's not part of a date (avoid matching dates like 12:34 in 12/34/2023)
-      const beforeMatch = cleanLine.substring(0, timeMatch.index);
-      const afterMatch = cleanLine.substring((timeMatch.index || 0) + timeMatch[0].length);
-      
-      // Skip if it looks like part of a date
-      if (!/\d/.test(beforeMatch.slice(-1)) && !/^\d/.test(afterMatch)) {
-        return timeMatch[0];
-      }
-    }
-  }
-  
-  return null;
+interface ParsedHeader {
+  merchant_raw?: string;
+  merchant_brand?: string;
+  chain_group?: string;
+  address_raw?: string;
+  city?: string;
+  district?: string;
+  neighborhood?: string;
+  receipt_unique_no?: string;
+  fis_no?: string;
+  purchase_date?: string;
+  purchase_time?: string;
+  payment_method?: string;
+  masked_pan?: string;
+  card_scheme?: string;
 }
 
-// Extract store address from receipt header
-function extractStoreAddress(text: string): string | null {
-  const lines = text.split('\n');
-  const headerLines = lines.slice(0, 15); // Look at more lines for address
-  
-  for (const line of headerLines) {
-    const cleanLine = line.trim();
-    
-    // Skip empty lines or very short lines
-    if (!cleanLine || cleanLine.length < 10) continue;
-    
-    // Skip merchant names and metadata
-    if (/^(CARREFOUR|MİGROS|MIGROS|BİM|A101|ŞOK|SABANCI|TIC|MRK|A\.?S\.?|Ş\.?T\.?İ\.?)/i.test(cleanLine)) continue;
-    if (/^(TEL|TELEFON|VERGİ|MERSIS|TARIH|SAAT|FİŞ)/i.test(cleanLine)) continue;
-    
-    // Look for definitive address indicators
-    if (/\b(Cad\.|Caddesi|Mah\.|Mahallesi|Sk\.|Sokak|No\s*[:.]?\s*\d|Bulv\.|Bulvarı)\b/i.test(cleanLine)) {
-      console.log(`Found address with street indicator: ${cleanLine}`);
-      return cleanLine;
-    }
-    
-    // Look for Turkish city names
-    if (/\b(İSTANBUL|ANKARA|İZMİR|BURSA|ANTALYA|ADANA|KONYA|GAZİANTEP|MERSİN|KAYSERİ|ESKİŞEHİR|AYAZAĞA|ATAŞEHİR|BEŞIKTAŞ|BEYOĞLU|KADIKÖY|ÜSKÜDAR)/i.test(cleanLine)) {
-      // Make sure it's a proper address line, not just containing city name
-      if (cleanLine.split(/\s+/).length >= 3) {
-        console.log(`Found address with city name: ${cleanLine}`);
-        return cleanLine;
-      }
-    }
-    
-    // Look for postal codes (5 digits)
-    if (/\b\d{5}\b/.test(cleanLine) && cleanLine.split(/\s+/).length >= 3) {
-      console.log(`Found address with postal code: ${cleanLine}`);
-      return cleanLine;
-    }
-    
-    // Look for lines with "Cumhuriyet", "Demokrasi" type street names
-    if (/\b(Cumhuriyet|Demokrasi|Huzur|Atatürk|Gazi|Millet)\b/i.test(cleanLine) && cleanLine.split(/\s+/).length >= 4) {
-      console.log(`Found address with common street name: ${cleanLine}`);
-      return cleanLine;
-    }
-  }
-  
-  console.log('No store address found');
-  return null;
-}
-
-function extractDate(text: string): string {
-  // Look for Turkish date patterns first
-  const datePatterns = [
-    /TARİH\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
-    /TARİH\s*:\s*(\d{2}\.\d{2}\.\d{4})/i,
-    /(\d{2}\/\d{2}\/\d{4})/,
-    /(\d{2}\.\d{2}\.\d{4})/,
-    /(\d{4}-\d{2}-\d{2})/
-  ];
-  
-  for (const pattern of datePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      let dateStr = match[1] || match[0];
-      
-      // Convert to YYYY-MM-DD format
-      if (dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-          // DD/MM/YYYY to YYYY-MM-DD
-          if (parts[2].length === 4) {
-            // Fix year issue: if year is 2025, assume it's 2024
-            let year = parseInt(parts[2]);
-            if (year === 2025) {
-              year = 2024;
-            }
-            return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-          }
-        }
-      } else if (dateStr.includes('.')) {
-        const parts = dateStr.split('.');
-        if (parts.length === 3) {
-          // DD.MM.YYYY to YYYY-MM-DD
-          if (parts[2].length === 4) {
-            // Fix year issue: if year is 2025, assume it's 2024
-            let year = parseInt(parts[2]);
-            if (year === 2025) {
-              year = 2024;
-            }
-            return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-          }
-        }
-      } else if (dateStr.includes('-')) {
-        // Already in YYYY-MM-DD format - fix year if needed
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          let year = parseInt(parts[0]);
-          if (year === 2025) {
-            year = 2024;
-          }
-          return `${year}-${parts[1]}-${parts[2]}`;
-        }
-        return dateStr;
-      }
-    }
-  }
-  
-  // Fallback to a reasonable past date instead of today
-  return '2024-08-15';
-}
-
-function extractTotal(text: string): number {
-  console.log('Extracting total from text');
-
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // Helper to parse numbers with comma or dot
-  const parseAmount = (s: string): number | null => {
-    const m = s.match(/(\d{1,3}(?:[\.,]\d{3})*[\.,]\d{2}|\d+[\.,]\d{2})/);
-    if (!m) return null;
-    const norm = m[1].replace(/\./g, '').replace(',', '.');
-    const n = parseFloat(norm);
-    return isNaN(n) ? null : n;
-  };
-
-  // PRIORITY 1: Exact final total keywords (most specific)
-  const finalTotalKeywords = [
-    /\bGENEL\s*TOPLAM\b/i,
-    /\bTOPLAM\s*TUTAR\b/i,
-    /\bNET\s*TOPLAM\b/i,
-    /\bÖDENECEK\s*TUTAR\b/i
-  ];
-
-  for (const keyword of finalTotalKeywords) {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (keyword.test(line)) {
-        console.log(`Found final total keyword line: "${line}"`);
-        
-        const sameLineAmount = parseAmount(line);
-        if (sameLineAmount) {
-          console.log(`Found total with final keyword: ${sameLineAmount}`);
-          return sameLineAmount;
-        }
-        
-        for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
-          const nextAmount = parseAmount(lines[j]);
-          if (nextAmount) {
-            console.log(`Found total after final keyword: ${nextAmount}`);
-            return nextAmount;
-          }
-        }
-      }
-    }
-  }
-
-  // PRIORITY 2: Payment section keywords
-  const paymentKeywords = [
-    /\bÖDEME\s*TÜRÜ\b/i,
-    /\bÖDEME\s*BİLGİSİ\b/i,
-    /\bKREDİ\s*KARTI\b/i,
-    /\bNAKİT\b/i,
-    /\bPOS\s*SATIŞ\b/i
-  ];
-
-  for (const keyword of paymentKeywords) {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (keyword.test(line)) {
-        console.log(`Found payment keyword line: "${line}"`);
-        
-        // Check current and next few lines for amount
-        for (let j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
-          const amt = parseAmount(lines[j]);
-          if (amt && amt > 0) {
-            console.log(`Found total in payment section: ${amt}`);
-            return amt;
-          }
-        }
-      }
-    }
-  }
-
-  // PRIORITY 3: Card number patterns (masked cards indicate payment section)
-  const isMaskedCard = (s: string) => /(\d{4,6}\*{4,6}\d{2,4})/.test(s.replace(/\s+/g, ''));
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (isMaskedCard(line)) {
-      console.log(`Found payment card line: "${line}"`);
-      
-      for (let j = Math.max(0, i - 2); j <= Math.min(i + 3, lines.length - 1); j++) {
-        const amt = parseAmount(lines[j]);
-        if (amt) {
-          console.log(`Found total near card info: ${amt}`);
-          return amt;
-        }
-      }
-    }
-  }
-
-  // PRIORITY 4: Simple TOPLAM (but exclude discount/tax variants)
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Must contain TOPLAM but NOT discount/tax compound forms
-    if (/\bTOPLAM\b/i.test(line) && 
-        !/TOPKDV|ARA\s*TOPLAM|KDV.*TOPLAM|TOPLAM.*KDV|İNDİRİM|KAMPANYA/i.test(line)) {
-      console.log(`Found simple TOPLAM line: "${line}"`);
-      
-      const sameLineAmount = parseAmount(line);
-      if (sameLineAmount) {
-        console.log(`Found total on TOPLAM line: ${sameLineAmount}`);
-        return sameLineAmount;
-      }
-      
-      for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
-        const nextAmount = parseAmount(lines[j]);
-        if (nextAmount) {
-          console.log(`Found total after TOPLAM: ${nextAmount}`);
-          return nextAmount;
-        }
-      }
-    }
-  }
-
-  // PRIORITY 5: Bottom area fallback - largest reasonable amount
-  console.log('Using bottom area fallback');
-  const bottomStart = Math.max(0, lines.length - 15);
-  let maxAmount = 0;
-  
-  for (let i = bottomStart; i < lines.length; i++) {
-    const line = lines[i];
-    // Skip obvious discount/tax lines in bottom search
-    if (/KDV|İNDİRİM|KAMPANYA|İADE/i.test(line)) continue;
-    
-    const amt = parseAmount(line);
-    if (amt && amt > maxAmount && amt < 50000) { // More conservative upper limit
-      maxAmount = amt;
-    }
-  }
-
-  if (maxAmount > 0) {
-    console.log(`Bottom area fallback total: ${maxAmount}`);
-    return maxAmount;
-  }
-
-  console.log('No total found, returning 0');
-  return 0;
-}
-
-/**
- * Check if a line is a discount/markdown line that should be excluded
- */
-function isDiscountLine(line: string): boolean {
-  // Normalize the line for checking
-  let normalized = line.toLowerCase().trim();
-  
-  // Replace Turkish characters with base equivalents
-  const turkishCharMap: Record<string, string> = {
-    'İ': 'i', 'ı': 'i', 'I': 'i',
-    'Ğ': 'g', 'ğ': 'g',
-    'Ş': 's', 'ş': 's', 
-    'Ç': 'c', 'ç': 'c',
-    'Ö': 'o', 'ö': 'o',
-    'Ü': 'u', 'ü': 'u'
-  };
-  
-  Object.entries(turkishCharMap).forEach(([turkish, base]) => {
-    normalized = normalized.replace(new RegExp(turkish, 'g'), base);
-  });
-  
-  // Remove punctuation for pattern matching
-  const cleanLine = normalized.replace(/[^\w\s]/g, '');
-  
-  // Discount patterns to match (case-insensitive Turkish/ASCII variants)
-  const discountPatterns = [
-    /\bindirim\b/,
-    /\bind\b/,
-    /\bindt?\b/,
-    /\bkampanya\s*indirimi?\b/,
-    /\btoplam\s*indirim\b/,
-    /\bpromosyon\b/,
-    /\btutar\s*ind\b/,
-    /\bind\s*tutar\b/,
-    /\bindirim\s*tutari?\b/
-  ];
-  
-  return discountPatterns.some(pattern => pattern.test(cleanLine));
-}
-
-function parseItems(text: string): {
-  name: string;
+interface ParsedItem {
+  line_no: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  item_name_raw: string;
+  item_name_norm: string;
   qty?: number;
+  unit?: string;
   unit_price?: number;
   line_total?: number;
-  raw_line: string;
-  product_code?: string;
-}[] {
-  console.log('Parsing items with comprehensive logic for Turkish receipts');
+  vat_rate?: number;
+  vat_amount?: number;
+  ean13?: string;
+}
 
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const items: Array<{
-    name: string;
-    qty?: number;
-    unit_price?: number;
-    line_total?: number;
-    raw_line: string;
-    product_code?: string;
-  }> = [];
+interface ParsedTotals {
+  subtotal?: number;
+  discount_total?: number;
+  vat_total?: number;
+  total?: number;
+}
 
-  // Utility helpers
-  const hasLetters = (s: string) => /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(s);
-  const isPercentOnly = (s: string) => /^%\d+/.test(s.replace(/\s+/g, ''));
-  const isMeta = (s: string) => (
-    /MERSİS|MERSIS|VD\.|VERGİ|VERGI|TEL:|SAAT|KASİYER|KASIYER|REF\s*NO|ONAY\s*KODU|TERMINAL|EKÜ|EKU|https?:\/\//i.test(s) ||
-    /İşyeri\s*ID|Isyeri\s*ID|İŞYERİ\s*ID|MF\s*TV|Z\s*NO|EKÜ\s*NO|IMZA|İMZA|IRSALIYE|IRSALİYE/i.test(s)
-  );
-  const isSectionMarker = (s: string) => /^(ARA\s+)?TOPLAM|TOPKDV|GENEL\s+TOPLAM|KDV\b/i.test(s);
-  const maskedCard = (s: string) => /(\d{4,6}\*{4,6}\d{2,4})/.test(s.replace(/\s+/g, ''));
+interface ValidationResult {
+  parse_confidence: number;
+  warnings: string[];
+  items_sum_valid: boolean;
+  vat_valid: boolean;
+  luhn_valid: boolean;
+  duplicate_receipt: boolean;
+}
 
-  // Determine product section: from after header to before totals
-  let start = -1, end = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/TAR[İI]H|F[İI]Ş\s*NO/i.test(lines[i])) {
-      // find the first plausible item a few lines later
-      for (let j = i + 1; j < Math.min(i + 30, lines.length); j++) {
-        const L = lines[j];
-        if (isMeta(L) || maskedCard(L) || isSectionMarker(L) || isPercentOnly(L)) continue;
-        if (hasLetters(L) && !/^#[0-9]+$/.test(L)) { start = j; break; }
-      }
-      if (start !== -1) break;
-    }
-  }
-  if (start === -1) start = 0; // fallback
-
-  for (let i = start; i < lines.length; i++) {
-    if (isSectionMarker(lines[i]) || /ORTAK\s*POS|\bPOS\b/i.test(lines[i]) || maskedCard(lines[i])) { end = i; break; }
-  }
-  if (end === -1) end = Math.min(lines.length, start + 60);
-
-  console.log(`Product section: lines ${start} to ${end}`);
-
-  // Walk through product section
-  for (let i = start; i < end; i++) {
-    let line = lines[i];
-    if (!hasLetters(line)) continue;
-    if (isMeta(line) || isSectionMarker(line) || maskedCard(line) || isPercentOnly(line)) continue;
-
-    // Skip obvious non-item words
-    if (/SATIŞ|SATIS|E-ARŞ[İI]V|ADRES[İI]|MÜŞTER[İI]/i.test(line)) continue;
-
-    // Skip ALL receipt metadata and invoice information
-    if (/F[İI]Ş\s*NO|B[İI]LG[İI]\s*F[İI]Ş[İI]|FATURA.*SER[İI]|İRSAL[İI]YE.*SER[İI]|TÜR\s*:|MÜŞTER[İI]\s*TCKN|TCKN|E-ARŞ[İI]V|EARSIV|E-ARSIV/i.test(line)) continue;
-    
-    // Skip date, time, address related lines 
-    if (/TAR[İI]H\s*:|SAAT\s*:|TARIH|SAAT|ADRES/i.test(line)) continue;
-    
-    // Skip merchant, store, and branch info
-    if (/MAĞAZA|MAGAZA|ŞUBE|SUBE|M[İI]GROS|BİM|A101|ŞOK|SOK|MERKEZ|CARREFOUR|SABANCI|TIC|MRK/i.test(line)) continue;
-    
-    // Skip tax, legal, and registration info
-    if (/VERGİ|VERGI|V\.?D\.?|BÜYÜK\s*MÜKELLEFL|BUYUK\s*MUKELLEFL|MERSIS|MERSİS|MAH\.|MAHALLESI|CD\.|CADDESI/i.test(line)) continue;
-    
-    // Skip discount lines using the isDiscountLine function
-    if (isDiscountLine(line)) continue;
-
-    // Handle product code starting with #
-    const codeMatch = line.match(/^#(\d{6,})/);
-    let product_code: string | undefined;
-    if (codeMatch) {
-      product_code = codeMatch[1];
-      // Try to use next meaningful line as name
-      const nextName = lines.slice(i + 1, Math.min(i + 4, end)).find(L => hasLetters(L) && !isMeta(L) && !isSectionMarker(L));
-      if (nextName) line = nextName;
-    }
-
-    // If this line is a pure quantity x unit price line, attach to previous item and continue
-    const qtyLineMatch = line.match(/^(\d+(?:[.,]\d+)?)\s*(?:AD|ADET)?\s*[xX×]\s*(\d+(?:[.,]\d{2}))\s*(?:TL(?:\/AD)?|₺)?/i);
-    if (qtyLineMatch && items.length > 0) {
-      const qty = parseFloat(qtyLineMatch[1].replace(',', '.'));
-      const unit_price = parseFloat(qtyLineMatch[2].replace(',', '.'));
-      const last = items[items.length - 1];
-      last.qty = qty;
-      last.unit_price = unit_price;
-      if (!last.line_total) last.line_total = +(qty * unit_price).toFixed(2);
-      continue;
-    }
-
-    // Extract a trailing line total if present on same line
-    let line_total: number | undefined;
-    const priceMatch = line.match(/[*₺]?\s*(\d{1,4}(?:[.,]\d{3})*[.,]\d{2})\s*$/);
-    if (priceMatch) {
-      line_total = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
-      line = line.replace(/[*₺]?\s*\d{1,4}(?:[.,]\d{3})*[.,]\d{2}\s*$/, '').trim();
-    }
-
-    // Do NOT convert weights like "90 G" or "110 G" into quantity. Keep them in the name.
-    // Clean name
-    let name = line
-      .replace(/^[#\d\s*%₺]+/, '')
-      .replace(/[%₺*]+$/, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    // Filter out leftovers that look like metadata
-    if (!hasLetters(name) || name.length < 2) continue;
-
-    items.push({ name, line_total, raw_line: lines[i], product_code });
-    console.log(`Parsed item: "${name}" ${line_total ? `total: ${line_total}` : ''}`);
-  }
-
-  console.log(`Total items extracted: ${items.length}`);
-  return items;
+// Generate request ID for logging
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /**
- * Extract barcode/unique receipt number from bottom of receipt
+ * Parse header information from OCR document
  */
-function extractReceiptUniqueNo(text: string): string | null {
-  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+function parseHeader(ocr: OcrDoc, requestId: string): ParsedHeader {
+  console.log(`[${requestId}] Parsing header information`);
   
-  // Scan the last ~10 lines for a single long numeric sequence (18–24 digits)
-  const endLines = lines.slice(-10);
+  const fullText = ocr.fullTextAnnotation?.text || '';
+  const lines = fullText.split('\n').map(line => line.trim()).filter(Boolean);
   
-  for (const line of endLines) {
-    // Look for longest numeric sequence 18-24 digits
-    const barcodeMatch = line.match(/\b(\d{18,24})\b/);
-    if (barcodeMatch) {
-      console.log(`Found receipt unique number: ${barcodeMatch[1]}`);
-      return barcodeMatch[1];
-    }
+  const header: ParsedHeader = {};
+  
+  // Extract merchant information from first few lines
+  const merchantBrand = extractMerchantBrand(fullText);
+  if (merchantBrand) {
+    header.merchant_raw = merchantBrand;
+    header.merchant_brand = cleanMerchantName(merchantBrand);
+    header.chain_group = normalizeMerchantToChain(merchantBrand);
   }
   
-  return null;
-}
-
-/**
- * Extract FİŞ NO if present
- */
-function extractFisNo(text: string): string | null {
-  const fisMatch = text.match(/f(?:i|İ)ş\s*no\s*[:\-]?\s*(\d+)/i);
-  if (fisMatch) {
-    console.log(`Found FİŞ NO: ${fisMatch[1]}`);
-    return fisMatch[1];
-  }
-  return null;
-}
-
-function extractPaymentMethod(text: string): string | null {
-  console.log('Extracting payment method from text');
-  
-  const lines = text.split('\n').map(line => line.trim());
-  
-  // Migros pattern: 494314******4645 (middle 6 digits masked)
-  const migrosPattern = /(\d{6}\*{6}\d{4})/;
-  
-  // Carrefour credit card patterns: exactly 16 digits with first 12 masked, last 4 visible
-  const carrefourCreditPatterns = [
-    /\*{4}\s+\*{4}\s+\*{4}\s+(\d{4})/,  // **** **** **** 1234
-    /\*{12}(\d{4})/,                     // ************1234
-    /(\d{4})\s+\*{4}\s+\*{4}\s+(\d{4})/, // 1234 **** **** 5678 (capture both parts)
-  ];
-  
-  // Standard 16-digit masked card patterns
-  const standardPatterns = [
-    /(\d{4}\s+\*{4}\s+\*{4}\s+\d{4})/,   // 1234 **** **** 5678
-    /(\*{4}\s+\*{4}\s+\*{4}\s+\d{4})/,   // **** **** **** 1234
-  ];
-  
-  // All credit card patterns
-  const allPatterns = [migrosPattern, ...carrefourCreditPatterns, ...standardPatterns];
-  
-  // Look for actual credit card patterns
+  // Extract address (look for lines with address indicators)
   for (const line of lines) {
-    // Handle CarrefourSA store card vs credit card distinction
-    if (/carrefour.*kart/i.test(line)) {
-      console.log(`Processing Carrefour line: ${line}`);
-      
-      // Look for 16-digit credit card pattern in this line
-      for (const pattern of carrefourCreditPatterns) {
-        const match = line.match(pattern);
-        if (match) {
-          let cardNumber;
-          if (match[2]) {
-            // Pattern with two capture groups (first 4 and last 4)
-            cardNumber = `${match[1]} **** **** ${match[2]}`;
-          } else {
-            // Pattern with last 4 digits only
-            cardNumber = `**** **** **** ${match[1]}`;
-          }
-          console.log(`Found Carrefour credit card: ${cardNumber}`);
-          return cardNumber;
-        }
-      }
-      
-      // If no 16-digit credit card pattern found, this is just store loyalty card
-      console.log(`CarrefourSA loyalty card detected (not credit card): ${line}`);
-      continue;
-    }
-    
-    // Skip other store loyalty cards
-    if (/migros.*kart|bim.*kart|şok.*kart/i.test(line)) {
-      console.log(`Store loyalty card detected: ${line}`);
-      continue;
-    }
-    
-    // Look for credit card patterns in regular lines
-    for (const pattern of allPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        const cardNumber = match[1];
-        console.log(`Found credit card payment method: ${cardNumber}`);
-        return cardNumber;
-      }
+    if (/(?:ADRES|MAH|CAD|SOK)/i.test(line) && line.length > 10) {
+      header.address_raw = line;
+      const components = parseAddressComponents(line);
+      header.city = components.city;
+      header.district = components.district;
+      header.neighborhood = components.neighborhood;
+      break;
     }
   }
   
-  console.log('No credit card payment method found');
-  return null;
-}
-
-/**
- * Extract and categorize numbers appearing below barcode on receipts
- */
-function extractBarcodeNumbers(text: string): string[] {
-  console.log('Extracting barcode numbers from text');
-  
-  const categorizedNumbers: string[] = [];
-  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-  
-  // Look for İş Yeri ID specifically mentioned
-  for (const line of lines) {
-    const workplaceIdMatch = line.match(/(?:iş\s*yeri|işyeri)\s*(?:id|no)\s*[:.]?\s*(\d{8,})/i);
-    if (workplaceIdMatch) {
-      categorizedNumbers.push(`İş Yeri ID: ${workplaceIdMatch[1]}`);
-      console.log(`Found explicit workplace ID: İş Yeri ID: ${workplaceIdMatch[1]}`);
-    }
+  // Extract receipt numbers
+  const receiptNumbers = extractReceiptNumbers(fullText);
+  if (receiptNumbers.length > 0) {
+    header.receipt_unique_no = receiptNumbers[0];
   }
   
-  // Look for receipt number under barcode (bottom area)
-  const bottomLines = lines.slice(-10);
-  for (let i = 0; i < bottomLines.length; i++) {
-    const line = bottomLines[i];
+  // Extract dates
+  const dates = extractDates(fullText);
+  if (dates.length > 0) {
+    const date = dates[0];
+    // Default to 2024 if year is 2025 (OCR error fix)
+    const year = date.year === 2025 ? 2024 : date.year;
+    header.purchase_date = `${year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+  }
+  
+  // Extract times
+  const times = extractTimes(fullText);
+  if (times.length > 0) {
+    const time = times[0];
+    header.purchase_time = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}:00`;
+  }
+  
+  // Extract payment information
+  if (/(?:KART|CARD)/i.test(fullText)) {
+    header.payment_method = 'KART';
     
-    // Look for barcode-like patterns (long numbers) 
-    const barcodeMatch = line.match(/\b(\d{17,24})\b/);
-    if (barcodeMatch) {
-      const barcode = barcodeMatch[1];
-      categorizedNumbers.push(`Barkod Numarası: ${barcode}`);
-      console.log(`Found barcode: ${barcode}`);
-      
-      // Look for receipt number in next few lines after barcode
-      for (let j = i + 1; j < Math.min(i + 3, bottomLines.length); j++) {
-        const nextLine = bottomLines[j];
-        const receiptMatch = nextLine.match(/\b(\d{8,16})\b/);
-        if (receiptMatch && receiptMatch[1] !== barcode) {
-          categorizedNumbers.push(`Fiş Numarası: ${receiptMatch[1]}`);
-          console.log(`Found receipt number under barcode: ${receiptMatch[1]}`);
+    // Look for PAN patterns
+    const panMatches = fullText.match(PAN_PATTERN);
+    if (panMatches) {
+      for (const pan of panMatches) {
+        const cleanPan = pan.replace(/\D/g, '');
+        if (cleanPan.length >= 12) {
+          header.masked_pan = maskCardNumber(pan);
+          header.card_scheme = detectCardScheme(pan);
           break;
         }
       }
     }
+  } else if (/NAKİT|CASH/i.test(fullText)) {
+    header.payment_method = 'NAKİT';
   }
   
-  // Look for other numeric sequences with proper categorization
-  const bottomLines15 = lines.slice(-15);
-  for (const line of bottomLines15) {
-    const numericSequences = line.match(/\b\d{8,}\b/g);
-    
-    if (numericSequences) {
-      numericSequences.forEach(seq => {
-        if (!isCommonNonBarcodeNumber(seq) && !categorizedNumbers.some(cat => cat.includes(seq))) {
-          const categorized = categorizeNumber(seq, text);
-          categorizedNumbers.push(categorized);
-          console.log(`Found categorized number: ${categorized}`);
-        }
-      });
-    }
-  }
+  console.log(`[${requestId}] Header parsed:`, {
+    merchant: header.merchant_brand,
+    chain: header.chain_group,
+    date: header.purchase_date,
+    payment: header.payment_method
+  });
   
-  // Remove duplicates while preserving order
-  const uniqueNumbers = [...new Set(categorizedNumbers)];
-  console.log(`Total unique categorized numbers found: ${uniqueNumbers.length}`);
-  
-  return uniqueNumbers;
+  return header;
 }
 
 /**
- * Categorize a number based on its context and format
+ * Cluster text lines by Y-coordinate
  */
-function categorizeNumber(number: string, text: string): string {
-  // 17 haneli barkod numarası
-  if (number.length === 17) {
-    return `Barkod Numarası: ${number}`;
+function clusterLines(ocr: OcrDoc): LineCluster[] {
+  if (!ocr.textAnnotations || ocr.textAnnotations.length === 0) return [];
+  
+  const spans = ocr.textAnnotations.slice(1).map(annotation => {
+    const vertices = annotation.boundingPoly?.vertices || [];
+    if (vertices.length === 0) return null;
+    
+    const x_coords = vertices.map(v => v.x || 0);
+    const y_coords = vertices.map(v => v.y || 0);
+    
+    return {
+      text: annotation.description,
+      x: Math.min(...x_coords),
+      y: Math.min(...y_coords),
+      width: Math.max(...x_coords) - Math.min(...x_coords),
+      height: Math.max(...y_coords) - Math.min(...y_coords)
+    };
+  }).filter(Boolean) as Array<{
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  
+  if (spans.length === 0) return [];
+  
+  // Calculate median text height for clustering threshold
+  const heights = spans.map(s => s.height).sort((a, b) => a - b);
+  const medianHeight = heights[Math.floor(heights.length / 2)] || 20;
+  const clusterThreshold = medianHeight * 0.8;
+  
+  // Sort spans by Y coordinate
+  spans.sort((a, b) => a.y - b.y);
+  
+  const clusters: LineCluster[] = [];
+  let currentCluster: typeof spans = [];
+  let currentY = spans[0].y;
+  
+  for (const span of spans) {
+    if (Math.abs(span.y - currentY) <= clusterThreshold) {
+      currentCluster.push(span);
+    } else {
+      if (currentCluster.length > 0) {
+        const y_coords = currentCluster.map(s => s.y);
+        const y_heights = currentCluster.map(s => s.y + s.height);
+        clusters.push({
+          y_center: (Math.min(...y_coords) + Math.max(...y_heights)) / 2,
+          y_min: Math.min(...y_coords),
+          y_max: Math.max(...y_heights),
+          spans: currentCluster.sort((a, b) => a.x - b.x) // Sort by X within line
+        });
+      }
+      currentCluster = [span];
+      currentY = span.y;
+    }
   }
   
-  // Check if it's near "REF NO" or "REFERANS" text
-  if (text.toLowerCase().includes(`ref no: ${number}`) || 
-      text.toLowerCase().includes(`referans: ${number}`) ||
-      text.toLowerCase().includes(`ref no:${number}`)) {
-    return `Referans Numarası: ${number}`;
+  // Add final cluster
+  if (currentCluster.length > 0) {
+    const y_coords = currentCluster.map(s => s.y);
+    const y_heights = currentCluster.map(s => s.y + s.height);
+    clusters.push({
+      y_center: (Math.min(...y_coords) + Math.max(...y_heights)) / 2,
+      y_min: Math.min(...y_coords),
+      y_max: Math.max(...y_heights),
+      spans: currentCluster.sort((a, b) => a.x - b.x)
+    });
   }
   
-  // Check if it's near "Isyeri ID" or "İş yeri" text
-  if (text.toLowerCase().includes(`isyeri id:${number}`) || 
-      text.toLowerCase().includes(`iş yeri id:${number}`) ||
-      text.toLowerCase().includes(`isyeri id: ${number}`)) {
-    return `İş Yeri ID: ${number}`;
-  }
-  
-  // For 10-digit numbers, likely to be reference numbers
-  if (number.length === 10) {
-    return `Referans Numarası: ${number}`;
-  }
-  
-  // For 8-10 digit numbers that aren't 10 digits, likely to be business IDs
-  if (number.length >= 8 && number.length <= 9) {
-    return `İş Yeri ID: ${number}`;
-  }
-  
-  // Default to barkod numarası for longer sequences
-  return `Barkod Numarası: ${number}`;
+  return clusters.sort((a, b) => a.y_center - b.y_center);
 }
 
 /**
- * Check if a number sequence is likely NOT a barcode (e.g., terminal ID, timestamp, etc.)
+ * Parse items from clustered lines
  */
-function isCommonNonBarcodeNumber(numericString: string): boolean {
-  // Skip if it looks like a timestamp (starts with 20 for year)
-  if (numericString.startsWith('20') && numericString.length === 8) {
-    return true;
-  }
+function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
+  console.log(`[${requestId}] Parsing items from clustered lines`);
   
-  // Skip if it's too short or too long for typical barcodes
-  if (numericString.length < 8 || numericString.length > 24) {
-    return true;
-  }
+  const clusters = clusterLines(ocr);
+  const items: ParsedItem[] = [];
+  let lineNo = 1;
   
-  // Skip sequences that are all the same digit or simple patterns
-  if (/^(\d)\1+$/.test(numericString) || numericString === '00000000') {
-    return true;
-  }
-  
-  return false;
-}
-
-/**
- * Enhanced address parsing to extract location components
- */
-async function parseAddressComponents(address: string): Promise<{
-  city?: string;
-  district?: string; 
-  neighborhood?: string;
-  street?: string;
-  lat?: number;
-  lng?: number;
-} | null> {
-  if (!address || address.trim() === '') {
-    return null;
-  }
-
-  try {
-    const addressLower = address.toLowerCase().trim();
-    let city, district, neighborhood, street;
+  for (const cluster of clusters) {
+    const lineText = cluster.spans.map(s => s.text).join(' ');
     
-    // Extract city (expanded list for Turkey)
-    const cityPatterns = [
-      'adana', 'adıyaman', 'afyon', 'afyonkarahisar', 'ağrı', 'aksaray', 'amasya',
-      'ankara', 'antalya', 'ardahan', 'artvin', 'aydın', 'balıkesir', 'bartın',
-      'batman', 'bayburt', 'bilecik', 'bingöl', 'bitlis', 'bolu', 'burdur',
-      'bursa', 'çanakkale', 'çankırı', 'çorum', 'denizli', 'diyarbakır',
-      'düzce', 'edirne', 'elazığ', 'erzincan', 'erzurum', 'eskişehir',
-      'gaziantep', 'giresun', 'gümüşhane', 'hakkari', 'hatay', 'ığdır',
-      'isparta', 'istanbul', 'izmir', 'izmit', 'karabük', 'karaman', 'kars',
-      'kastamonu', 'kayseri', 'kilis', 'kırıkkale', 'kırklareli', 'kırşehir',
-      'kocaeli', 'konya', 'kütahya', 'malatya', 'manisa', 'mardin', 'mersin',
-      'muğla', 'muş', 'nevşehir', 'niğde', 'ordu', 'osmaniye', 'rize',
-      'sakarya', 'samsun', 'şanlıurfa', 'siirt', 'sinop', 'sivas', 'şırnak',
-      'tekirdağ', 'tokat', 'trabzon', 'tunceli', 'uşak', 'van', 'yalova',
-      'yozgat', 'zonguldak'
-    ];
-    
-    for (const cityPattern of cityPatterns) {
-      if (addressLower.includes(cityPattern)) {
-        city = cityPattern.charAt(0).toUpperCase() + cityPattern.slice(1);
-        if (city === 'Izmit') city = 'Kocaeli'; // Normalize
-        break;
-      }
+    // Skip lines that don't look like item lines
+    if (lineText.length < 3 || 
+        /^(TOPLAM|TOTAL|KDV|VAT|KART|NAKİT|FIS|SERI)/i.test(lineText) ||
+        /^\d{2}[\/\.\-]\d{2}[\/\.\-]\d{4}/.test(lineText)) {
+      continue;
     }
     
-    // Extract district (comprehensive Istanbul + major cities)
-    const districtPatterns = [
-      // Istanbul districts
-      'adalar', 'arnavutköy', 'ataşehir', 'avcılar', 'bağcılar', 'bahçelievler',
-      'bakırköy', 'beşiktaş', 'beykoz', 'beylikdüzü', 'beyoğlu', 'büyükçekmece',
-      'çatalca', 'çekmeköy', 'esenler', 'esenyurt', 'eyüp', 'fatih', 'gaziosmanpaşa',
-      'güngören', 'kadıköy', 'kağıthane', 'kartal', 'küçükçekmece', 'maltepe',
-      'pendik', 'sancaktepe', 'sarıyer', 'silivri', 'sultanbeyli', 'sultangazi',
-      'şile', 'şişli', 'tuzla', 'ümraniye', 'üsküdar', 'zeytinburnu',
-      // Ankara districts
-      'altındağ', 'ayaş', 'bala', 'beypazarı', 'çamlıdere', 'çankaya', 'çubuk',
-      'elmadağ', 'etimesgut', 'evren', 'gölbaşı', 'güdül', 'haymana', 'kalecik',
-      'kazan', 'keçiören', 'kızılcahamam', 'mamak', 'nallıhan', 'polatlı',
-      'pursaklar', 'sincan', 'şereflikoçhisar', 'yenimahalle',
-      // Izmir districts
-      'aliağa', 'balçova', 'bayındır', 'bayraklı', 'bergama', 'beydağ', 'bornova',
-      'buca', 'çeşme', 'çiğli', 'dikili', 'foça', 'gaziemir', 'güzelbahçe',
-      'karabağlar', 'karaburun', 'karşıyaka', 'kemalpaşa', 'kınık', 'kiraz',
-      'konak', 'menderes', 'menemen', 'narlıdere', 'ödemiş', 'seferihisar',
-      'selçuk', 'tire', 'torbalı', 'urla'
-    ];
+    // Extract money values from the line
+    const moneyValues = extractMoneyValues(lineText);
+    if (moneyValues.length === 0) continue; // Skip lines without prices
     
-    for (const districtPattern of districtPatterns) {
-      if (addressLower.includes(districtPattern)) {
-        district = districtPattern.charAt(0).toUpperCase() + districtPattern.slice(1);
-        break;
-      }
-    }
+    // Segment the line into columns
+    const rightmostMoney = moneyValues[moneyValues.length - 1]; // LINE_TOTAL
+    let unitPrice: number | undefined;
+    let qty: number | undefined;
+    let unit: string | undefined;
     
-    // Extract neighborhood from mahalle patterns (more comprehensive)
-    const neighborhoodPatterns = [
-      /(\w+)\s*mah(?:allesi|\.)?/i,
-      /(\w+)\s*neighborhood/i,
-      /(\w+)\s*district/i
-    ];
+    // Look for quantity/unit patterns
+    const qtyParsed = parseQuantityUnit(lineText);
+    qty = qtyParsed.qty;
+    unit = qtyParsed.unit;
     
-    for (const pattern of neighborhoodPatterns) {
-      const match = address.match(pattern);
-      if (match && match[1] && match[1].length > 2) {
-        neighborhood = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
-        break;
-      }
-    }
-    
-    // Extract street information
-    const streetPatterns = [
-      /(\w+(?:\s+\w+)*)\s*(?:cad|caddesi|sk|sokak|bulv|bulvarı)(?:\s|\.|\d|$)/i,
-      /(\w+(?:\s+\w+)*)\s*(?:street|avenue|boulevard)/i
-    ];
-    
-    for (const pattern of streetPatterns) {
-      const match = address.match(pattern);
-      if (match && match[1] && match[1].length > 2) {
-        street = match[1].trim();
-        break;
-      }
-    }
-    
-    // If no specific street found, try to extract first meaningful part
-    if (!street) {
-      const firstLine = address.split(/[,\n]/)[0].trim();
-      if (firstLine.length > 5 && firstLine.length < 100) {
-        street = firstLine;
-      }
-    }
-    
-    console.log(`Parsed address "${address}" into:`, { city, district, neighborhood, street });
-    
-    return { city, district, neighborhood, street };
-  } catch (error) {
-    console.error('Address parsing error:', error);
-    return null;
-  }
-}
-
-// Backward compatibility alias
-async function geocodeAddress(address: string) {
-  return await parseAddressComponents(address);
-}
-
-serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-  
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    console.log('OCR function called, method:', req.method);
-    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
-    
-    const requestBody = await req.json();
-    console.log('Request body:', requestBody);
-    const { imageUrl } = requestBody;
-    
-    // Check for fake OCR header (for E2E tests)
-    const fakeOcrHeader = req.headers.get('x-qa-fake-ocr');
-    const imageUrlObj = new URL(imageUrl);
-    const fakeOcrParam = imageUrlObj.searchParams.get('qa-fake-ocr');
-    
-    if (fakeOcrHeader === '1' || fakeOcrParam === '1') {
-      console.log('Using fake OCR for E2E testing');
-      const fakeResult: OCRResult = {
-        merchant_raw: "M GROS KO? SN VERS TES MAZAZASI",
-        merchant_brand: "Migros",
-        purchase_date: "2024-12-22",
-        purchase_time: "15:35",
-        store_address: "Atatürk Mah. Turgut Özal Bulv. No:7, Ataşehir/İstanbul",
-        total: 464.25,
-        payment_method: "494314******4645",
-        items: [
-          { name: "MIGROS SIYAH ZEYTIN", qty: 1, line_total: 99.50, raw_line: "MIGROS SIYAH ZEYTIN 1 99,50" },
-          { name: "TWIX 50 GR", qty: 1, line_total: 29.90, raw_line: "TWIX 50 GR 1 29,90" },
-          { name: "PIKO PIRINC PATLAKLI", qty: 2, line_total: 14.00, raw_line: "PIKO PIRINC PATLAKLI 2 14,00" }
-        ],
-        receipt_unique_no: "09290044195241222",
-        fis_no: "0078",
-        barcode_numbers: ["09290044195241222", "41950929004003"],
-        raw_text: "M GROS KO? SN VERS TES MAZAZASI\nFİŞ NO: 0078\nMIGROS SIYAH ZEYTIN 1 99,50\nTWIX 50 GR 1 29,90\nPIKO PIRINC PATLAKLI 2 14,00\nTOPLAM: 464,25\n494314******4645\n09290044195241222"
-      };
+    // Find unit price (money value left of line total)
+    if (moneyValues.length > 1) {
+      unitPrice = moneyValues[moneyValues.length - 2];
       
-      return new Response(
-        JSON.stringify(fakeResult),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      // If qty is missing but we have unit price and line total, calculate qty
+      if (!qty && unitPrice && unitPrice > 0) {
+        qty = rightmostMoney / unitPrice;
+        if (Math.abs(qty - Math.round(qty)) < 0.1) {
+          qty = Math.round(qty);
         }
-      );
+      }
+    } else {
+      unitPrice = rightmostMoney; // Only one price, assume unit price = line total
+      qty = qty || 1;
     }
     
-    if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ error: 'imageUrl is required' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+    // Extract item name (text before prices)
+    let itemName = lineText;
+    for (const money of moneyValues) {
+      const moneyStr = money.toString().replace('.', ',');
+      itemName = itemName.replace(new RegExp(`₺?\\s*${moneyStr}\\s*₺?`, 'g'), '');
     }
+    
+    // Clean up item name
+    itemName = itemName
+      .replace(/\d+\s*(adet|kg|gr|lt|ml|cl|pk)/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (itemName.length === 0) continue;
+    
+    const item: ParsedItem = {
+      line_no: lineNo++,
+      bbox: {
+        x: Math.min(...cluster.spans.map(s => s.x)),
+        y: cluster.y_min,
+        w: Math.max(...cluster.spans.map(s => s.x + s.width)) - Math.min(...cluster.spans.map(s => s.x)),
+        h: cluster.y_max - cluster.y_min
+      },
+      item_name_raw: lineText,
+      item_name_norm: itemName,
+      qty,
+      unit,
+      unit_price: unitPrice,
+      line_total: rightmostMoney
+    };
+    
+    items.push(item);
+  }
+  
+  console.log(`[${requestId}] Parsed ${items.length} items`);
+  return items;
+}
 
-    const googleVisionKey = Deno.env.get('GOOGLE_VISION_API_KEY');
-    if (!googleVisionKey) {
-      console.error('Google Vision API key not found');
-      return new Response(
-        JSON.stringify({ error: 'Google Vision API key not configured' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+/**
+ * Parse totals from OCR document
+ */
+function parseTotals(ocr: OcrDoc, requestId: string): ParsedTotals {
+  console.log(`[${requestId}] Parsing totals`);
+  
+  const fullText = ocr.fullTextAnnotation?.text || '';
+  const totals: ParsedTotals = {};
+  
+  // Extract main total
+  for (const pattern of TOTAL_PATTERNS) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(fullText);
+    if (match) {
+      const value = normalizeNumber(match[1]);
+      if (value !== null) {
+        totals.total = value;
+        break;
+      }
     }
+  }
+  
+  // Extract subtotal
+  for (const pattern of SUBTOTAL_PATTERNS) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(fullText);
+    if (match) {
+      const value = normalizeNumber(match[1]);
+      if (value !== null) {
+        totals.subtotal = value;
+        break;
+      }
+    }
+  }
+  
+  // Extract discount
+  for (const pattern of DISCOUNT_PATTERNS) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(fullText);
+    if (match) {
+      const value = normalizeNumber(match[1]);
+      if (value !== null) {
+        totals.discount_total = value;
+        break;
+      }
+    }
+  }
+  
+  // Extract VAT total
+  const vatInfo = extractVAT(fullText);
+  if (vatInfo.length > 0) {
+    totals.vat_total = vatInfo.reduce((sum, vat) => sum + vat.amount, 0);
+  }
+  
+  console.log(`[${requestId}] Totals parsed:`, totals);
+  return totals;
+}
 
-    console.log('Processing OCR for image:', imageUrl);
-    console.log('Using API key (first 10 chars):', googleVisionKey.substring(0, 10) + '...');
-
-    // Test if the image URL is accessible
+/**
+ * Validate parsed data and calculate confidence score
+ */
+async function validateAndScore(
+  header: ParsedHeader,
+  items: ParsedItem[],
+  totals: ParsedTotals,
+  requestId: string
+): Promise<ValidationResult> {
+  console.log(`[${requestId}] Validating parsed data`);
+  
+  const warnings: string[] = [];
+  let confidence = 0.5; // Base confidence
+  
+  // Check if total is present
+  if (!totals.total) {
+    warnings.push('MISSING_TOTAL');
+  } else {
+    confidence += 0.15;
+  }
+  
+  // Validate items sum against total
+  const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
+  const itemsSumValid = totals.total ? Math.abs(itemsSum - totals.total) <= 0.50 : false;
+  
+  if (totals.total && !itemsSumValid) {
+    warnings.push('ITEMS_MISMATCH');
+  } else if (itemsSumValid) {
+    confidence += 0.2;
+  }
+  
+  // Check VAT consistency
+  const totalVatFromItems = items.reduce((sum, item) => sum + (item.vat_amount || 0), 0);
+  const vatValid = !totals.vat_total || Math.abs(totalVatFromItems - totals.vat_total) <= 0.10;
+  
+  if (!vatValid) {
+    warnings.push('VAT_INCONSISTENT');
+  } else if (totals.vat_total) {
+    confidence += 0.1;
+  }
+  
+  // Validate Luhn for card payments
+  let luhnValidResult = true;
+  if (header.masked_pan) {
+    const digits = header.masked_pan.replace(/\D/g, '');
+    luhnValidResult = luhnValid(digits);
+    if (!luhnValidResult) {
+      warnings.push('INVALID_LUHN');
+    } else {
+      confidence += 0.15;
+    }
+  }
+  
+  // Check for duplicate receipt
+  let duplicateReceipt = false;
+  if (header.receipt_unique_no) {
     try {
-      let testResponse = await fetch(imageUrl, { method: 'HEAD' });
-      console.log('Image accessibility test (HEAD) - Status:', testResponse.status);
-      if (!testResponse.ok) {
-        // Fallback: try a ranged GET (fetch first bytes only)
-        const ranged = await fetch(imageUrl, { method: 'GET', headers: { 'Range': 'bytes=0-1' } });
-        console.log('Image accessibility test (GET range) - Status:', ranged.status);
-        if (!ranged.ok) {
-          throw new Error(`Image not accessible: ${ranged.status} ${ranged.statusText}`);
-        }
+      const { data: existing } = await supabase
+        .from('receipts')
+        .select('id')
+        .eq('receipt_unique_no', header.receipt_unique_no)
+        .limit(1);
+      
+      if (existing && existing.length > 0) {
+        duplicateReceipt = true;
+        warnings.push('DUP_RECEIPT_NO');
       }
     } catch (error) {
-      console.error('Image accessibility error:', error);
-      return new Response(
-        JSON.stringify({ error: `Image not accessible: ${error.message}` }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      console.error(`[${requestId}] Error checking duplicate receipt:`, error);
     }
+  }
+  
+  // Bonus points for good parsing
+  if (header.purchase_date) confidence += 0.1;
+  if (header.purchase_time) confidence += 0.1;
+  if (items.length >= 3) confidence += 0.1;
+  if (header.chain_group && header.chain_group !== 'Unknown') confidence += 0.1;
+  
+  // Low confidence warning
+  if (confidence < 0.7) {
+    warnings.push('LOW_CONFIDENCE');
+  }
+  
+  console.log(`[${requestId}] Validation complete. Confidence: ${confidence.toFixed(3)}, Warnings: ${warnings.length}`);
+  
+  return {
+    parse_confidence: Math.min(1, Math.max(0, confidence)),
+    warnings,
+    items_sum_valid: itemsSumValid,
+    vat_valid: vatValid,
+    luhn_valid: luhnValidResult,
+    duplicate_receipt: duplicateReceipt
+  };
+}
 
-    // Call Google Cloud Vision API with enhanced settings for Turkish
-    console.log('Calling Google Vision API with Turkish language hints...');
+/**
+ * Persist parsed data to database
+ */
+async function persistData(
+  receiptId: string,
+  header: ParsedHeader,
+  items: ParsedItem[],
+  totals: ParsedTotals,
+  validation: ValidationResult,
+  ocrRaw: any,
+  requestId: string
+): Promise<void> {
+  console.log(`[${requestId}] Persisting data for receipt ${receiptId}`);
+  
+  try {
+    // Determine receipt status based on validation
+    let status = 'pending';
+    if (!validation.items_sum_valid || validation.duplicate_receipt || validation.warnings.includes('MISSING_TOTAL')) {
+      status = 'pending_review';
+    }
+    
+    // Match or upsert store
+    let storeId: string | null = null;
+    if (header.chain_group) {
+      storeId = await upsertStore(supabase, header.chain_group, header.address_raw);
+    }
+    
+    // Update receipt with parsed data
+    const receiptUpdate: any = {
+      merchant: header.merchant_raw,
+      merchant_brand: header.merchant_brand,
+      total: totals.total,
+      subtotal: totals.subtotal,
+      discount_total: totals.discount_total,
+      vat_total: totals.vat_total,
+      purchase_date: header.purchase_date,
+      purchase_time: header.purchase_time,
+      store_id: storeId,
+      receipt_unique_no: header.receipt_unique_no,
+      fis_no: header.fis_no,
+      payment_method: header.payment_method,
+      masked_pan: header.masked_pan,
+      card_scheme: header.card_scheme,
+      address_raw: header.address_raw,
+      city: header.city,
+      district: header.district,
+      neighborhood: header.neighborhood,
+      ocr_json: {
+        raw: ocrRaw,
+        parsed: { header, items, totals },
+        warnings: validation.warnings,
+        timestamp: new Date().toISOString()
+      },
+      ocr_engine: 'gcv',
+      parse_confidence: validation.parse_confidence,
+      status,
+      updated_at: new Date().toISOString()
+    };
+    
+    const { error: receiptError } = await supabase
+      .from('receipts')
+      .update(receiptUpdate)
+      .eq('id', receiptId);
+    
+    if (receiptError) {
+      throw new Error(`Receipt update failed: ${receiptError.message}`);
+    }
+    
+    // Insert receipt items
+    if (items.length > 0) {
+      const itemsData = items.map(item => ({
+        receipt_id: receiptId,
+        line_no: item.line_no,
+        bbox: item.bbox,
+        item_name_raw: item.item_name_raw,
+        item_name_norm: item.item_name_norm,
+        item_name: item.item_name_norm, // For existing column compatibility
+        qty: item.qty,
+        unit: item.unit,
+        unit_price: item.unit_price,
+        line_total: item.line_total,
+        vat_rate: item.vat_rate,
+        vat_amount: item.vat_amount,
+        ean13: item.ean13,
+        raw_line: item.item_name_raw
+      }));
+      
+      const { error: itemsError } = await supabase
+        .from('receipt_items')
+        .insert(itemsData);
+      
+      if (itemsError) {
+        console.error(`[${requestId}] Items insert failed:`, itemsError);
+        // Don't throw here, partial success is acceptable
+      }
+    }
+    
+    console.log(`[${requestId}] Data persisted successfully`);
+  } catch (error) {
+    console.error(`[${requestId}] Persistence error:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Main OCR processing function
+ */
+async function processOCR(imageUrl: string, userId: string, requestId: string) {
+  console.log(`[${requestId}] Starting OCR processing for user ${userId}`);
+  
+  // Create initial receipt record
+  const { data: receiptData, error: receiptError } = await supabase
+    .from('receipts')
+    .insert({
+      user_id: userId,
+      image_url: imageUrl,
+      status: 'pending',
+      points: 100
+    })
+    .select()
+    .single();
+  
+  if (receiptError || !receiptData) {
+    throw new Error(`Failed to create receipt: ${receiptError?.message}`);
+  }
+  
+  const receiptId = receiptData.id;
+  console.log(`[${requestId}] Created receipt ${receiptId}`);
+  
+  try {
+    // Call Google Vision API
+    const visionApiKey = Deno.env.get('GOOGLE_VISION_API_KEY');
+    if (!visionApiKey) {
+      throw new Error('Google Vision API key not configured');
+    }
+    
     const visionResponse = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${googleVisionKey}`,
+      `https://vision.googleapis.com/v1/images:annotate?key=${visionApiKey}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requests: [
-            {
-              image: {
-                source: {
-                  imageUri: imageUrl
-                }
-              },
-              features: [
-                {
-                  type: 'DOCUMENT_TEXT_DETECTION'
-                }
-              ],
-              imageContext: {
-                languageHints: ['tr', 'tr-Latn', 'en']
-              }
-            }
-          ]
+          requests: [{
+            image: { source: { imageUri: imageUrl } },
+            features: [{ type: 'TEXT_DETECTION' }]
+          }]
         })
       }
     );
-
-    console.log('Vision API response status:', visionResponse.status);
-    console.log('Vision API response headers:', Object.fromEntries(visionResponse.headers.entries()));
-
+    
     if (!visionResponse.ok) {
-      const errorText = await visionResponse.text();
-      console.error('Vision API error response:', errorText);
-      throw new Error(`Vision API error: ${visionResponse.status} ${visionResponse.statusText} - ${errorText}`);
+      throw new Error(`Vision API error: ${visionResponse.status}`);
     }
-
+    
     const visionData = await visionResponse.json();
-    console.log('Vision API response structure:', JSON.stringify(visionData, null, 2));
-
-    // Check for API errors in the response
-    if (visionData.responses?.[0]?.error) {
-      const apiError = visionData.responses[0].error;
-      console.error('Vision API returned error:', apiError);
-      throw new Error(`Vision API error: ${apiError.code} - ${apiError.message}`);
+    const ocrResult = visionData.responses?.[0];
+    
+    if (ocrResult?.error) {
+      throw new Error(`Vision API error: ${ocrResult.error.message}`);
     }
+    
+    if (!ocrResult?.textAnnotations) {
+      throw new Error('No text detected in image');
+    }
+    
+    console.log(`[${requestId}] OCR completed, found ${ocrResult.textAnnotations.length} text annotations`);
+    
+    // Parse OCR results
+    const header = parseHeader(ocrResult, requestId);
+    const items = parseItems(ocrResult, requestId);
+    const totals = parseTotals(ocrResult, requestId);
+    
+    // Validate and score
+    const validation = await validateAndScore(header, items, totals, requestId);
+    
+    // Persist to database
+    await persistData(receiptId, header, items, totals, validation, ocrResult, requestId);
+    
+    console.log(`[${requestId}] Processing complete`);
+    
+    return {
+      success: true,
+      receiptId,
+      itemsCount: items.length,
+      parseConfidence: validation.parse_confidence,
+      warnings: validation.warnings,
+      stats: {
+        words: ocrResult.textAnnotations.length,
+        lines: items.length,
+        total: totals.total,
+        itemsSum: items.reduce((sum, item) => sum + (item.line_total || 0), 0),
+        mismatchDelta: totals.total ? Math.abs(items.reduce((sum, item) => sum + (item.line_total || 0), 0) - totals.total) : 0
+      }
+    };
+  } catch (error) {
+    console.error(`[${requestId}] Processing error:`, error);
+    
+    // Update receipt with error status
+    await supabase
+      .from('receipts')
+      .update({ 
+        status: 'failed',
+        ocr_json: { error: error.message, timestamp: new Date().toISOString() }
+      })
+      .eq('id', receiptId);
+    
+    throw error;
+  }
+}
 
-    // Extract text from the response - prioritize fullTextAnnotation for better structure
-    const fullTextAnnotation = visionData.responses?.[0]?.fullTextAnnotation;
-    const textAnnotations = visionData.responses?.[0]?.textAnnotations;
-    const fullText = fullTextAnnotation?.text || textAnnotations?.[0]?.description || '';
-
-    if (!fullText) {
+/**
+ * Main server handler
+ */
+serve(async (req) => {
+  const requestId = generateRequestId();
+  console.log(`[${requestId}] ${req.method} ${req.url}`);
+  
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: getCorsHeaders(req) });
+  }
+  
+  try {
+    const { imageUrl, userId } = await req.json();
+    
+    if (!imageUrl || !userId) {
       return new Response(
-        JSON.stringify({
-          merchant_raw: '',
-          merchant_brand: '',
-          purchase_date: new Date().toISOString().split('T')[0],
-          total: 0,
-          items: [],
-          payment_method: null,
-          receipt_unique_no: null,
-          fis_no: null,
-          raw_text: 'No text detected in image'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ success: false, error: 'Missing imageUrl or userId' }),
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
-
-    // Parse the extracted text
-    const merchantRaw = extractMerchant(fullText);
-    const rawPaymentMethod = extractPaymentMethod(fullText);
     
-    // Process payment method to normalize credit card format
-    let normalizedPaymentMethod = '';
-    if (rawPaymentMethod) {
-      // Remove any non-digit characters to get just numbers
-      const digits = rawPaymentMethod.replace(/\D/g, '');
-      if (digits.length >= 4) {
-        // Always format as ****-****-****-XXXX where XXXX are the last 4 digits
-        const lastFour = digits.slice(-4);
-        normalizedPaymentMethod = `****-****-****-${lastFour}`;
-      } else {
-        // Keep original if not enough digits
-        normalizedPaymentMethod = rawPaymentMethod;
-      }
-    }
+    const result = await processOCR(imageUrl, userId, requestId);
     
-    const result: OCRResult = {
-      merchant_raw: merchantRaw,
-      merchant_brand: normalizeBrand(merchantRaw),
-      purchase_date: extractDate(fullText),
-      purchase_time: extractPurchaseTime(fullText),
-      store_address: extractStoreAddress(fullText),
-      total: extractTotal(fullText),
-      items: parseItems(fullText),
-      payment_method: normalizedPaymentMethod || null,
-      receipt_unique_no: extractReceiptUniqueNo(fullText),
-      fis_no: extractFisNo(fullText),
-      barcode_numbers: extractBarcodeNumbers(fullText),
-      raw_text: fullText
-    };
-
-    console.log('OCR result:', result);
-
-    // Enhanced analytics: Insert receipt items and update store dimensions if requested
-    try {
-      const { receiptId, userId } = requestBody;
-      
-      if (receiptId && userId) {
-        console.log(`Processing analytics for receipt ${receiptId}`);
-        
-        // 1. Normalize merchant to chain group
-        const chainGroup = normalizeMerchantLocal(merchantRaw);
-        console.log(`Normalized merchant "${merchantRaw}" to chain group: ${chainGroup}`);
-        
-        // 2. Process store address and geocode
-        let storeId = null;
-        let h3_8 = null;
-        
-        if (result.store_address) {
-          const geoData = await parseAddressComponents(result.store_address);
-          if (geoData) {
-            console.log('Parsed address components:', geoData);
-            
-            // Upsert store dimension
-            const { data: storeUuid, error: storeError } = await supabase
-              .rpc('upsert_store_dim', {
-                p_chain_group: chainGroup,
-                p_city: geoData.city,
-                p_district: geoData.district,
-                p_neighborhood: geoData.neighborhood,
-                p_address: result.store_address,
-                p_lat: geoData.lat,
-                p_lng: geoData.lng,
-                p_h3_8: h3_8
-              });
-            
-            if (storeError) {
-              console.error('Error upserting store dimension:', storeError);
-            } else {
-              storeId = storeUuid;
-              console.log('Upserted store dimension with ID:', storeId);
-            }
-          }
-        }
-        
-        // 3. Update receipt with store_id, h3_8, and parsed location data
-        const updateData: any = {
-          merchant_brand: chainGroup,
-          h3_8: h3_8
-        };
-
-        if (storeId) {
-          updateData.store_id = storeId;
-        }
-
-        // Add parsed location data directly to receipt
-        if (result.store_address) {
-          const addressData = await parseAddressComponents(result.store_address);
-          if (addressData) {
-            if (addressData.city) updateData.city = addressData.city;
-            if (addressData.district) updateData.district = addressData.district;
-            if (addressData.neighborhood) updateData.neighborhood = addressData.neighborhood;
-            if (addressData.street) updateData.street = addressData.street;
-          }
-        }
-
-        const { error: receiptUpdateError } = await supabase
-          .from('receipts')
-          .update(updateData)
-          .eq('id', receiptId);
-        
-        if (receiptUpdateError) {
-          console.error('Error updating receipt with store and location info:', receiptUpdateError);
-        } else {
-          console.log('Updated receipt with location data:', updateData);
-        }
-        
-        // 4. Insert receipt items if any were parsed
-        if (result.items && result.items.length > 0) {
-          const itemsToInsert = result.items.map(item => ({
-            receipt_id: receiptId,
-            item_name: item.name,
-            qty: item.qty,
-            unit_price: item.unit_price,
-            line_total: item.line_total,
-            product_code: item.product_code,
-            raw_line: item.raw_line
-          }));
-          
-          const { error: itemsError } = await supabase
-            .from('receipt_items')
-            .insert(itemsToInsert);
-          
-          if (itemsError) {
-            console.error('Error inserting receipt items:', itemsError);
-          } else {
-            console.log(`Inserted ${itemsToInsert.length} receipt items`);
-          }
-        }
-        
-        // 5. Seed merchant mapping if this is a new merchant
-        const { data: existingMapping } = await supabase
-          .from('merchant_map')
-          .select('id')
-          .eq('raw_merchant', merchantRaw)
-          .single();
-        
-        if (!existingMapping && merchantRaw && chainGroup) {
-          const { error: mappingError } = await supabase
-            .from('merchant_map')
-            .insert({
-              raw_merchant: merchantRaw,
-              chain_group: chainGroup,
-              priority: 100,
-              active: true
-            });
-          
-          if (mappingError) {
-            console.error('Error inserting merchant mapping:', mappingError);
-          } else {
-            console.log(`Added new merchant mapping: ${merchantRaw} -> ${chainGroup}`);
-          }
-        }
-      }
-    } catch (analyticsError) {
-      console.error('Analytics processing error:', analyticsError);
-      // Don't fail the OCR request if analytics fails
-    }
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error('Error in OCR function:', error);
     return new Response(
-      JSON.stringify({ error: error.message || 'OCR processing failed' }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      JSON.stringify(result),
+      { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error(`[${requestId}] Request failed:`, error);
+    
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error.message,
+        requestId 
+      }),
+      { 
+        status: 500, 
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       }
     );
   }

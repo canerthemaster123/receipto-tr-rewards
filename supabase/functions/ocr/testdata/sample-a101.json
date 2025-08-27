@@ -1,0 +1,79 @@
+{
+  "textAnnotations": [
+    {
+      "description": "A1O1 MARKET\nİSTANBUL CAD. NO:456\nBEŞİKTAŞ/İSTANBUL\n15.11.2024 09:22\nBELGE NO: A101241115987\nKASA: 1\n\nÇAY 100GR                7,95\nŞEKER 1KG               22,50\nPİLAV 1KG               15,75\nYOĞURT 1KG              18,25\nSALÇA 700GR             12,80\n\nARA TOPLAM             77,25\nİNDİRİM                -2,25\nKDV %8                  6,00\nTOPLAM                 81,00\n\nNAKİT                  81,00\nPARA ÜSTÜ               0,00\n\nTEŞEKKÜRLER",
+      "boundingPoly": {
+        "vertices": [{"x": 40, "y": 15}, {"x": 320, "y": 15}, {"x": 320, "y": 580}, {"x": 40, "y": 580}]
+      }
+    },
+    {
+      "description": "A1O1",
+      "boundingPoly": {
+        "vertices": [{"x": 150, "y": 25}, {"x": 210, "y": 25}, {"x": 210, "y": 45}, {"x": 150, "y": 45}]
+      }
+    },
+    {
+      "description": "MARKET",
+      "boundingPoly": {
+        "vertices": [{"x": 215, "y": 25}, {"x": 270, "y": 25}, {"x": 270, "y": 45}, {"x": 215, "y": 45}]
+      }
+    },
+    {
+      "description": "ÇAY",
+      "boundingPoly": {
+        "vertices": [{"x": 70, "y": 150}, {"x": 95, "y": 150}, {"x": 95, "y": 165}, {"x": 70, "y": 165}]
+      }
+    },
+    {
+      "description": "100GR",
+      "boundingPoly": {
+        "vertices": [{"x": 100, "y": 150}, {"x": 135, "y": 150}, {"x": 135, "y": 165}, {"x": 100, "y": 165}]
+      }
+    },
+    {
+      "description": "7,95",
+      "boundingPoly": {
+        "vertices": [{"x": 270, "y": 150}, {"x": 295, "y": 150}, {"x": 295, "y": 165}, {"x": 270, "y": 165}]
+      }
+    },
+    {
+      "description": "ŞEKER",
+      "boundingPoly": {
+        "vertices": [{"x": 70, "y": 170}, {"x": 105, "y": 170}, {"x": 105, "y": 185}, {"x": 70, "y": 185}]
+      }
+    },
+    {
+      "description": "1KG",
+      "boundingPoly": {
+        "vertices": [{"x": 110, "y": 170}, {"x": 130, "y": 170}, {"x": 130, "y": 185}, {"x": 110, "y": 185}]
+      }
+    },
+    {
+      "description": "22,50",
+      "boundingPoly": {
+        "vertices": [{"x": 265, "y": 170}, {"x": 295, "y": 170}, {"x": 295, "y": 185}, {"x": 265, "y": 185}]
+      }
+    },
+    {
+      "description": "TOPLAM",
+      "boundingPoly": {
+        "vertices": [{"x": 70, "y": 340}, {"x": 115, "y": 340}, {"x": 115, "y": 355}, {"x": 70, "y": 355}]
+      }
+    },
+    {
+      "description": "81,00",
+      "boundingPoly": {
+        "vertices": [{"x": 265, "y": 340}, {"x": 295, "y": 340}, {"x": 295, "y": 355}, {"x": 265, "y": 355}]
+      }
+    },
+    {
+      "description": "NAKİT",
+      "boundingPoly": {
+        "vertices": [{"x": 70, "y": 380}, {"x": 105, "y": 380}, {"x": 105, "y": 395}, {"x": 70, "y": 395}]
+      }
+    }
+  ],
+  "fullTextAnnotation": {
+    "text": "A1O1 MARKET\nİSTANBUL CAD. NO:456\nBEŞİKTAŞ/İSTANBUL\n15.11.2024 09:22\nBELGE NO: A101241115987\nKASA: 1\n\nÇAY 100GR                7,95\nŞEKER 1KG               22,50\nPİLAV 1KG               15,75\nYOĞURT 1KG              18,25\nSALÇA 700GR             12,80\n\nARA TOPLAM             77,25\nİNDİRİM                -2,25\nKDV %8                  6,00\nTOPLAM                 81,00\n\nNAKİT                  81,00\nPARA ÜSTÜ               0,00\n\nTEŞEKKÜRLER"
+  }
+}

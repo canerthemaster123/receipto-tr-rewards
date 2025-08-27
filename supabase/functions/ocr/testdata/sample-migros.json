@@ -1,0 +1,265 @@
+{
+  "textAnnotations": [
+    {
+      "description": "MİGROS\nANKARA CAD NO:123\nKIZILAY/ANKARA\n21.11.2024 15:34\nFiş No: MIG2024112123456\nKASA: 3 KASİYER: AYSE\n\nUN 1KG                    8,50\nSÜT 1LT                  12,75\nPEYNİR 500GR             45,00\nEKMEK 1 ADET              5,25\nDOMATES 2KG              18,40\n\nARA TOPLAM              90,90\nKDV %1                   0,83\nKDV %8                   3,64\nKDV %20                  8,62\nGENEL TOPLAM            94,09\n\nKREDİ KARTI\n**** **** **** 1234\nVISA\n\nTEŞEKKÜRLER",
+      "boundingPoly": {
+        "vertices": [{"x": 50, "y": 10}, {"x": 350, "y": 10}, {"x": 350, "y": 600}, {"x": 50, "y": 600}]
+      }
+    },
+    {
+      "description": "MİGROS",
+      "boundingPoly": {
+        "vertices": [{"x": 160, "y": 20}, {"x": 240, "y": 20}, {"x": 240, "y": 40}, {"x": 160, "y": 40}]
+      }
+    },
+    {
+      "description": "ANKARA",
+      "boundingPoly": {
+        "vertices": [{"x": 120, "y": 50}, {"x": 170, "y": 50}, {"x": 170, "y": 65}, {"x": 120, "y": 65}]
+      }
+    },
+    {
+      "description": "CAD",
+      "boundingPoly": {
+        "vertices": [{"x": 175, "y": 50}, {"x": 200, "y": 50}, {"x": 200, "y": 65}, {"x": 175, "y": 65}]
+      }
+    },
+    {
+      "description": "NO:123",
+      "boundingPoly": {
+        "vertices": [{"x": 205, "y": 50}, {"x": 245, "y": 50}, {"x": 245, "y": 65}, {"x": 205, "y": 65}]
+      }
+    },
+    {
+      "description": "KIZILAY/ANKARA",
+      "boundingPoly": {
+        "vertices": [{"x": 130, "y": 70}, {"x": 250, "y": 70}, {"x": 250, "y": 85}, {"x": 130, "y": 85}]
+      }
+    },
+    {
+      "description": "21.11.2024",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 100}, {"x": 140, "y": 100}, {"x": 140, "y": 115}, {"x": 80, "y": 115}]
+      }
+    },
+    {
+      "description": "15:34",
+      "boundingPoly": {
+        "vertices": [{"x": 145, "y": 100}, {"x": 175, "y": 100}, {"x": 175, "y": 115}, {"x": 145, "y": 115}]
+      }
+    },
+    {
+      "description": "Fiş",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 120}, {"x": 100, "y": 120}, {"x": 100, "y": 135}, {"x": 80, "y": 135}]
+      }
+    },
+    {
+      "description": "No:",
+      "boundingPoly": {
+        "vertices": [{"x": 105, "y": 120}, {"x": 125, "y": 120}, {"x": 125, "y": 135}, {"x": 105, "y": 135}]
+      }
+    },
+    {
+      "description": "MIG2024112123456",
+      "boundingPoly": {
+        "vertices": [{"x": 130, "y": 120}, {"x": 230, "y": 120}, {"x": 230, "y": 135}, {"x": 130, "y": 135}]
+      }
+    },
+    {
+      "description": "UN",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 160}, {"x": 95, "y": 160}, {"x": 95, "y": 175}, {"x": 80, "y": 175}]
+      }
+    },
+    {
+      "description": "1KG",
+      "boundingPoly": {
+        "vertices": [{"x": 100, "y": 160}, {"x": 125, "y": 160}, {"x": 125, "y": 175}, {"x": 100, "y": 175}]
+      }
+    },
+    {
+      "description": "8,50",
+      "boundingPoly": {
+        "vertices": [{"x": 280, "y": 160}, {"x": 310, "y": 160}, {"x": 310, "y": 175}, {"x": 280, "y": 175}]
+      }
+    },
+    {
+      "description": "SÜT",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 180}, {"x": 105, "y": 180}, {"x": 105, "y": 195}, {"x": 80, "y": 195}]
+      }
+    },
+    {
+      "description": "1LT",
+      "boundingPoly": {
+        "vertices": [{"x": 110, "y": 180}, {"x": 130, "y": 180}, {"x": 130, "y": 195}, {"x": 110, "y": 195}]
+      }
+    },
+    {
+      "description": "12,75",
+      "boundingPoly": {
+        "vertices": [{"x": 275, "y": 180}, {"x": 310, "y": 180}, {"x": 310, "y": 195}, {"x": 275, "y": 195}]
+      }
+    },
+    {
+      "description": "PEYNİR",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 200}, {"x": 125, "y": 200}, {"x": 125, "y": 215}, {"x": 80, "y": 215}]
+      }
+    },
+    {
+      "description": "500GR",
+      "boundingPoly": {
+        "vertices": [{"x": 130, "y": 200}, {"x": 165, "y": 200}, {"x": 165, "y": 215}, {"x": 130, "y": 215}]
+      }
+    },
+    {
+      "description": "45,00",
+      "boundingPoly": {
+        "vertices": [{"x": 275, "y": 200}, {"x": 310, "y": 200}, {"x": 310, "y": 215}, {"x": 275, "y": 215}]
+      }
+    },
+    {
+      "description": "EKMEK",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 220}, {"x": 120, "y": 220}, {"x": 120, "y": 235}, {"x": 80, "y": 235}]
+      }
+    },
+    {
+      "description": "1",
+      "boundingPoly": {
+        "vertices": [{"x": 125, "y": 220}, {"x": 130, "y": 220}, {"x": 130, "y": 235}, {"x": 125, "y": 235}]
+      }
+    },
+    {
+      "description": "ADET",
+      "boundingPoly": {
+        "vertices": [{"x": 135, "y": 220}, {"x": 165, "y": 220}, {"x": 165, "y": 235}, {"x": 135, "y": 235}]
+      }
+    },
+    {
+      "description": "5,25",
+      "boundingPoly": {
+        "vertices": [{"x": 285, "y": 220}, {"x": 310, "y": 220}, {"x": 310, "y": 235}, {"x": 285, "y": 235}]
+      }
+    },
+    {
+      "description": "DOMATES",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 240}, {"x": 130, "y": 240}, {"x": 130, "y": 255}, {"x": 80, "y": 255}]
+      }
+    },
+    {
+      "description": "2KG",
+      "boundingPoly": {
+        "vertices": [{"x": 135, "y": 240}, {"x": 155, "y": 240}, {"x": 155, "y": 255}, {"x": 135, "y": 255}]
+      }
+    },
+    {
+      "description": "18,40",
+      "boundingPoly": {
+        "vertices": [{"x": 275, "y": 240}, {"x": 310, "y": 240}, {"x": 310, "y": 255}, {"x": 275, "y": 255}]
+      }
+    },
+    {
+      "description": "ARA",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 280}, {"x": 105, "y": 280}, {"x": 105, "y": 295}, {"x": 80, "y": 295}]
+      }
+    },
+    {
+      "description": "TOPLAM",
+      "boundingPoly": {
+        "vertices": [{"x": 110, "y": 280}, {"x": 155, "y": 280}, {"x": 155, "y": 295}, {"x": 110, "y": 295}]
+      }
+    },
+    {
+      "description": "90,90",
+      "boundingPoly": {
+        "vertices": [{"x": 275, "y": 280}, {"x": 310, "y": 280}, {"x": 310, "y": 295}, {"x": 275, "y": 295}]
+      }
+    },
+    {
+      "description": "KDV",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 300}, {"x": 105, "y": 300}, {"x": 105, "y": 315}, {"x": 80, "y": 315}]
+      }
+    },
+    {
+      "description": "%1",
+      "boundingPoly": {
+        "vertices": [{"x": 110, "y": 300}, {"x": 125, "y": 300}, {"x": 125, "y": 315}, {"x": 110, "y": 315}]
+      }
+    },
+    {
+      "description": "0,83",
+      "boundingPoly": {
+        "vertices": [{"x": 285, "y": 300}, {"x": 310, "y": 300}, {"x": 310, "y": 315}, {"x": 285, "y": 315}]
+      }
+    },
+    {
+      "description": "GENEL",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 360}, {"x": 115, "y": 360}, {"x": 115, "y": 375}, {"x": 80, "y": 375}]
+      }
+    },
+    {
+      "description": "TOPLAM",
+      "boundingPoly": {
+        "vertices": [{"x": 120, "y": 360}, {"x": 165, "y": 360}, {"x": 165, "y": 375}, {"x": 120, "y": 375}]
+      }
+    },
+    {
+      "description": "94,09",
+      "boundingPoly": {
+        "vertices": [{"x": 275, "y": 360}, {"x": 310, "y": 360}, {"x": 310, "y": 375}, {"x": 275, "y": 375}]
+      }
+    },
+    {
+      "description": "KREDİ",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 400}, {"x": 115, "y": 400}, {"x": 115, "y": 415}, {"x": 80, "y": 415}]
+      }
+    },
+    {
+      "description": "KARTI",
+      "boundingPoly": {
+        "vertices": [{"x": 120, "y": 400}, {"x": 155, "y": 400}, {"x": 155, "y": 415}, {"x": 120, "y": 415}]
+      }
+    },
+    {
+      "description": "****",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 420}, {"x": 105, "y": 420}, {"x": 105, "y": 435}, {"x": 80, "y": 435}]
+      }
+    },
+    {
+      "description": "****",
+      "boundingPoly": {
+        "vertices": [{"x": 110, "y": 420}, {"x": 135, "y": 420}, {"x": 135, "y": 435}, {"x": 110, "y": 435}]
+      }
+    },
+    {
+      "description": "****",
+      "boundingPoly": {
+        "vertices": [{"x": 140, "y": 420}, {"x": 165, "y": 420}, {"x": 165, "y": 435}, {"x": 140, "y": 435}]
+      }
+    },
+    {
+      "description": "1234",
+      "boundingPoly": {
+        "vertices": [{"x": 170, "y": 420}, {"x": 200, "y": 420}, {"x": 200, "y": 435}, {"x": 170, "y": 435}]
+      }
+    },
+    {
+      "description": "VISA",
+      "boundingPoly": {
+        "vertices": [{"x": 80, "y": 440}, {"x": 110, "y": 440}, {"x": 110, "y": 455}, {"x": 80, "y": 455}]
+      }
+    }
+  ],
+  "fullTextAnnotation": {
+    "text": "MİGROS\nANKARA CAD NO:123\nKIZILAY/ANKARA\n21.11.2024 15:34\nFiş No: MIG2024112123456\nKASA: 3 KASİYER: AYSE\n\nUN 1KG                    8,50\nSÜT 1LT                  12,75\nPEYNİR 500GR             45,00\nEKMEK 1 ADET              5,25\nDOMATES 2KG              18,40\n\nARA TOPLAM              90,90\nKDV %1                   0,83\nKDV %8                   3,64\nKDV %20                  8,62\nGENEL TOPLAM            94,09\n\nKREDİ KARTI\n**** **** **** 1234\nVISA\n\nTEŞEKKÜRLER"
+  }
+}
