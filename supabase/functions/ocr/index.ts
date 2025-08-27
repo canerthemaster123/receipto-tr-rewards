@@ -1191,6 +1191,7 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
       raw_text: ocrResult.fullTextAnnotation?.text || (ocrResult.textAnnotations?.[0]?.description ?? '')
     };
     
+    console.log(`[${requestId}] Returning OCR result:`, JSON.stringify(ocrResponse, null, 2));
     return ocrResponse;
   } catch (error) {
     console.error(`[${requestId}] Processing error:`, error);

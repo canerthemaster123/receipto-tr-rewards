@@ -133,12 +133,16 @@ const UploadReceipt: React.FC = () => {
             : `${signedData.signedUrl}?qa-fake-ocr=1`)
         : signedData.signedUrl;
 
+      console.log('Calling OCR function with:', { imageUrl: ocrImageUrl, userId: user.id });
       const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
         body: { imageUrl: ocrImageUrl, userId: user.id },
         headers: fakeOcr ? { 'x-qa-fake-ocr': '1' } : undefined,
       });
 
+      console.log('OCR function response:', { ocrResult, ocrError });
+
       if (ocrError) {
+        console.error('OCR error details:', ocrError);
         throw new Error(`OCR failed: ${ocrError.message}`);
       }
 
@@ -150,7 +154,7 @@ const UploadReceipt: React.FC = () => {
         storeAddress: ocrResult.store_address || '',
         totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
         paymentMethod: ocrResult.payment_method || '',
-        items: ocrResult.items ? ocrResult.items.map(item => item.qty > 1 ? `${item.name} x${item.qty}` : item.name).join('\n') : ''
+        items: ocrResult.items ? ocrResult.items.map(item => item.qty && item.qty > 1 ? `${item.name} x${item.qty}` : item.name).join('\n') : ''
       };
       
       setReceiptData(extractedData);
