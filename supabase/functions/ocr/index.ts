@@ -586,31 +586,27 @@ function parseHeader(ocr: OcrDoc, requestId: string): ParsedHeader {
   }
   
   // Extract payment information - enhanced detection for masked PANs
-  const fullTextLower = fullText.toLowerCase();
+  console.log(`[${requestId}] Searching for payment info in text:`, fullText.slice(0, 200));
   
   if (/(?:kart|card)/i.test(fullText)) {
     header.payment_method = 'KART';
     
     // Look for specific masked PAN patterns like 406282******9820
-    const specificPanMatch = fullText.match(/\b\d{6}\*{6}\d{4}\b/);
+    const specificPanMatch = fullText.match(/\b\d{6}\*+\d{4}\b/);
     if (specificPanMatch) {
       header.masked_pan = specificPanMatch[0];
       header.card_scheme = detectCardScheme(specificPanMatch[0]);
       console.log(`[${requestId}] Found specific masked PAN: ${header.masked_pan}`);
     } else {
-      // Look for other PAN patterns
-      const panMatches = fullText.match(PAN_PATTERN);
+      // Look for other PAN patterns - more flexible search
+      const panMatches = fullText.match(/\d{6}[\*\-\s]{6,8}\d{4}/g);
       if (panMatches) {
         for (const pan of panMatches) {
-          if (/\d{6}\*{6}\d{4}/.test(pan)) {
-            header.masked_pan = pan;
-            header.card_scheme = detectCardScheme(pan);
-            break;
-          }
-          const cleanPan = pan.replace(/\D/g, '');
-          if (cleanPan.length >= 12) {
-            header.masked_pan = maskCardNumber(pan);
-            header.card_scheme = detectCardScheme(pan);
+          const cleanedPan = pan.replace(/[\s\-]/g, '');
+          if (/\d{6}\*+\d{4}/.test(cleanedPan)) {
+            header.masked_pan = cleanedPan;
+            header.card_scheme = detectCardScheme(cleanedPan);
+            console.log(`[${requestId}] Found flexible masked PAN: ${header.masked_pan}`);
             break;
           }
         }
@@ -619,6 +615,11 @@ function parseHeader(ocr: OcrDoc, requestId: string): ParsedHeader {
   } else if (/nakit|cash/i.test(fullText)) {
     header.payment_method = 'NAKİT';
   }
+  
+  console.log(`[${requestId}] Payment info extracted:`, { 
+    payment_method: header.payment_method, 
+    masked_pan: header.masked_pan 
+  });
   
   console.log(`[${requestId}] Header parsed:`, {
     merchant: header.merchant_brand,
@@ -729,18 +730,28 @@ function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
       continue;
     }
     
-    // Check if line contains VAT percentage indicator
+    // Check if line contains VAT percentage indicator - enhanced for Turkish receipts
     const hasVatIndicator = /%\d+/.test(lineText);
+    console.log(`[${requestId}] Processing line: "${lineText}", has VAT: ${hasVatIndicator}`);
     
     // For VAT lines, extract product name and VAT rate
     if (hasVatIndicator) {
-      const vatMatch = lineText.match(/(.+?)\s*%(\d+)/);
+      // Multiple patterns for VAT line parsing
+      let vatMatch = lineText.match(/(.+?)\s*%(\d+)/);
+      
       if (vatMatch) {
-        const productName = vatMatch[1].trim()
+        let productName = vatMatch[1].trim()
           .replace(/^\*+\s*/, '') // Remove leading asterisks
           .replace(/\s*\*+$/, '') // Remove trailing asterisks
+          .replace(/\s+/g, ' ') // Normalize spaces
           .trim();
+        
         const vatRate = parseInt(vatMatch[2]);
+        
+        // Skip if product name is too short or looks like a total
+        if (productName.length < 3 || /^(TOPLAM|TOTAL|KDV|VAT)$/i.test(productName)) {
+          continue;
+        }
         
         // Extract money values
         const moneyValues = extractMoneyValues(lineText);
@@ -760,6 +771,8 @@ function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
           line_total: moneyValues.length > 0 ? moneyValues[0] : 0,
           vat_rate: vatRate
         };
+        
+        console.log(`[${requestId}] Added VAT item: ${productName} (${vatRate}%)`);
         items.push(item);
         continue;
       }
@@ -1211,7 +1224,7 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
         raw_line: it.item_name_raw || '',
         product_code: it.ean13 || ''
       })),
-      payment_method: header.masked_pan || header.payment_method || null,
+      payment_method: header.masked_pan ? header.masked_pan : (header.payment_method || null),
       receipt_unique_no: header.receipt_unique_no || null,
       fis_no: header.fis_no || null,
       barcode_numbers: [],
