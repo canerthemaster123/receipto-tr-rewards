@@ -1069,6 +1069,22 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
       throw new Error('Google Vision API key not configured');
     }
     
+    // Download image bytes and send to Vision as base64 for reliability
+    let imageContentBase64: string | null = null;
+    try {
+      const imgResp = await fetch(imageUrl);
+      if (imgResp.ok) {
+        const arr = new Uint8Array(await imgResp.arrayBuffer());
+        let binary = '';
+        for (let i = 0; i < arr.length; i++) binary += String.fromCharCode(arr[i]);
+        imageContentBase64 = btoa(binary);
+      } else {
+        console.warn(`[${requestId}] Failed to fetch image for base64, status: ${imgResp.status}`);
+      }
+    } catch (e) {
+      console.warn(`[${requestId}] Image fetch error, will fallback to imageUri:`, e?.message || e);
+    }
+    
     const visionResponse = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${visionApiKey}`,
       {
@@ -1076,7 +1092,7 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: [{
-            image: { source: { imageUri: imageUrl } },
+            image: imageContentBase64 ? { content: imageContentBase64 } : { source: { imageUri: imageUrl } },
             features: [{ type: 'TEXT_DETECTION' }]
           }]
         })
