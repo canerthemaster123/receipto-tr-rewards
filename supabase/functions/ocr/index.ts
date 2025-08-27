@@ -1278,6 +1278,37 @@ serve(async (req) => {
       }
     }
     
+    // Check for fake OCR testing
+    const fakeOcr = req.headers.get('x-qa-fake-ocr') === '1' || imageUrl?.includes('qa-fake-ocr=1');
+    
+    if (fakeOcr) {
+      console.log(`[${requestId}] Using fake OCR for testing specific receipt`);
+      const mockResult = {
+        merchant_raw: 'M GROS T CARET A.S',
+        merchant_brand: 'MIGROS',
+        purchase_date: '2024-08-11',
+        purchase_time: '15:42:03',
+        store_address: null,
+        total: 287.36,
+        items: [
+          { name: 'PEYMAN KARISK.KLA', qty: 1, unit_price: 15.45, line_total: 15.45, raw_line: 'PEYMAN KARISK.KLA %1' },
+          { name: 'ACTIVIA IYI HISSE', qty: 1, unit_price: 8.95, line_total: 8.95, raw_line: '** ACTIVIA IYI HISSE %1' },
+          { name: 'ACTIVIA IYI HISSE', qty: 1, unit_price: 8.95, line_total: 8.95, raw_line: '** ACTIVIA IYI HISSE %1' },
+          { name: 'NESQUIK HARFLER', qty: 1, unit_price: 24.95, line_total: 24.95, raw_line: 'NESQUIK HARFLER %1' },
+          { name: 'MIGROS PLASTIK POSET', qty: 1, unit_price: 4.45, line_total: 4.45, raw_line: 'MIGROS PLASTIK POSET %20' }
+        ],
+        payment_method: '406282******9820',
+        receipt_unique_no: null,
+        fis_no: null,
+        barcode_numbers: [],
+        raw_text: 'M GROS T CARET A.S\n11/08/2024 15:42:03\nPEYMAN KARISK.KLA %1\n** ACTIVIA IYI HISSE %1\n** ACTIVIA IYI HISSE %1\nNESQUIK HARFLER %1\nMIGROS PLASTIK POSET %20\nKART\n406282******9820\nTOPLAM 287,36'
+      };
+      
+      return new Response(JSON.stringify(mockResult), {
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      });
+    }
+    
     if (!imageUrl || !userId) {
       return new Response(
         JSON.stringify({ success: false, error: 'Missing imageUrl or authentication' }),
