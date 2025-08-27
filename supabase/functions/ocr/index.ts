@@ -585,14 +585,20 @@ function parseHeader(ocr: OcrDoc, requestId: string): ParsedHeader {
     header.purchase_time = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}:00`;
   }
   
-  // Extract payment information
+  // Extract payment information - improved detection
   if (/(?:KART|CARD)/i.test(fullText)) {
     header.payment_method = 'KART';
     
-    // Look for PAN patterns
+    // Look for PAN patterns - improved for Turkish masked cards
     const panMatches = fullText.match(PAN_PATTERN);
     if (panMatches) {
       for (const pan of panMatches) {
+        // Look for masked patterns like 406282******9820
+        if (/\d{6}\*{6}\d{4}/.test(pan)) {
+          header.masked_pan = pan;
+          header.card_scheme = detectCardScheme(pan);
+          break;
+        }
         const cleanPan = pan.replace(/\D/g, '');
         if (cleanPan.length >= 12) {
           header.masked_pan = maskCardNumber(pan);
@@ -704,14 +710,49 @@ function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
   for (const cluster of clusters) {
     const lineText = cluster.spans.map(s => s.text).join(' ');
     
-    // Skip lines that don't look like item lines
+    // Skip lines that don't look like item lines - improved filtering
     if (lineText.length < 3 || 
-        /^(TOPLAM|TOTAL|KDV|VAT|KART|NAKİT|FIS|SERI)/i.test(lineText) ||
-        /^\d{2}[\/\.\-]\d{2}[\/\.\-]\d{4}/.test(lineText)) {
+        /^(TOPLAM|TOTAL|KDV|VAT|KART|NAKİT|FIS|SERI|TARIH|DATE|SAAT|TIME|KASIY|VEZNE|MÜŞTERI|CUSTOMER)/i.test(lineText) ||
+        /^\d{2}[\/\.\-]\d{2}[\/\.\-]\d{4}/.test(lineText) ||
+        /^(TL\s*|\d{6}\*|\*{6}|\d{4}$)/i.test(lineText.trim())) {
       continue;
     }
     
-    // Extract money values from the line
+    // Check if line contains VAT percentage indicator
+    const hasVatIndicator = /%\d+/.test(lineText);
+    
+    // For VAT lines, extract product name and VAT rate
+    if (hasVatIndicator) {
+      const vatMatch = lineText.match(/(.+?)\s*%(\d+)/);
+      if (vatMatch) {
+        const productName = vatMatch[1].trim();
+        const vatRate = parseInt(vatMatch[2]);
+        
+        // Extract money values
+        const moneyValues = extractMoneyValues(lineText);
+        if (moneyValues.length > 0) {
+          const item: ParsedItem = {
+            line_no: lineNo++,
+            bbox: {
+              x: Math.min(...cluster.spans.map(s => s.x)),
+              y: cluster.y_min,
+              w: Math.max(...cluster.spans.map(s => s.x + s.width)) - Math.min(...cluster.spans.map(s => s.x)),
+              h: cluster.y_max - cluster.y_min
+            },
+            item_name_raw: lineText,
+            item_name_norm: productName,
+            qty: 1,
+            unit_price: moneyValues[0],
+            line_total: moneyValues[0],
+            vat_rate: vatRate
+          };
+          items.push(item);
+          continue;
+        }
+      }
+    }
+    
+    // Extract money values from the line (only for non-VAT lines)
     const moneyValues = extractMoneyValues(lineText);
     if (moneyValues.length === 0) continue; // Skip lines without prices
     

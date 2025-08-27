@@ -20,14 +20,16 @@ export const RECEIPT_PATTERN = /(?:Fiş|FIS|Seri.*?Sıra|Seri\s*No|Belge\s*No|Z\
 // Fiscal number patterns (Mali Müşavir No, etc.)
 export const FISCAL_PATTERN = /(?:Mali\s*Müşavir|Vergi\s*No|VKN)\s*[:#]?\s*(\d{10,11})/gi;
 
-// Card PAN patterns (masked or partial)
-export const PAN_PATTERN = /\b(?:\d[\s\-\*]*){10,19}\b/g;
+// Card PAN patterns (masked or partial) - improved for Turkish receipts
+export const PAN_PATTERN = /\b\d{6}\*{6}\d{4}\b|\b(?:\d[\s\-\*]*){12,19}\b/g;
 
-// Total amount patterns (case insensitive)
+// Total amount patterns (case insensitive) - improved for Turkish receipts
 export const TOTAL_PATTERNS = [
-  /(?:GENEL\s*)?TOPLAM\s*[:=]?\s*(\d+[.,]\d{2})/gi,
-  /TOTAL\s*[:=]?\s*(\d+[.,]\d{2})/gi,
-  /(?:NET\s*)?TUTAR\s*[:=]?\s*(\d+[.,]\d{2})/gi
+  /(?:GENEL\s*)?TOPLAM\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
+  /TOTAL\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
+  /(?:NET\s*)?TUTAR\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
+  /(?:KART|CARD)\s*(?:TOPLAM|TOTAL)?\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
+  /ÖDENECEK\s*(?:TUTAR)?\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi
 ];
 
 // Subtotal patterns
