@@ -124,7 +124,7 @@ const DATE_PATTERN = /(?:(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{4}))/gi;
 const TIME_PATTERN = /\b([01]?\d|2[0-3]):([0-5]\d)\b/g;
 const VAT_PATTERN = /KDV\s*%?(\d{1,2})\s*[:=]?\s*(\d+[.,]\d{2})/gi;
 const RECEIPT_PATTERN = /(?:Fiş|FIS|Seri.*?Sıra|Seri\s*No|Belge\s*No|Z\s*No)\s*[:#]?\s*([A-Z0-9\-\/]{6,})/gi;
-const PAN_PATTERN = /\b(?:\d[\s\-\*]*){10,19}\b/g;
+const PAN_PATTERN = /\b\d{6}\*{6}\d{4}\b|\b(?:\d[\s\-\*]*){12,19}\b/g;
 
 const TOTAL_PATTERNS = [
   /(?:GENEL\s*)?TOPLAM\s*[:=]?\s*(\d+[.,]\d{2})/gi,
@@ -1175,16 +1175,16 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
       purchase_date: header.purchase_date || '',
       purchase_time: header.purchase_time || null,
       store_address: header.address_raw || null,
-      total: totals.total ?? totalFromItems,
+      total: Number(totals.total ?? totalFromItems) || 0,
       items: items.map(it => ({
-        name: it.item_name_norm,
-        qty: it.qty,
-        unit_price: it.unit_price,
-        line_total: it.line_total,
-        raw_line: it.item_name_raw,
-        product_code: it.ean13
+        name: it.item_name_norm || '',
+        qty: it.qty || 1,
+        unit_price: it.unit_price || 0,
+        line_total: it.line_total || 0,
+        raw_line: it.item_name_raw || '',
+        product_code: it.ean13 || ''
       })),
-      payment_method: header.payment_method || null,
+      payment_method: header.masked_pan || header.payment_method || null,
       receipt_unique_no: header.receipt_unique_no || null,
       fis_no: header.fis_no || null,
       barcode_numbers: [],
