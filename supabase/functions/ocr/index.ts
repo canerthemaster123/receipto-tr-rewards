@@ -585,29 +585,38 @@ function parseHeader(ocr: OcrDoc, requestId: string): ParsedHeader {
     header.purchase_time = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}:00`;
   }
   
-  // Extract payment information - improved detection
-  if (/(?:KART|CARD)/i.test(fullText)) {
+  // Extract payment information - enhanced detection for masked PANs
+  const fullTextLower = fullText.toLowerCase();
+  
+  if (/(?:kart|card)/i.test(fullText)) {
     header.payment_method = 'KART';
     
-    // Look for PAN patterns - improved for Turkish masked cards
-    const panMatches = fullText.match(PAN_PATTERN);
-    if (panMatches) {
-      for (const pan of panMatches) {
-        // Look for masked patterns like 406282******9820
-        if (/\d{6}\*{6}\d{4}/.test(pan)) {
-          header.masked_pan = pan;
-          header.card_scheme = detectCardScheme(pan);
-          break;
-        }
-        const cleanPan = pan.replace(/\D/g, '');
-        if (cleanPan.length >= 12) {
-          header.masked_pan = maskCardNumber(pan);
-          header.card_scheme = detectCardScheme(pan);
-          break;
+    // Look for specific masked PAN patterns like 406282******9820
+    const specificPanMatch = fullText.match(/\b\d{6}\*{6}\d{4}\b/);
+    if (specificPanMatch) {
+      header.masked_pan = specificPanMatch[0];
+      header.card_scheme = detectCardScheme(specificPanMatch[0]);
+      console.log(`[${requestId}] Found specific masked PAN: ${header.masked_pan}`);
+    } else {
+      // Look for other PAN patterns
+      const panMatches = fullText.match(PAN_PATTERN);
+      if (panMatches) {
+        for (const pan of panMatches) {
+          if (/\d{6}\*{6}\d{4}/.test(pan)) {
+            header.masked_pan = pan;
+            header.card_scheme = detectCardScheme(pan);
+            break;
+          }
+          const cleanPan = pan.replace(/\D/g, '');
+          if (cleanPan.length >= 12) {
+            header.masked_pan = maskCardNumber(pan);
+            header.card_scheme = detectCardScheme(pan);
+            break;
+          }
         }
       }
     }
-  } else if (/NAKİT|CASH/i.test(fullText)) {
+  } else if (/nakit|cash/i.test(fullText)) {
     header.payment_method = 'NAKİT';
   }
   
@@ -710,11 +719,13 @@ function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
   for (const cluster of clusters) {
     const lineText = cluster.spans.map(s => s.text).join(' ');
     
-    // Skip lines that don't look like item lines - improved filtering
+    // Skip lines that don't look like item lines - improved filtering for Turkish receipts
     if (lineText.length < 3 || 
-        /^(TOPLAM|TOTAL|KDV|VAT|KART|NAKİT|FIS|SERI|TARIH|DATE|SAAT|TIME|KASIY|VEZNE|MÜŞTERI|CUSTOMER)/i.test(lineText) ||
+        /^(TOPLAM|TOTAL|KDV|VAT|KART|NAKİT|FIS|SERI|TARIH|DATE|SAAT|TIME|KASIY|VEZNE|MÜŞTERI|CUSTOMER|FİŞ|SAAT)/i.test(lineText) ||
         /^\d{2}[\/\.\-]\d{2}[\/\.\-]\d{4}/.test(lineText) ||
-        /^(TL\s*|\d{6}\*|\*{6}|\d{4}$)/i.test(lineText.trim())) {
+        /^(TL\s*|\d{6}\*|\*{6}|\d{4}$)/i.test(lineText.trim()) ||
+        /^\d+:\d+/.test(lineText.trim()) || // Skip time patterns
+        /^[A-Z]{2,}\s*\d+$/.test(lineText.trim())) { // Skip patterns like "TOPLAM 287"
       continue;
     }
     
@@ -725,30 +736,32 @@ function parseItems(ocr: OcrDoc, requestId: string): ParsedItem[] {
     if (hasVatIndicator) {
       const vatMatch = lineText.match(/(.+?)\s*%(\d+)/);
       if (vatMatch) {
-        const productName = vatMatch[1].trim();
+        const productName = vatMatch[1].trim()
+          .replace(/^\*+\s*/, '') // Remove leading asterisks
+          .replace(/\s*\*+$/, '') // Remove trailing asterisks
+          .trim();
         const vatRate = parseInt(vatMatch[2]);
         
         // Extract money values
         const moneyValues = extractMoneyValues(lineText);
-        if (moneyValues.length > 0) {
-          const item: ParsedItem = {
-            line_no: lineNo++,
-            bbox: {
-              x: Math.min(...cluster.spans.map(s => s.x)),
-              y: cluster.y_min,
-              w: Math.max(...cluster.spans.map(s => s.x + s.width)) - Math.min(...cluster.spans.map(s => s.x)),
-              h: cluster.y_max - cluster.y_min
-            },
-            item_name_raw: lineText,
-            item_name_norm: productName,
-            qty: 1,
-            unit_price: moneyValues[0],
-            line_total: moneyValues[0],
-            vat_rate: vatRate
-          };
-          items.push(item);
-          continue;
-        }
+        
+        const item: ParsedItem = {
+          line_no: lineNo++,
+          bbox: {
+            x: Math.min(...cluster.spans.map(s => s.x)),
+            y: cluster.y_min,
+            w: Math.max(...cluster.spans.map(s => s.x + s.width)) - Math.min(...cluster.spans.map(s => s.x)),
+            h: cluster.y_max - cluster.y_min
+          },
+          item_name_raw: lineText,
+          item_name_norm: productName,
+          qty: 1,
+          unit_price: moneyValues.length > 0 ? moneyValues[0] : 0,
+          line_total: moneyValues.length > 0 ? moneyValues[0] : 0,
+          vat_rate: vatRate
+        };
+        items.push(item);
+        continue;
       }
     }
     
@@ -830,17 +843,31 @@ function parseTotals(ocr: OcrDoc, requestId: string): ParsedTotals {
   const fullText = ocr.fullTextAnnotation?.text || '';
   const totals: ParsedTotals = {};
   
-  // Extract main total
+  console.log(`[${requestId}] Full text for total parsing:`, fullText.slice(0, 500));
+  
+  // Extract all money values and find the largest (likely the total)
+  const allMoneyValues = extractMoneyValues(fullText);
+  console.log(`[${requestId}] All money values found:`, allMoneyValues);
+  
+  // Extract main total using patterns
   for (const pattern of TOTAL_PATTERNS) {
     pattern.lastIndex = 0;
     const match = pattern.exec(fullText);
     if (match) {
       const value = normalizeNumber(match[1]);
+      console.log(`[${requestId}] Pattern matched: ${pattern.source}, value: ${value}`);
       if (value !== null) {
         totals.total = value;
         break;
       }
     }
+  }
+  
+  // If no pattern matched, try to find the largest money value as total
+  if (!totals.total && allMoneyValues.length > 0) {
+    const sortedValues = allMoneyValues.sort((a, b) => b - a);
+    totals.total = sortedValues[0];
+    console.log(`[${requestId}] No pattern matched, using largest money value: ${totals.total}`);
   }
   
   // Extract subtotal

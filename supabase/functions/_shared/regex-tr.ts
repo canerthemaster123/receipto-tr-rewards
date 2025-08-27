@@ -23,13 +23,15 @@ export const FISCAL_PATTERN = /(?:Mali\s*Müşavir|Vergi\s*No|VKN)\s*[:#]?\s*(\d
 // Card PAN patterns (masked or partial) - improved for Turkish receipts
 export const PAN_PATTERN = /\b\d{6}\*{6}\d{4}\b|\b(?:\d[\s\-\*]*){12,19}\b/g;
 
-// Total amount patterns (case insensitive) - improved for Turkish receipts
+// Total amount patterns (case insensitive) - enhanced for all Turkish formats
 export const TOTAL_PATTERNS = [
   /(?:GENEL\s*)?TOPLAM\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
   /TOTAL\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
   /(?:NET\s*)?TUTAR\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
   /(?:KART|CARD)\s*(?:TOPLAM|TOTAL)?\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
-  /ÖDENECEK\s*(?:TUTAR)?\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi
+  /ÖDENECEK\s*(?:TUTAR)?\s*[:=]?\s*(?:₺)?\s*(\d+[.,]\d{2})/gi,
+  /(?:^|\s)(\d{3}[.,]\d{2})(?:\s*₺|\s*TL|$)/gm, // For standalone amounts like "287,36"
+  /(?:^|\s)(\d{2,3}[.,]\d{2})(?=\s*(?:₺|TL|$|\s[A-Z]))/gm // More flexible standalone amounts
 ];
 
 // Subtotal patterns
