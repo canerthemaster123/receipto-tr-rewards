@@ -1111,22 +1111,31 @@ async function processOCR(imageUrl: string, userId: string, requestId: string) {
     // Persist to database
     await persistData(receiptId, header, items, totals, validation, ocrResult, requestId);
     
-    console.log(`[${requestId}] Processing complete`);
-    
-    return {
-      success: true,
-      receiptId,
-      itemsCount: items.length,
-      parseConfidence: validation.parse_confidence,
-      warnings: validation.warnings,
-      stats: {
-        words: ocrResult.textAnnotations.length,
-        lines: items.length,
-        total: totals.total,
-        itemsSum: items.reduce((sum, item) => sum + (item.line_total || 0), 0),
-        mismatchDelta: totals.total ? Math.abs(items.reduce((sum, item) => sum + (item.line_total || 0), 0) - totals.total) : 0
-      }
+    // Build OCRResult response compatible with frontend
+    const totalFromItems = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
+    const ocrResponse = {
+      merchant_raw: header.merchant_raw || header.merchant_brand || '',
+      merchant_brand: header.merchant_brand || header.chain_group || '',
+      purchase_date: header.purchase_date || '',
+      purchase_time: header.purchase_time || null,
+      store_address: header.address_raw || null,
+      total: totals.total ?? totalFromItems,
+      items: items.map(it => ({
+        name: it.item_name_norm,
+        qty: it.qty,
+        unit_price: it.unit_price,
+        line_total: it.line_total,
+        raw_line: it.item_name_raw,
+        product_code: it.ean13
+      })),
+      payment_method: header.payment_method || null,
+      receipt_unique_no: header.receipt_unique_no || null,
+      fis_no: header.fis_no || null,
+      barcode_numbers: [],
+      raw_text: ocrResult.fullTextAnnotation?.text || (ocrResult.textAnnotations?.[0]?.description ?? '')
     };
+    
+    return ocrResponse;
   } catch (error) {
     console.error(`[${requestId}] Processing error:`, error);
     
@@ -1156,12 +1165,26 @@ serve(async (req) => {
   }
   
   try {
-    const { imageUrl, userId } = await req.json();
+    const body = await req.json().catch(() => ({} as any));
+    const imageUrl: string | undefined = body?.imageUrl;
+    let userId: string | undefined = body?.userId;
+
+    // Derive userId from Auth header if not provided in body
+    if (!userId) {
+      const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.replace('Bearer ', '').trim();
+        const { data, error } = await supabase.auth.getUser(token);
+        if (!error && data?.user?.id) {
+          userId = data.user.id;
+        }
+      }
+    }
     
     if (!imageUrl || !userId) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing imageUrl or userId' }),
-        { status: 400, headers: getCorsHeaders(req) }
+        JSON.stringify({ success: false, error: 'Missing imageUrl or authentication' }),
+        { status: 401, headers: getCorsHeaders(req) }
       );
     }
     
