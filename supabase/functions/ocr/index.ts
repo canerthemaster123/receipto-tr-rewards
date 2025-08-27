@@ -950,9 +950,8 @@ async function persistData(
   try {
     // Determine receipt status based on validation
     let status = 'pending';
-    if (!validation.items_sum_valid || validation.duplicate_receipt || validation.warnings.includes('MISSING_TOTAL')) {
-      status = 'pending_review';
-    }
+    // Note: Only 'pending', 'approved', 'rejected' are allowed by DB constraint
+    // All receipts start as 'pending' regardless of validation issues
     
     // Match or upsert store
     let storeId: string | null = null;
