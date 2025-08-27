@@ -134,7 +134,7 @@ const UploadReceipt: React.FC = () => {
         : signedData.signedUrl;
 
       const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
-        body: { imageUrl: signedData.signedUrl },
+        body: { imageUrl: ocrImageUrl, userId: user.id },
         headers: fakeOcr ? { 'x-qa-fake-ocr': '1' } : undefined,
       });
 
