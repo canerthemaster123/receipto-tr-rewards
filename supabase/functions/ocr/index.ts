@@ -390,6 +390,24 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
   // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
     if (format === 'CarrefourSA') {
+      // Prefer the bottom 'TUTAR' line (exclude lines mentioning KDV)
+      let idxTutar = -1;
+      for (let i = linesAlpha.length - 1; i >= 0; i--) {
+        if (/\btutar\b/i.test(linesAlpha[i]) && !/\bkdv\b/i.test(linesAlpha[i])) {
+          idxTutar = i;
+          break;
+        }
+      }
+      if (idxTutar >= 0) {
+        const amount = moneyNear(idxTutar);
+        if (amount) {
+          result.grand_total = amount;
+        }
+      }
+    }
+
+    if (result.grand_total == null && format === 'CarrefourSA') {
+      // Fallback to 'TOPLAM' (but NOT 'Toplam KDV')
       const idx = linesAlpha.findIndex(l => /\btoplam\b/i.test(l) && !/\bkdv\b/i.test(l));
       if (idx >= 0) {
         const amount = moneyNear(idx);
@@ -588,9 +606,36 @@ function parseReceiptText(rawText: string): any {
     /\*{6,}\d{4}\b/                              // ************1234
   ];
   let panRaw: string | null = null;
-  for (const rx of panRegexes) {
-    const m = normalizedText.match(rx);
-    if (m) { panRaw = m[0]; break; }
+
+  // Carrefour: PAN is typically 2 lines above the bottom 'TUTAR' line
+  if (formatDetection.format === 'CarrefourSA') {
+    const alphaLines = lines.map(l => alphaNormalize(l));
+    let idxTutar = -1;
+    for (let i = alphaLines.length - 1; i >= 0; i--) {
+      if (/\btutar\b/i.test(alphaLines[i]) && !/\bkdv\b/i.test(alphaLines[i])) {
+        idxTutar = i;
+        break;
+      }
+    }
+    if (idxTutar >= 2) {
+      const regionCandidates = [lines[idxTutar - 2], lines[idxTutar - 1], (idxTutar - 3 >= 0 ? lines[idxTutar - 3] : '')];
+      for (const candidate of regionCandidates) {
+        if (!candidate) continue;
+        for (const rx of panRegexes) {
+          const m = candidate.match(rx);
+          if (m) { panRaw = m[0]; break; }
+        }
+        if (panRaw) break;
+      }
+    }
+  }
+
+  // Global fallback search
+  if (!panRaw) {
+    for (const rx of panRegexes) {
+      const m = normalizedText.match(rx);
+      if (m) { panRaw = m[0]; break; }
+    }
   }
   const cardLast4 = panRaw ? panRaw.replace(/[^0-9]/g, '').slice(-4) : null;
   const cardMasked = cardLast4 ? `---${cardLast4}` : null;
