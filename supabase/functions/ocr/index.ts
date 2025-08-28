@@ -278,11 +278,14 @@ function parseItems(lines: string[], format: string): any[] {
     const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line);
     if (!hasLetters) continue;
 
-    // Clean up the product name
+    // Clean up the product name - remove numbers, symbols, and formatting
     const productName = line
       .replace(/^\*+/, '')
       .replace(/^#+/, '')
-      .replace(/^\d+\s*/, '')
+      .replace(/^\d+\s*/, '')  // Remove leading numbers
+      .replace(/\s+\d+[.,]\d{2}\s*$/, '')  // Remove trailing prices like "12,50"
+      .replace(/\s+\d+\s*$/, '')  // Remove trailing standalone numbers
+      .replace(/\s*x\s*\d+\s*$/i, '')  // Remove "x2", "X 3" etc.
       .trim();
 
     if (productName.length >= 3) {
@@ -624,7 +627,7 @@ function parseReceiptText(rawText: string): any {
   ];
   let panRaw: string | null = null;
 
-  // Carrefour: PAN is typically 2 lines above the bottom 'TUTAR' line
+  // Carrefour: PAN and card info is typically 2 lines above the bottom 'TUTAR' line
   if (formatDetection.format === 'CarrefourSA') {
     const alphaLines = lines.map(l => alphaNormalize(l));
     let idxTutar = -1;
@@ -635,12 +638,26 @@ function parseReceiptText(rawText: string): any {
       }
     }
     if (idxTutar >= 2) {
-      const regionCandidates = [lines[idxTutar - 2], lines[idxTutar - 1], (idxTutar - 3 >= 0 ? lines[idxTutar - 3] : '')];
+      // Look 2-3 lines above TUTAR for card info
+      const regionCandidates = [
+        (idxTutar - 2 >= 0 ? lines[idxTutar - 2] : ''),
+        (idxTutar - 3 >= 0 ? lines[idxTutar - 3] : ''),
+        (idxTutar - 1 >= 0 ? lines[idxTutar - 1] : '')
+      ];
       for (const candidate of regionCandidates) {
         if (!candidate) continue;
+        // Look for masked card numbers or card info
         for (const rx of panRegexes) {
           const m = candidate.match(rx);
           if (m) { panRaw = m[0]; break; }
+        }
+        // Also check for card brand info (AID, MASTERCARD, VISA, etc.)
+        if (!panRaw && /(aid|mastercard|visa|debit|kredi)/i.test(candidate)) {
+          // Extract any number sequence that could be last 4 digits
+          const cardMatch = candidate.match(/\b(\d{4})\b/);
+          if (cardMatch) {
+            panRaw = `****${cardMatch[1]}`;
+          }
         }
         if (panRaw) break;
       }
