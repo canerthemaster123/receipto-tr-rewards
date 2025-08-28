@@ -221,7 +221,7 @@ function parseItems(lines: string[]): any[] {
   const items: any[] = [];
   let lineNo = 1;
 
-  const isHeaderOrSystem = (s: string) => /migros|bim|carrefour|tarih|saat|fiş|fis|kdv|toplam|ara\s*toplam|kasiyer|pos|mersis|ref\s*no|onay\s*kodu|satış|satıs|e-?arşiv|fatura|müsteri|müşteri|http|https|earsiv|z\s*no/i.test(s);
+  const isHeaderOrSystem = (s: string) => /migros|mi̇gros|bim|bi̇m|carrefour|tarih|saat|fiş|fis|bilgi\s*fişi|tür\s*:|e-?arşiv|fatura|mü?şteri|tckn|vkn|mersis|tel|http|https|earsiv|ref\s*no|onay\s*kodu|işyeri|terminal|sıra\s*no|batch\s*no|satış|satıs|pos|ortak\s*pos|z\s*no|ekü\s*no|imza|adres|alışveriş|fişinizde|money/i.test(s);
   const moneyRe = /[*\s]*([0-9]{1,4}[.,][0-9]{2})/;
   const vatRe = /%\s*(\d{1,2})/;
 
@@ -498,6 +498,17 @@ function parseReceiptText(rawText: string): any {
   ) || lines[0];
   
   const merchantName = merchantLine ? merchantLine.trim() : 'Unknown';
+  // Prefer chain group name
+  const merchantDisplay = (() => {
+    if (formatDetection.format !== 'Unknown') {
+      return formatDetection.format === 'BIM' ? 'BİM' : formatDetection.format;
+    }
+    if (/carrefour/i.test(merchantName)) return 'CarrefourSA';
+    if (/b[iİ]m/i.test(merchantName)) return 'BİM';
+    if (/migros|mi̇gros/i.test(merchantName)) return 'Migros';
+    return merchantName;
+  })();
+  
   const addressLines = lines.filter(line => 
     line.match(/mah|cad|sok|bulv|tel|adres/i) && !line.match(/migros|bim|carrefour/i)
   );
@@ -518,13 +529,23 @@ function parseReceiptText(rawText: string): any {
   const panMatch = normalizedText.match(/\b\d{4,6}\*{4,10}\d{4}\b/);
   const paymentMethod = panMatch ? panMatch[0] : (/\bNAK[İI]T\b/i.test(normalizedText) ? 'NAKIT' : (/\bKART\b/i.test(normalizedText) ? 'KART' : null));
   const cardMasked = panMatch ? `---${panMatch[0].slice(-4)}` : null;
-
+  
   // Parse items and discounts
-  const items = parseItems(lines);
+  const items = parseItems(lines).slice(0, 50);
   const discounts = parseDiscounts(lines);
   
   // Extract totals
   const totals = extractTotals(normalizedText);
+  // Fallback: choose largest money value when still missing
+  if (!totals.grand_total) {
+    const matches = [...normalizedText.matchAll(/(\d{1,4}[.,]\d{2})/g)];
+    let maxVal = 0;
+    for (const m of matches) {
+      const v = parseAmount(m[1]);
+      if (v && v > maxVal) maxVal = v;
+    }
+    if (maxVal > 0) totals.grand_total = maxVal;
+  }
   
   // Calculate computed totals
   const computedTotals = calculateComputedTotals(items, discounts, totals);
@@ -546,7 +567,7 @@ function parseReceiptText(rawText: string): any {
   // Build final result
   const result = {
     merchant: {
-      name: merchantName,
+      name: merchantDisplay,
       branch: null,
       address_full: addressFull || null,
       address_parsed: addressParsed,
