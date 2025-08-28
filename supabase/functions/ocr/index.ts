@@ -648,9 +648,10 @@ function parseReceiptText(rawText: string): any {
   
   // Extract payment method and masked PAN (Carrefour/BİM variations)
   const panRegexes = [
-    /\b\d{4,6}\*{4,10}\d{4}\b/,                // 406281******9820
-    /\b(?:[Xx\*#•·●]{4}\s*){3}\d{4}\b/,        // **** **** **** 1234 (supports bullet-like masks)
-    /\*{6,}\d{4}\b/,                              // ************1234
+    /\b\d{4,6}\*{4,10}\d{4}\b/,                   // 406281******9820
+    /\b(?:[Xx\*#•·●]{4}\s*){2,4}\d{4}\b/,         // **** **** **** 1234 (2-4 masked groups)
+    /\*{6,}\d{4}\b/,                                 // ************1234
+    /(?:[Xx\*#•·●]{1,4}\s*){2,6}\d{4}\b/,          // generic masks with varying group counts
     /\b\d{4}\s+\*{2,}\s+\d{2,4}\s+\*{2,}\s+\d{4}\b/ // mixed spacing masks
   ];
   let panRaw: string | null = null;
@@ -665,30 +666,29 @@ function parseReceiptText(rawText: string): any {
         break;
       }
     }
-    if (idxTutar >= 4) {
-      // Look 4 lines above TUTAR first (user-confirmed), then nearby lines
-      const regionCandidates = [
-        (idxTutar - 4 >= 0 ? lines[idxTutar - 4] : ''),
-        (idxTutar - 3 >= 0 ? lines[idxTutar - 3] : ''),
-        (idxTutar - 2 >= 0 ? lines[idxTutar - 2] : ''),
-        (idxTutar - 1 >= 0 ? lines[idxTutar - 1] : '')
-      ];
+    if (idxTutar >= 1) {
+      // Look primarily 4 lines above TUTAR (per receipt pattern), but scan a window of -6..-1
+      const regionCandidates: string[] = [];
+      for (let off = 6; off >= 1; off--) {
+        if (idxTutar - off >= 0) regionCandidates.push(lines[idxTutar - off]);
+      }
       for (const candidate of regionCandidates) {
         if (!candidate) continue;
-        // Look for masked card numbers or card info
+        // Try strict patterns first
         for (const rx of panRegexes) {
           const m = candidate.match(rx);
           if (m) { panRaw = m[0]; break; }
         }
-        // Also check for card brand info (AID, MASTERCARD, VISA, etc.)
-        if (!panRaw && /(aid|mastercard|visa|debit|kredi)/i.test(candidate)) {
-          // Extract any number sequence that could be last 4 digits
-          const cardMatch = candidate.match(/\b(\d{4})\b/);
-          if (cardMatch) {
-            panRaw = `****${cardMatch[1]}`;
+        if (panRaw) break;
+        const candAlpha = alphaNormalize(candidate);
+        // If line mentions card brand or has mask chars, guess last 4 at line end
+        if (/(mastercard|visa|debit|kredi|kart|\*{2,}|[#•·●]{2,})/i.test(candAlpha)) {
+          const last4Match = candidate.match(/(\d{4})(?!.*\d)/);
+          if (last4Match) {
+            panRaw = `**** **** **** ${last4Match[1]}`;
+            break;
           }
         }
-        if (panRaw) break;
       }
     }
   }
