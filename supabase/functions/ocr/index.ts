@@ -328,9 +328,9 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
       /(?:kdv\s*dahil\s*tutar)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else if (format === 'CarrefourSA') {
-    // Carrefour: 'TOPLAM'
+    // Carrefour: 'TOPLAM' (but NOT 'Toplam KDV')
     totalPatterns = [
-      /(?:^|\s)toplam\s*[:=]?\s*(\d+[.,]\d{2})/i
+      /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else if (format === 'Migros') {
     // Migros: 'TOPLAM'
@@ -389,21 +389,33 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
 
   // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
-    let totalKeywords: string[] = [];
-    
-    if (format === 'BIM') {
-      totalKeywords = ['odenecek kdv dahil tutar', 'kdv dahil tutar'];
-    } else {
-      totalKeywords = ['genel toplam', 'kdv li toplam', 'odenecek.*tutar', 'toplam'];
-    }
-    
-    for (const keyword of totalKeywords) {
-      const idx = linesAlpha.findIndex(l => new RegExp(`\\b${keyword}\\b`, 'i').test(l));
+    if (format === 'CarrefourSA') {
+      const idx = linesAlpha.findIndex(l => /\btoplam\b/i.test(l) && !/\bkdv\b/i.test(l));
       if (idx >= 0) {
         const amount = moneyNear(idx);
         if (amount) {
           result.grand_total = amount;
-          break;
+        }
+      }
+    }
+
+    if (result.grand_total == null) {
+      let totalKeywords: string[] = [];
+      if (format === 'BIM') {
+        totalKeywords = ['odenecek kdv dahil tutar', 'kdv dahil tutar'];
+      } else {
+        totalKeywords = ['genel toplam', 'kdv li toplam', 'odenecek.*tutar', 'toplam'];
+      }
+      for (const keyword of totalKeywords) {
+        const idx = linesAlpha.findIndex(l => new RegExp(`\\b${keyword}\\b`, 'i').test(l));
+        if (idx >= 0) {
+          // Skip lines that mention KDV when keyword is generic 'toplam'
+          if (/toplam/i.test(keyword) && /\bkdv\b/i.test(linesAlpha[idx])) continue;
+          const amount = moneyNear(idx);
+          if (amount) {
+            result.grand_total = amount;
+            break;
+          }
         }
       }
     }
@@ -569,10 +581,22 @@ function parseReceiptText(rawText: string): any {
   const receiptNoMatch = normalizedText.match(/(?:fiş|fis|no|belge)\s*[:=]?\s*([a-z0-9\-\/]{4,})/i);
   const receiptNo = receiptNoMatch ? receiptNoMatch[1] : null;
   
-  // Extract payment method (prefer masked PAN like 406281******9820)
-  const panMatch = normalizedText.match(/\b\d{4,6}\*{4,10}\d{4}\b/);
-  const paymentMethod = panMatch ? panMatch[0] : (/\bNAK[İI]T\b/i.test(normalizedText) ? 'NAKIT' : (/\bKART\b/i.test(normalizedText) ? 'KART' : null));
-  const cardMasked = panMatch ? `---${panMatch[0].slice(-4)}` : null;
+  // Extract payment method and masked PAN (Carrefour/BİM variations)
+  const panRegexes = [
+    /\b\d{4,6}\*{4,10}\d{4}\b/,                // 406281******9820
+    /\b(?:[Xx\*]{4}\s*){3}\d{4}\b/,            // XXXX XXXX XXXX 1234
+    /\*{6,}\d{4}\b/                              // ************1234
+  ];
+  let panRaw: string | null = null;
+  for (const rx of panRegexes) {
+    const m = normalizedText.match(rx);
+    if (m) { panRaw = m[0]; break; }
+  }
+  const cardLast4 = panRaw ? panRaw.replace(/[^0-9]/g, '').slice(-4) : null;
+  const cardMasked = cardLast4 ? `---${cardLast4}` : null;
+  const isCash = /\bNAK[İI]T\b/i.test(normalizedText);
+  const isCardKeyword = /(kredi\s*kart|debit|visa|mastercard|world|bonus|axess|maxim(?:um)?|paraf|troy|kart)/i.test(normalizedText);
+  const paymentMethod = isCash ? 'NAKIT' : (cardLast4 || isCardKeyword ? 'KART' : null);
   
   // Parse items and discounts (pass format for better extraction)
   const items = parseItems(lines, formatDetection.format).slice(0, 50);
