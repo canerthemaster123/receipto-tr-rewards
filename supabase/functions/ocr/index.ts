@@ -637,11 +637,12 @@ function parseReceiptText(rawText: string): any {
         break;
       }
     }
-    if (idxTutar >= 2) {
-      // Look 2-3 lines above TUTAR for card info
+    if (idxTutar >= 4) {
+      // Look 4 lines above TUTAR first (user-confirmed), then nearby lines
       const regionCandidates = [
-        (idxTutar - 2 >= 0 ? lines[idxTutar - 2] : ''),
+        (idxTutar - 4 >= 0 ? lines[idxTutar - 4] : ''),
         (idxTutar - 3 >= 0 ? lines[idxTutar - 3] : ''),
+        (idxTutar - 2 >= 0 ? lines[idxTutar - 2] : ''),
         (idxTutar - 1 >= 0 ? lines[idxTutar - 1] : '')
       ];
       for (const candidate of regionCandidates) {
