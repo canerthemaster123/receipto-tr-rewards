@@ -610,10 +610,37 @@ function parseReceiptText(rawText: string): any {
   const addressParsed = parseAddress(addressFull);
   
   // Extract receipt details
-  const dateText = lines.find(line => line.match(/tarih|date/i)) || normalizedText;
-  const timeText = lines.find(line => line.match(/saat|time/i)) || normalizedText;
-  const receiptDate = extractDate(dateText);
-  const receiptTime = extractTime(timeText);
+  // Extract purchase date/time with format-aware logic
+  let receiptDate: string | null = null;
+  let receiptTime: string | null = null;
+
+  if (formatDetection.format === 'CarrefourSA') {
+    const alphaLines = lines.map(l => alphaNormalize(l));
+    const idxDate = alphaLines.findIndex(l => /\btari[h]?\b/i.test(l));
+    if (idxDate !== -1) {
+      // Date is next to 'TARİH'
+      receiptDate = extractDate(lines[idxDate]) || extractDate(lines[idxDate + 1] || '') || null;
+      // Time is usually on the next line with 'SAAT'
+      const relativeSaatIdx = alphaLines.slice(idxDate, idxDate + 4).findIndex(l => /\bsaat\b/i.test(l));
+      if (relativeSaatIdx !== -1) {
+        const saatIdx = idxDate + relativeSaatIdx;
+        receiptTime = extractTime(lines[saatIdx]) || extractTime(lines[saatIdx + 1] || '') || null;
+      } else {
+        // Fallback: search in the next two lines
+        receiptTime = extractTime(lines[idxDate]) || extractTime(lines[idxDate + 1] || '') || extractTime(lines[idxDate + 2] || '') || null;
+      }
+    }
+  }
+
+  // Global fallbacks if still missing
+  if (!receiptDate) {
+    const dateText = lines.find(line => /tarih|date/i.test(line)) || normalizedText;
+    receiptDate = extractDate(dateText);
+  }
+  if (!receiptTime) {
+    const timeText = lines.find(line => /saat|time/i.test(line)) || normalizedText;
+    receiptTime = extractTime(timeText);
+  }
   
   // Extract receipt number
   const receiptNoMatch = normalizedText.match(/(?:fiş|fis|no|belge)\s*[:=]?\s*([a-z0-9\-\/]{4,})/i);
@@ -622,8 +649,9 @@ function parseReceiptText(rawText: string): any {
   // Extract payment method and masked PAN (Carrefour/BİM variations)
   const panRegexes = [
     /\b\d{4,6}\*{4,10}\d{4}\b/,                // 406281******9820
-    /\b(?:[Xx\*]{4}\s*){3}\d{4}\b/,            // XXXX XXXX XXXX 1234
-    /\*{6,}\d{4}\b/                              // ************1234
+    /\b(?:[Xx\*#•·●]{4}\s*){3}\d{4}\b/,        // **** **** **** 1234 (supports bullet-like masks)
+    /\*{6,}\d{4}\b/,                              // ************1234
+    /\b\d{4}\s+\*{2,}\s+\d{2,4}\s+\*{2,}\s+\d{4}\b/ // mixed spacing masks
   ];
   let panRaw: string | null = null;
 
