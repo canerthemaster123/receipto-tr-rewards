@@ -223,77 +223,60 @@ function detectFormat(text: string): { format: string; confidence: number } {
 }
 
 /**
- * Parse items from receipt lines
+ * Parse items from receipt lines based on format
  */
-function parseItems(lines: string[]): any[] {
+function parseItems(lines: string[], format: string): any[] {
   const items: any[] = [];
-  let lineNo = 1;
+  let startIndex = -1;
+  let endIndex = lines.length;
 
-  const isHeaderOrSystem = (s: string) => /migros|mi̇gros|bim|bi̇m|carrefour|tarih|saat|fiş|fis|bilgi\s*fişi|tür\s*:|e-?arşiv|fatura|mü?şteri|tckn|vkn|mersis|tel|http|https|earsiv|ref\s*no|onay\s*kodu|işyeri|terminal|sıra\s*no|batch\s*no|satış|satıs|pos|ortak\s*pos|z\s*no|ekü\s*no|imza|adres|alışveriş|fişinizde|money|kdv|kdv\s*tutar|topkdv|\bara\s*toplam\b|\bgenel\s*toplam\b|\btoplam\b/i.test(alphaNormalize(s));
-  const moneyRe = /[*\s]*([0-9]{1,4}[.,][0-9]{2})/;
-  const vatRe = /%\s*(\d{1,2})/;
+  // Format-specific item extraction
+  if (format === 'BIM') {
+    // BIM: between 'NIHAI TUKETİCİ' and 'Toplam KDV'
+    startIndex = lines.findIndex(line => /nihai\s*tuketi[çc]i/i.test(alphaNormalize(line)));
+    endIndex = lines.findIndex(line => /toplam\s*kdv/i.test(alphaNormalize(line)));
+  } else if (format === 'CarrefourSA') {
+    // Carrefour: between 'FİŞ NO' and 'TOPKDV'
+    startIndex = lines.findIndex(line => /fi[şs]\s*no/i.test(alphaNormalize(line)));
+    endIndex = lines.findIndex(line => /topkdv/i.test(alphaNormalize(line)));
+  } else if (format === 'Migros') {
+    // Migros: between 'FİŞ NO' and '#6002...' number
+    startIndex = lines.findIndex(line => /fi[şs]\s*no/i.test(alphaNormalize(line)));
+    endIndex = lines.findIndex(line => /#6[0-9]{3}/i.test(line));
+  }
 
-  for (let i = 0; i < lines.length; i++) {
+  if (startIndex === -1) startIndex = 0;
+  if (endIndex === -1) endIndex = lines.length;
+
+  // Extract only product names from the identified section
+  for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    if (isHeaderOrSystem(line)) continue;
+    // Skip lines that look like system info, amounts, or codes
+    const isSystemLine = /tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres|₺|tl|\d+[.,]\d{2}|^\d+$|^[*]+$|^#+/i.test(alphaNormalize(line));
+    if (isSystemLine) continue;
 
-    // Heuristic: candidate item name line (contains letters, not just numbers/money)
-    const looksLikeName = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line) && !moneyRe.test(line);
-    if (!looksLikeName) continue;
+    // Must contain letters (product name)
+    const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line);
+    if (!hasLetters) continue;
 
-    // Look ahead for VAT and price within next 3 lines
-    let vatRate: number | null = null;
-    let price: number | null = null;
-    let consumedUntil = i;
+    // Clean up the product name
+    const productName = line
+      .replace(/^\*+/, '')
+      .replace(/^#+/, '')
+      .replace(/^\d+\s*/, '')
+      .trim();
 
-    for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
-      const next = lines[j].trim();
-      const v = next.match(vatRe);
-      if (v && vatRate === null) {
-        vatRate = parseInt(v[1], 10);
-        consumedUntil = Math.max(consumedUntil, j);
-        continue;
-      }
-      const m = next.match(moneyRe);
-      if (m && price === null) {
-        price = parseAmount(m[1]);
-        consumedUntil = Math.max(consumedUntil, j);
-        break; // usually price ends the block
-      }
-    }
-
-    const name = line.replace(/^\*+/, '').trim();
-    if (name.length < 2) continue;
-
-    items.push({
-      line_no: lineNo++,
-      name,
-      quantity: 1,
-      unit: 'adet',
-      unit_price: price || 0,
-      total_price: price || 0,
-      vat_rate: vatRate ?? null
-    });
-
-    // Skip consumed lines
-    i = consumedUntil;
-  }
-
-  // Quantity refinement: if a following line near an item has quantity, update
-  for (let idx = 0; idx < items.length; idx++) {
-    const baseLineIndex = items[idx].line_no - 1; // approx
-    for (let j = baseLineIndex; j < Math.min(baseLineIndex + 3, lines.length); j++) {
-      const qtyMatch = lines[j]?.match(/(\d+(?:[.,]\d+)?)\s*(kg|lt|adet|paket)/i);
-      if (qtyMatch) {
-        items[idx].quantity = parseFloat(qtyMatch[1].replace(',', '.'));
-        items[idx].unit = qtyMatch[2].toLowerCase();
-        if (items[idx].unit_price && !items[idx].total_price) {
-          items[idx].total_price = items[idx].unit_price * items[idx].quantity;
-        }
-        break;
-      }
+    if (productName.length >= 3) {
+      items.push({
+        name: productName,
+        qty: 1,
+        unit_price: null,
+        line_total: null,
+        raw_line: line,
+        product_code: null
+      });
     }
   }
 
@@ -327,13 +310,51 @@ function parseDiscounts(lines: string[]): any[] {
 }
 
 /**
- * Extract totals from receipt text
+ * Extract totals from receipt text based on format
  */
-function extractTotals(text: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
+function extractTotals(text: string, format: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
   const result: any = {};
   const textAlpha = alphaNormalize(text);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const linesAlpha = textAlpha.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Format-specific total patterns
+  let totalPatterns: RegExp[] = [];
+  
+  if (format === 'BIM') {
+    // BIM: 'Odenecek KDV dahil tutar'
+    totalPatterns = [
+      /(?:odenecek\s*kdv\s*dahil\s*tutar)\s*[:=]?\s*(\d+[.,]\d{2})/i,
+      /(?:kdv\s*dahil\s*tutar)\s*[:=]?\s*(\d+[.,]\d{2})/i
+    ];
+  } else if (format === 'CarrefourSA') {
+    // Carrefour: 'TOPLAM'
+    totalPatterns = [
+      /(?:^|\s)toplam\s*[:=]?\s*(\d+[.,]\d{2})/i
+    ];
+  } else if (format === 'Migros') {
+    // Migros: 'TOPLAM'
+    totalPatterns = [
+      /(?:^|\s)toplam\s*[:=]?\s*(\d+[.,]\d{2})/i,
+      /(?:genel\s*)?toplam\s*[:=]?\s*(\d+[.,]\d{2})/i
+    ];
+  } else {
+    // Default patterns
+    totalPatterns = [
+      /(?:genel\s*)?toplam\s*[:=]?\s*(\d+[.,]\d{2})/i,
+      /(?:kdv'li\s*toplam|ödenecek.*tutar)\s*[:=]?\s*(\d+[.,]\d{2})/i,
+      /total\s*[:=]?\s*(\d+[.,]\d{2})/i
+    ];
+  }
+
+  // Try format-specific patterns first
+  for (const pattern of totalPatterns) {
+    const match = textAlpha.match(pattern);
+    if (match) {
+      result.grand_total = parseAmount(match[1]);
+      break;
+    }
+  }
 
   // Subtotal patterns (same line)
   const subtotalMatch = textAlpha.match(/(?:ara\s*toplam|subtotal)\s*[:=]?\s*(\d+[.,]\d{2})/i);
@@ -345,21 +366,6 @@ function extractTotals(text: string): { subtotal?: number; vat_total?: number; g
   const vatMatch = textAlpha.match(/(?:topkdv|kdv\s*tutari|toplam\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i);
   if (vatMatch) {
     result.vat_total = parseAmount(vatMatch[1]);
-  }
-
-  // Grand total patterns (same line)
-  const totalPatterns = [
-    /(?:genel\s*)?toplam\s*[:=]?\s*(\d+[.,]\d{2})/i,
-    /(?:kdv'li\s*toplam|ödenecek.*tutar)\s*[:=]?\s*(\d+[.,]\d{2})/i,
-    /total\s*[:=]?\s*(\d+[.,]\d{2})/i
-  ];
-
-  for (const pattern of totalPatterns) {
-    const match = textAlpha.match(pattern);
-    if (match) {
-      result.grand_total = parseAmount(match[1]);
-      break;
-    }
   }
 
   // Fallback: multi-line totals where amount is on next line (often with *)
@@ -381,9 +387,37 @@ function extractTotals(text: string): { subtotal?: number; vat_total?: number; g
     if (idx >= 0) result.vat_total = moneyNear(idx) ?? result.vat_total;
   }
 
+  // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
-    const idx = linesAlpha.findIndex(l => /\b(genel\s*toplam|kdv'li\s*toplam|ödenecek.*tutar|toplam)\b/i.test(l));
-    if (idx >= 0) result.grand_total = moneyNear(idx) ?? result.grand_total;
+    let totalKeywords: string[] = [];
+    
+    if (format === 'BIM') {
+      totalKeywords = ['odenecek kdv dahil tutar', 'kdv dahil tutar'];
+    } else {
+      totalKeywords = ['genel toplam', 'kdv li toplam', 'odenecek.*tutar', 'toplam'];
+    }
+    
+    for (const keyword of totalKeywords) {
+      const idx = linesAlpha.findIndex(l => new RegExp(`\\b${keyword}\\b`, 'i').test(l));
+      if (idx >= 0) {
+        const amount = moneyNear(idx);
+        if (amount) {
+          result.grand_total = amount;
+          break;
+        }
+      }
+    }
+  }
+
+  // Ultimate fallback: largest amount in text
+  if (!result.grand_total) {
+    const matches = [...text.matchAll(/(\d{1,4}[.,]\d{2})/g)];
+    let maxVal = 0;
+    for (const m of matches) {
+      const v = parseAmount(m[1]);
+      if (v && v > maxVal) maxVal = v;
+    }
+    if (maxVal > 0) result.grand_total = maxVal;
   }
 
   return result;
@@ -540,12 +574,12 @@ function parseReceiptText(rawText: string): any {
   const paymentMethod = panMatch ? panMatch[0] : (/\bNAK[İI]T\b/i.test(normalizedText) ? 'NAKIT' : (/\bKART\b/i.test(normalizedText) ? 'KART' : null));
   const cardMasked = panMatch ? `---${panMatch[0].slice(-4)}` : null;
   
-  // Parse items and discounts
-  const items = parseItems(lines).slice(0, 50);
+  // Parse items and discounts (pass format for better extraction)
+  const items = parseItems(lines, formatDetection.format).slice(0, 50);
   const discounts = parseDiscounts(lines);
   
-  // Extract totals
-  const totals = extractTotals(normalizedText);
+  // Extract totals (pass format for better detection)
+  const totals = extractTotals(normalizedText, formatDetection.format);
   // Fallback: choose largest money value when still missing
   if (!totals.grand_total) {
     const matches = [...normalizedText.matchAll(/(\d{1,4}[.,]\d{2})/g)];
