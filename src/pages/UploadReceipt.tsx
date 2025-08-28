@@ -158,7 +158,7 @@ const UploadReceipt: React.FC = () => {
             purchaseTime: ocrResult.receipt.time || '',
             storeAddress: ocrResult.merchant.address_full || '',
             totalAmount: ocrResult.totals?.grand_total ? ocrResult.totals.grand_total.toString() : '',
-            paymentMethod: ocrResult.receipt.payment_method || ocrResult.receipt.card_last4_masked || '',
+            paymentMethod: ocrResult.receipt.card_last4_masked || ocrResult.receipt.payment_method || '',
             items: ocrResult.items ? ocrResult.items.map((item: any) => 
               item.quantity && item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name
             ).join('\n') : ''

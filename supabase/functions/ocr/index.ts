@@ -36,13 +36,21 @@ function normalizeText(text: string): string {
   
   return text
     .trim()
-    .replace(/MIGROS/gi, 'MİGROS')
+    .replace(/MIGROS/gi, 'Migros')
     .replace(/BIM/gi, 'BİM')
-    .replace(/CARREFOUR\s*SA/gi, 'CarrefourSA')
-    .replace(/O/g, '0') // O -> 0 in numeric contexts
-    .replace(/[Il]/g, '1') // I, l -> 1
-    .replace(/S/g, '5') // S -> 5 (context dependent)
-    .replace(/B/g, '8'); // B -> 8 (context dependent)
+    .replace(/CARREFOUR\s*SA/gi, 'CarrefourSA');
+}
+
+/**
+ * Alpha-normalize: convert ambiguous OCR digits back to letters for keyword detection
+ */
+function alphaNormalize(s: string): string {
+  if (!s) return '';
+  return s
+    .replace(/0/g, 'O')
+    .replace(/1/g, 'I')
+    .replace(/5/g, 'S')
+    .replace(/8/g, 'B');
 }
 
 /**
@@ -177,7 +185,7 @@ function parseAddress(addressText: string): { street?: string; neighborhood?: st
  * Detect retail chain format from text patterns
  */
 function detectFormat(text: string): { format: string; confidence: number } {
-  const normalized = text.toLowerCase();
+  const normalized = alphaNormalize(text).toLowerCase();
   
   // Migros patterns
   const migrosPatterns = [
@@ -221,7 +229,7 @@ function parseItems(lines: string[]): any[] {
   const items: any[] = [];
   let lineNo = 1;
 
-  const isHeaderOrSystem = (s: string) => /migros|mi̇gros|bim|bi̇m|carrefour|tarih|saat|fiş|fis|bilgi\s*fişi|tür\s*:|e-?arşiv|fatura|mü?şteri|tckn|vkn|mersis|tel|http|https|earsiv|ref\s*no|onay\s*kodu|işyeri|terminal|sıra\s*no|batch\s*no|satış|satıs|pos|ortak\s*pos|z\s*no|ekü\s*no|imza|adres|alışveriş|fişinizde|money/i.test(s);
+  const isHeaderOrSystem = (s: string) => /migros|mi̇gros|bim|bi̇m|carrefour|tarih|saat|fiş|fis|bilgi\s*fişi|tür\s*:|e-?arşiv|fatura|mü?şteri|tckn|vkn|mersis|tel|http|https|earsiv|ref\s*no|onay\s*kodu|işyeri|terminal|sıra\s*no|batch\s*no|satış|satıs|pos|ortak\s*pos|z\s*no|ekü\s*no|imza|adres|alışveriş|fişinizde|money|kdv|kdv\s*tutar|topkdv|\bara\s*toplam\b|\bgenel\s*toplam\b|\btoplam\b/i.test(alphaNormalize(s));
   const moneyRe = /[*\s]*([0-9]{1,4}[.,][0-9]{2})/;
   const vatRe = /%\s*(\d{1,2})/;
 
@@ -323,16 +331,18 @@ function parseDiscounts(lines: string[]): any[] {
  */
 function extractTotals(text: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
   const result: any = {};
+  const textAlpha = alphaNormalize(text);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const linesAlpha = textAlpha.split('\n').map(l => l.trim()).filter(Boolean);
 
   // Subtotal patterns (same line)
-  const subtotalMatch = text.match(/(?:ara\s*toplam|subtotal)\s*[:=]?\s*(\d+[.,]\d{2})/i);
+  const subtotalMatch = textAlpha.match(/(?:ara\s*toplam|subtotal)\s*[:=]?\s*(\d+[.,]\d{2})/i);
   if (subtotalMatch) {
     result.subtotal = parseAmount(subtotalMatch[1]);
   }
 
   // VAT total patterns (same line)
-  const vatMatch = text.match(/(?:topkdv|kdv\s*tutari|toplam\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i);
+  const vatMatch = textAlpha.match(/(?:topkdv|kdv\s*tutari|toplam\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i);
   if (vatMatch) {
     result.vat_total = parseAmount(vatMatch[1]);
   }
@@ -345,7 +355,7 @@ function extractTotals(text: string): { subtotal?: number; vat_total?: number; g
   ];
 
   for (const pattern of totalPatterns) {
-    const match = text.match(pattern);
+    const match = textAlpha.match(pattern);
     if (match) {
       result.grand_total = parseAmount(match[1]);
       break;
@@ -362,17 +372,17 @@ function extractTotals(text: string): { subtotal?: number; vat_total?: number; g
   };
 
   if (result.subtotal == null) {
-    const idx = lines.findIndex(l => /\bara\s*toplam\b/i.test(l));
+    const idx = linesAlpha.findIndex(l => /\bara\s*toplam\b/i.test(l));
     if (idx >= 0) result.subtotal = moneyNear(idx) ?? result.subtotal;
   }
 
   if (result.vat_total == null) {
-    const idx = lines.findIndex(l => /\b(topkdv|kdv\s*tutari|toplam\s*kdv)\b/i.test(l));
+    const idx = linesAlpha.findIndex(l => /\b(topkdv|kdv\s*tutari|toplam\s*kdv)\b/i.test(l));
     if (idx >= 0) result.vat_total = moneyNear(idx) ?? result.vat_total;
   }
 
   if (result.grand_total == null) {
-    const idx = lines.findIndex(l => /\b(genel\s*toplam|kdv'li\s*toplam|ödenecek.*tutar|toplam)\b/i.test(l));
+    const idx = linesAlpha.findIndex(l => /\b(genel\s*toplam|kdv'li\s*toplam|ödenecek.*tutar|toplam)\b/i.test(l));
     if (idx >= 0) result.grand_total = moneyNear(idx) ?? result.grand_total;
   }
 
@@ -492,10 +502,10 @@ function parseReceiptText(rawText: string): any {
   // Detect format
   const formatDetection = detectFormat(normalizedText);
   
-  // Extract merchant info
-  const merchantLine = lines.find(line => 
-    line.match(/migros|bim|carrefour/i) && !line.match(/\d{2}[.\/]\d{2}/)
-  ) || lines[0];
+  const merchantIdx = lines.findIndex(line => 
+    /migros|bim|carrefour/i.test(alphaNormalize(line)) && !/\d{2}[.\/]\d{2}/.test(line)
+  );
+  const merchantLine = merchantIdx >= 0 ? lines[merchantIdx] : lines[0];
   
   const merchantName = merchantLine ? merchantLine.trim() : 'Unknown';
   // Prefer chain group name
