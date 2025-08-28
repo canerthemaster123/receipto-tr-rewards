@@ -134,7 +134,7 @@ const UploadReceipt: React.FC = () => {
         : signedData.signedUrl;
 
       console.log('Calling OCR function with:', { imageUrl: ocrImageUrl, userId: user.id });
-      const { data: ocrResult, error: ocrError } = await supabase.functions.invoke<OCRResult>('ocr', {
+      const { data: ocrResult, error: ocrError } = await supabase.functions.invoke('ocr', {
         body: { imageUrl: ocrImageUrl, userId: user.id },
         headers: fakeOcr ? { 'x-qa-fake-ocr': '1' } : undefined,
       });
@@ -146,19 +146,72 @@ const UploadReceipt: React.FC = () => {
         throw new Error(`OCR failed: ${ocrError.message}`);
       }
 
-      // Pre-fill form with OCR results
-      const extractedData: ReceiptData = {
-        storeName: ocrResult.merchant_brand || ocrResult.merchant_raw || '',
-        date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
-        purchaseTime: ocrResult.purchase_time || '',
-        storeAddress: ocrResult.store_address || '',
-        totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
-        paymentMethod: ocrResult.payment_method || '',
-        items: ocrResult.items ? ocrResult.items.map(item => item.qty && item.qty > 1 ? `${item.name} x${item.qty}` : item.name).join('\n') : ''
-      };
+      // Handle new OCR schema format
+      let extractedData: ReceiptData;
+      
+      if (ocrResult && typeof ocrResult === 'object') {
+        // New schema format
+        if (ocrResult.merchant && ocrResult.receipt) {
+          extractedData = {
+            storeName: ocrResult.merchant.name || '',
+            date: ocrResult.receipt.date || new Date().toISOString().split('T')[0],
+            purchaseTime: ocrResult.receipt.time || '',
+            storeAddress: ocrResult.merchant.address_full || '',
+            totalAmount: ocrResult.totals?.grand_total ? ocrResult.totals.grand_total.toString() : '',
+            paymentMethod: ocrResult.receipt.card_last4_masked || ocrResult.receipt.payment_method || '',
+            items: ocrResult.items ? ocrResult.items.map((item: any) => 
+              item.quantity && item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name
+            ).join('\n') : ''
+          };
+          
+          // Convert to old format for compatibility
+          const compatibleResult = {
+            merchant_raw: ocrResult.merchant.name,
+            merchant_brand: ocrResult.merchant.name,
+            purchase_date: ocrResult.receipt.date,
+            purchase_time: ocrResult.receipt.time,
+            store_address: ocrResult.merchant.address_full,
+            total: ocrResult.totals?.grand_total || 0,
+            items: ocrResult.items || [],
+            payment_method: ocrResult.receipt.card_last4_masked || ocrResult.receipt.payment_method,
+            receipt_unique_no: ocrResult.receipt.receipt_no,
+            fis_no: null,
+            barcode_numbers: [],
+            raw_text: ocrResult.raw_text || ''
+          };
+          
+          setOcrResult(compatibleResult);
+        } else {
+          // Legacy format
+          extractedData = {
+            storeName: ocrResult.merchant_brand || ocrResult.merchant_raw || '',
+            date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
+            purchaseTime: ocrResult.purchase_time || '',
+            storeAddress: ocrResult.store_address || '',
+            totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
+            paymentMethod: ocrResult.payment_method || '',
+            items: ocrResult.items ? ocrResult.items.map((item: any) => 
+              item.qty && item.qty > 1 ? `${item.name} x${item.qty}` : item.name
+            ).join('\n') : ''
+          };
+          
+          setOcrResult(ocrResult);
+        }
+      } else {
+        // Fallback for unexpected format
+        extractedData = {
+          storeName: '',
+          date: new Date().toISOString().split('T')[0],
+          purchaseTime: '',
+          storeAddress: '',
+          totalAmount: '',
+          paymentMethod: '',
+          items: ''
+        };
+        setOcrResult(null);
+      }
       
       setReceiptData(extractedData);
-      setOcrResult(ocrResult); // Store OCR result for later use
       setIsProcessed(true);
       
       toast({
