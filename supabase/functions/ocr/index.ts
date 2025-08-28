@@ -270,9 +270,21 @@ function parseItems(lines: string[], format: string): any[] {
     const line = lines[i].trim();
     if (!line) continue;
 
+    const alphaLine = alphaNormalize(line);
+
     // Skip lines that look like system info, amounts, or codes
-    const isSystemLine = /tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres|₺|tl|\d+[.,]\d{2}|^\d+$|^[*]+$|^#+/i.test(alphaNormalize(line));
-    if (isSystemLine) continue;
+    const isSystemLine = /tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres|₺|tl|\d+[.,]\d{2}|^\d+$|^[*]+$|^#+/i.test(alphaLine);
+
+    // Skip quantity-only unit lines like ",564 KG X" or "0,836 KG X"
+    const isQtyUnitOnly = /^\s*[,\.\d][\d.,]*\s*(kg|gr|lt|l)\b.*\bx\b/i.test(alphaLine);
+
+    // Skip discount suffix-only lines like ",18-D"
+    const isDiscountNoise = /^\s*[,\.\d][\d.,]*\s*-\s*d\b/i.test(alphaLine);
+
+    // Skip card/payment comment lines like "IND. Csa Kart ile", "Kart indirimi"
+    const isCardNoise = /(kart\s*ile|csa\s*kart|kart\s*indirimi|kasa\s*ind|promo|kupon)/i.test(alphaLine);
+
+    if (isSystemLine || isQtyUnitOnly || isDiscountNoise || isCardNoise) continue;
 
     // Must contain letters (product name)
     const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line);
