@@ -240,9 +240,26 @@ function parseItems(lines: string[], format: string): any[] {
     startIndex = lines.findIndex(line => /fi[şs]\s*no/i.test(alphaNormalize(line)));
     endIndex = lines.findIndex(line => /topkdv/i.test(alphaNormalize(line)));
   } else if (format === 'Migros') {
-    // Migros: between 'FİŞ NO' and '#6002...' number
-    startIndex = lines.findIndex(line => /fi[şs]\s*no/i.test(alphaNormalize(line)));
-    endIndex = lines.findIndex(line => /#6[0-9]{3}/i.test(line));
+    // Migros: Start after the date line (TARİH or the first date pattern) if Fiş No not found
+    const alphaLines = lines.map(l => alphaNormalize(l));
+    const idxFis = alphaLines.findIndex(line => /fi[şs]\s*no/i.test(line));
+    let idxDate = alphaLines.findIndex(line => /\btari[h]?\b/i.test(line));
+    if (idxDate === -1) {
+      // Fallback: any DD.MM.YYYY or DD/MM/YYYY pattern
+      idxDate = lines.findIndex(line => /(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/.test(line));
+    }
+    startIndex = idxFis !== -1 ? idxFis : idxDate;
+
+    // End region: stop at ARA TOPLAM / GENEL TOPLAM / TOPLAM (first occurrence) or fallback marker
+    const endCandidates = [
+      alphaLines.findIndex(line => /\bara\s*toplam\b/i.test(line)),
+      alphaLines.findIndex(line => /\bgenel\s*toplam\b/i.test(line)),
+      alphaLines.findIndex(line => /\btoplam\b/i.test(line)),
+      lines.findIndex(line => /#6[0-9]{3}/i.test(line))
+    ].filter(i => i !== -1) as number[];
+    if (endCandidates.length > 0) {
+      endIndex = Math.min(...endCandidates);
+    }
   }
 
   if (startIndex === -1) startIndex = 0;
