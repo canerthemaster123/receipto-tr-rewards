@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.53.0';
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 // ============= TURKISH RETAIL RECEIPT OCR ENGINE =============
 
@@ -349,6 +350,39 @@ function calculateComputedTotals(items: any[], discounts: any[], totals: any): a
 }
 
 /**
+ * Download image bytes supporting both public URLs and Supabase Storage paths
+ */
+async function downloadImage(imageUrl: string): Promise<Uint8Array> {
+  // If it's a direct URL, try fetching
+  if (/^https?:\/\//i.test(imageUrl)) {
+    const resp = await fetch(imageUrl);
+    if (resp.ok) {
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      return buf;
+    }
+
+    // Try to extract storage path from URL (e.g., /object/sign/receipts/<path>?token=...)
+    const m = imageUrl.match(/\/object\/(?:sign\/)?receipts\/([^?]+)/);
+    if (m && m[1]) {
+      const path = decodeURIComponent(m[1]);
+      const { data, error } = await supabase.storage.from('receipts').download(path);
+      if (error) throw new Error(`Storage download failed: ${error.message}`);
+      const buf = new Uint8Array(await data.arrayBuffer());
+      return buf;
+    }
+
+    throw new Error(`Failed to download image via HTTP: ${resp.status}`);
+  }
+
+  // Otherwise, assume it's a storage path within the receipts bucket
+  const path = imageUrl.replace(/^\/+/, '');
+  const { data, error } = await supabase.storage.from('receipts').download(path);
+  if (error) throw new Error(`Storage download failed: ${error.message}`);
+  const buf = new Uint8Array(await data.arrayBuffer());
+  return buf;
+}
+
+/**
  * Main OCR processing function
  */
 async function processOCR(imageUrl: string): Promise<any> {
@@ -358,15 +392,10 @@ async function processOCR(imageUrl: string): Promise<any> {
   }
   
   try {
-    // Download image
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to download image: ${imageResponse.status}`);
-    }
-    
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
-    
+    // Download image (supports Supabase Storage or public URLs)
+    const imageBytes = await downloadImage(imageUrl);
+    const base64Image = base64Encode(imageBytes);
+
     // Call Google Vision API
     const visionResponse = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${googleVisionApiKey}`,
