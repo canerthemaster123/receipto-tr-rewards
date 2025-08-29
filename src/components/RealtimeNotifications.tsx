@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthContext';
 import { toast } from 'sonner';
-import { CheckCircle, XCircle, Bell } from 'lucide-react';
+import { CheckCircle, XCircle, Bell, Award } from 'lucide-react';
 
 export const RealtimeNotifications = () => {
   const { user } = useAuth();
@@ -62,6 +62,33 @@ export const RealtimeNotifications = () => {
                 duration: 3000,
               });
             }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_badges',
+          filter: `user_id=eq.${user.id}`
+        },
+        async (payload) => {
+          const { new: newBadge } = payload;
+          
+          // Fetch badge details
+          const { data: badgeData } = await supabase
+            .from('badges')
+            .select('name_tr, name_en, desc_tr, desc_en')
+            .eq('key', newBadge.badge_key)
+            .single();
+          
+          if (badgeData) {
+            toast.success('Yeni Başarım Kazandınız! 🏆', {
+              description: `${badgeData.name_tr}${badgeData.desc_tr ? ` - ${badgeData.desc_tr}` : ''}`,
+              icon: <Award className="h-4 w-4" />,
+              duration: 6000,
+            });
           }
         }
       )
