@@ -9,6 +9,7 @@ import { Receipt, Mail, Lock, User, Loader2, UserPlus, X, Calendar, Phone, MapPi
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '../integrations/supabase/client';
 import { getSiteUrl } from '@/lib/siteUrl';
+import { TurkishCitiesSelect } from '@/components/ui/turkish-cities-select';
 
 const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -435,16 +436,13 @@ const AuthPage: React.FC = () => {
 
               {!isLogin && (
                 <div className="space-y-2">
-                  <Label htmlFor="city">Yaşadığınız İl</Label>
+                  <Label htmlFor="city">Şehir</Label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="city"
-                      type="text"
-                      placeholder="İl adı girin"
+                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground z-10" />
+                    <TurkishCitiesSelect
                       value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="pl-10"
+                      onValueChange={setCity}
+                      placeholder="Şehir seçin"
                       required={!isLogin}
                     />
                   </div>
