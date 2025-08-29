@@ -57,6 +57,8 @@ interface ReceiptRecord {
   receipt_unique_no?: string;
   fis_no?: string;
   barcode_numbers?: string[];
+  masked_pan?: string;
+  card_scheme?: string;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +106,9 @@ const Profile: React.FC = () => {
     receiptUniqueNo?: string;
     fisNo?: string;
     barcodeNumbers?: string[];
+    paymentMethod?: string;
+    maskedPan?: string;
+    cardScheme?: string;
   } | null>(null);
 
   const [filters, setFilters] = useState<AdvancedFilters>({
@@ -257,7 +262,10 @@ const Profile: React.FC = () => {
       receiptId: receipt.id,
       receiptUniqueNo: receipt.receipt_unique_no,
       fisNo: receipt.fis_no,
-      barcodeNumbers: receipt.barcode_numbers
+      barcodeNumbers: receipt.barcode_numbers,
+      paymentMethod: receipt.payment_method || undefined,
+      maskedPan: receipt.masked_pan || undefined,
+      cardScheme: receipt.card_scheme || undefined
     });
     setImageModalOpen(true);
   };
@@ -1006,6 +1014,9 @@ const Profile: React.FC = () => {
           receiptUniqueNo={imageModalData.receiptUniqueNo}
           fisNo={imageModalData.fisNo}
           barcodeNumbers={imageModalData.barcodeNumbers}
+          paymentMethod={imageModalData.paymentMethod}
+          maskedPan={imageModalData.maskedPan}
+          cardScheme={imageModalData.cardScheme}
         />
       )}
     </div>

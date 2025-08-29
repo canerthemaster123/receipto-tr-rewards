@@ -399,6 +399,11 @@ const UploadReceipt: React.FC = () => {
         if (ocrResult.barcode_numbers && ocrResult.barcode_numbers.length > 0) {
           insertData.barcode_numbers = ocrResult.barcode_numbers;
         }
+        // Extract card information from payment_method field (contains masked card or method)
+        if (ocrResult.payment_method && ocrResult.payment_method.includes('*')) {
+          insertData.masked_pan = ocrResult.payment_method;
+          insertData.card_scheme = 'Unknown'; // Could be enhanced to detect Visa/Mastercard etc.
+        }
       }
 
       const { error: dbError } = await supabase

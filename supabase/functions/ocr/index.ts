@@ -304,9 +304,14 @@ function parseItems(lines: string[], format: string): any[] {
       .replace(/^\*+/, '')
       .replace(/^#+/, '')
       .replace(/^\d+\s*/, '')  // Remove leading numbers
-      .replace(/\s+\d+[.,]\d{2}\s*$/, '')  // Remove trailing prices like "12,50"
+      .replace(/\s+\d+[.,]\d{2}\s*[*]?\s*$/, '')  // Remove trailing prices like "12,50*"
+      .replace(/\s+\d+[.,]\d{2}[^A-Za-zÇĞİÖŞÜçğıöşü]*$/, '')  // Remove price with suffixes "21.A sex*79.50"
+      .replace(/\s+\d+\.[A-Za-z]+\s+[^A-Za-zÇĞİÖŞÜçğıöşü]*[\d.,*]+\s*$/, '')  // Remove "21.A sex*79.50" pattern
+      .replace(/\s+\d+\.[A-Za-z]+[^A-Za-zÇĞİÖŞÜçğıöşü]*$/, '')  // Remove "21.edu" pattern
+      .replace(/\s+\d+\.[a-z]+[^A-Za-zÇĞİÖŞÜçğıöşü]*[\d*]+\s*$/, '')  // Remove "21.sons*75.00" pattern
       .replace(/\s+\d+\s*$/, '')  // Remove trailing standalone numbers
       .replace(/\s*x\s*\d+\s*$/i, '')  // Remove "x2", "X 3" etc.
+      .replace(/\s*\*.*$/, '')  // Remove everything after "*"
       .trim();
 
     if (productName.length >= 3) {

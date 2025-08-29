@@ -17,6 +17,9 @@ interface ReceiptImageModalProps {
   receiptUniqueNo?: string;
   fisNo?: string;
   barcodeNumbers?: string[];
+  paymentMethod?: string;
+  maskedPan?: string;
+  cardScheme?: string;
 }
 
 export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
@@ -30,7 +33,10 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
   receiptId,
   receiptUniqueNo,
   fisNo,
-  barcodeNumbers
+  barcodeNumbers,
+  paymentMethod,
+  maskedPan,
+  cardScheme
 }) => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -316,6 +322,35 @@ export const ReceiptImageModal: React.FC<ReceiptImageModalProps> = ({
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Card Information Section */}
+            {(paymentMethod || maskedPan) && (
+              <div className="border-t pt-3">
+                <div className="grid grid-cols-1 gap-3 text-sm">
+                  {paymentMethod && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">Ödeme Yöntemi:</span>
+                        <span className="ml-2">{paymentMethod}</span>
+                      </div>
+                    </div>
+                  )}
+                  {maskedPan && (
+                    <div className="flex items-center gap-2">
+                      <Hash className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <span className="font-medium">Kart Bilgisi:</span>
+                        <span className="ml-2 font-mono">{maskedPan}</span>
+                        {cardScheme && (
+                          <span className="ml-2 text-xs bg-primary/10 px-2 py-1 rounded">{cardScheme}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
