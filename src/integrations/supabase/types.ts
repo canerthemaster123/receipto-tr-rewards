@@ -807,27 +807,39 @@ export type Database = {
       }
       users_profile: {
         Row: {
+          birth_date: string | null
+          city: string | null
           created_at: string | null
           display_name: string | null
+          gender: string | null
           id: string
+          phone_number: string | null
           referral_code: string | null
           referred_by: string | null
           total_points: number | null
           updated_at: string | null
         }
         Insert: {
+          birth_date?: string | null
+          city?: string | null
           created_at?: string | null
           display_name?: string | null
+          gender?: string | null
           id: string
+          phone_number?: string | null
           referral_code?: string | null
           referred_by?: string | null
           total_points?: number | null
           updated_at?: string | null
         }
         Update: {
+          birth_date?: string | null
+          city?: string | null
           created_at?: string | null
           display_name?: string | null
+          gender?: string | null
           id?: string
+          phone_number?: string | null
           referral_code?: string | null
           referred_by?: string | null
           total_points?: number | null

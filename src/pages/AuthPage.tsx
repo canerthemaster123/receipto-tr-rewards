@@ -5,7 +5,7 @@ import { Button } from '../components/ui/enhanced-button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Receipt, Mail, Lock, User, Loader2, UserPlus, X } from 'lucide-react';
+import { Receipt, Mail, Lock, User, Loader2, UserPlus, X, Calendar, Phone, MapPin, Users } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '../integrations/supabase/client';
 import { getSiteUrl } from '@/lib/siteUrl';
@@ -16,6 +16,10 @@ const AuthPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [city, setCity] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showIframeBanner, setShowIframeBanner] = useState(false);
   const { login } = useAuth();
@@ -41,7 +45,7 @@ const AuthPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password || (!isLogin && !name)) {
+    if (!email || !password || (!isLogin && (!name || !birthDate || !gender || !phoneNumber || !city))) {
       toast({
         title: "Hata",
         description: "Lütfen tüm gerekli alanları doldurun.",
@@ -79,6 +83,10 @@ const AuthPage: React.FC = () => {
             emailRedirectTo: redirectUrl,
             data: {
               display_name: name,
+              birth_date: birthDate,
+              gender: gender,
+              phone_number: phoneNumber,
+              city: city
             }
           }
         });
@@ -92,8 +100,18 @@ const AuthPage: React.FC = () => {
         }
 
         // User profile will be created automatically by the handle_new_user trigger
-        // So we don't need to manually create it here anymore
+        // Update profile with additional fields
         if (signUpResult.user) {
+          // Update the user profile with additional fields
+          await supabase
+            .from('users_profile')
+            .update({
+              birth_date: birthDate,
+              gender: gender,
+              phone_number: phoneNumber,
+              city: city
+            })
+            .eq('id', signUpResult.user.id);
           // Handle referral if provided - normalize input
           if (referralCode.trim()) {
             try {
@@ -341,6 +359,80 @@ const AuthPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="birthDate">Doğum Tarihi</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="birthDate"
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      className="pl-10"
+                      required={!isLogin}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="gender">Cinsiyet</Label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <select
+                      id="gender"
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-base ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                      required={!isLogin}
+                    >
+                      <option value="">Cinsiyet seçin</option>
+                      <option value="male">Erkek</option>
+                      <option value="female">Kadın</option>
+                      <option value="other">Diğer</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Telefon Numarası</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="phoneNumber"
+                      type="tel"
+                      placeholder="05XX XXX XX XX"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      className="pl-10"
+                      required={!isLogin}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="city">Yaşadığınız İl</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="city"
+                      type="text"
+                      placeholder="İl adı girin"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      className="pl-10"
+                      required={!isLogin}
+                    />
+                  </div>
+                </div>
+              )}
 
               {!isLogin && (
                 <div className="space-y-2">
