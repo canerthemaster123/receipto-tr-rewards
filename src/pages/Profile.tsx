@@ -8,10 +8,18 @@ import { Separator } from '../components/ui/separator';
 import { Badge } from '../components/ui/badge';
 import { useUserRole } from '../hooks/useUserRole';
 import { usePointsLedger } from '../hooks/usePointsLedger';
-import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp, Users, Gift, UserPlus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp, Users, Gift, UserPlus, ChevronDown, ChevronUp, Receipt, Search, Filter, CheckCircle, XCircle, Calendar as CalendarIcon, Store, Coins, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
+import { useReceiptData } from '../hooks/useReceiptData';
 import { supabase } from '@/integrations/supabase/client';
+import { Calendar } from '../components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { ReceiptImageModal } from '../components/ReceiptImageModal';
+import { normalizeMerchant, getCleanMerchantName } from '../utils/merchantNormalization';
+import { formatTRY } from '../utils/currency';
+import { format } from 'date-fns';
 import StreaksAndBadges from '@/components/StreaksAndBadges';
 
 interface PointsLedgerEntry {
@@ -33,22 +41,87 @@ interface ReferralData {
   };
 }
 
+interface ReceiptRecord {
+  id: string;
+  merchant: string;
+  merchant_brand?: string;
+  total: number;
+  purchase_date: string;
+  purchase_time?: string;
+  store_address?: string;
+  payment_method: string | null;
+  status: 'approved' | 'pending' | 'rejected';
+  points: number;
+  items: string;
+  image_url?: string;
+  receipt_unique_no?: string;
+  fis_no?: string;
+  barcode_numbers?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface AdvancedFilters {
+  dateRange: {
+    from?: Date;
+    to?: Date;
+  };
+  merchantFilter: string;
+  statusFilter: string;
+  minAmount: string;
+  maxAmount: string;
+}
+
+const ITEMS_PER_PAGE = 20;
+
 const Profile: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { userRole, isLoading: roleLoading } = useUserRole();
   const { entries: pointsHistory, totalPoints, loading: isLoadingHistory } = usePointsLedger();
+  const { receipts, loading: receiptsLoading, stats } = useReceiptData();
   const { toast } = useToast();
   const [displayName, setDisplayName] = useState(userProfile?.display_name || '');
   const [isUpdating, setIsUpdating] = useState(false);
   const [showReferralDetails, setShowReferralDetails] = useState(false);
+  const [showHistoryDetails, setShowHistoryDetails] = useState(false);
   const [myReferrals, setMyReferrals] = useState<ReferralData[]>([]);
   const [referralStats, setReferralStats] = useState({ totalReferred: 0, totalEarned: 0 });
+  
+  // Receipt history states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [imageModalData, setImageModalData] = useState<{
+    imageUrl?: string;
+    fileName: string;
+    merchant: string;
+    merchantBrand?: string;
+    purchaseDate: string;
+    receiptId: string;
+    receiptUniqueNo?: string;
+    fisNo?: string;
+    barcodeNumbers?: string[];
+  } | null>(null);
+
+  const [filters, setFilters] = useState<AdvancedFilters>({
+    dateRange: {},
+    merchantFilter: '',
+    statusFilter: '',
+    minAmount: '',
+    maxAmount: ''
+  });
 
   useEffect(() => {
     if (user && showReferralDetails) {
       fetchReferralData();
     }
   }, [user, showReferralDetails]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filters]);
 
   const fetchReferralData = async () => {
     if (!user) return;
@@ -96,6 +169,143 @@ const Profile: React.FC = () => {
       console.error('Error fetching referral data:', error);
     }
   };
+
+  // Receipt filtering and helper functions
+  const getItemsArray = (items: string): string[] => {
+    if (!items) return [];
+    return items.split('\n').filter(item => item.trim().length > 0);
+  };
+
+  const uniqueMerchants = ['Migros', 'ŞOK', 'A101', 'BİM', 'CarrefourSA', 'File Market', 'Metro', 'Mopaş', 'Happy Center', 'Diğer'];
+
+  const filteredReceipts = React.useMemo(() => {
+    let result = receipts;
+
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      result = result.filter(receipt => {
+        const merchantMatch = receipt.merchant.toLowerCase().includes(searchLower);
+        const itemsMatch = getItemsArray(receipt.items).some(item => 
+          item.toLowerCase().includes(searchLower)
+        );
+        return merchantMatch || itemsMatch;
+      });
+    }
+
+    if (filters.dateRange.from || filters.dateRange.to) {
+      result = result.filter(receipt => {
+        const receiptDate = new Date(receipt.purchase_date);
+        const fromDate = filters.dateRange.from;
+        const toDate = filters.dateRange.to;
+        
+        if (fromDate && receiptDate < fromDate) return false;
+        if (toDate && receiptDate > toDate) return false;
+        return true;
+      });
+    }
+
+    if (filters.merchantFilter && filters.merchantFilter !== 'all') {
+      result = result.filter(receipt => {
+        const brandToCheck = receipt.merchant_brand || receipt.merchant;
+        return normalizeMerchant(brandToCheck) === filters.merchantFilter;
+      });
+    }
+
+    if (filters.statusFilter && filters.statusFilter !== 'all') {
+      result = result.filter(receipt => receipt.status === filters.statusFilter);
+    }
+
+    if (filters.minAmount) {
+      const minVal = parseFloat(filters.minAmount);
+      if (!isNaN(minVal)) {
+        result = result.filter(receipt => parseFloat(receipt.total.toString()) >= minVal);
+      }
+    }
+
+    if (filters.maxAmount) {
+      const maxVal = parseFloat(filters.maxAmount);
+      if (!isNaN(maxVal)) {
+        result = result.filter(receipt => parseFloat(receipt.total.toString()) <= maxVal);
+      }
+    }
+
+    return result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [receipts, searchTerm, filters]);
+
+  const paginatedReceipts = React.useMemo(() => {
+    return filteredReceipts.slice(0, currentPage * ITEMS_PER_PAGE);
+  }, [filteredReceipts, currentPage]);
+
+  const hasMorePages = currentPage * ITEMS_PER_PAGE < filteredReceipts.length;
+
+  const loadMore = () => {
+    if (hasMorePages) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const handleViewImage = (receipt: ReceiptRecord) => {
+    if (!receipt.image_url) return;
+    
+    setImageModalData({
+      imageUrl: receipt.image_url,
+      fileName: receipt.image_url.split('/').pop() || 'receipt.jpg',
+      merchant: receipt.merchant,
+      merchantBrand: receipt.merchant_brand,
+      purchaseDate: receipt.purchase_date,
+      receiptId: receipt.id,
+      receiptUniqueNo: receipt.receipt_unique_no,
+      fisNo: receipt.fis_no,
+      barcodeNumbers: receipt.barcode_numbers
+    });
+    setImageModalOpen(true);
+  };
+
+  const getStatusBadge = (status: 'approved' | 'pending' | 'rejected') => {
+    switch (status) {
+      case 'approved':
+        return (
+          <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Onaylandı
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+            <Clock className="h-3 w-3 mr-1" />
+            Bekliyor
+          </Badge>
+        );
+      case 'rejected':
+        return (
+          <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100">
+            <XCircle className="h-3 w-3 mr-1" />
+            Reddedildi
+          </Badge>
+        );
+    }
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      dateRange: {},
+      merchantFilter: '',
+      statusFilter: '',
+      minAmount: '',
+      maxAmount: ''
+    });
+    setSearchTerm('');
+    setCurrentPage(1);
+  };
+
+  const hasActiveFilters = searchTerm || 
+    filters.dateRange.from || 
+    filters.dateRange.to ||
+    filters.merchantFilter ||
+    filters.statusFilter ||
+    filters.minAmount ||
+    filters.maxAmount;
 
   const getSourceIcon = (source: string) => {
     switch (source) {
@@ -471,8 +681,315 @@ const Profile: React.FC = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Receipt History Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="h-5 w-5" />
+                  Fiş Geçmişi
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowHistoryDetails(!showHistoryDetails)}
+                  className="flex items-center gap-1"
+                >
+                  {showHistoryDetails ? (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Gizle
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Detayları Göster
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Quick Stats */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Receipt className="h-4 w-4 text-primary" />
+                  </div>
+                  <p className="text-lg font-bold">{stats.totalReceipts}</p>
+                  <p className="text-xs text-muted-foreground">Toplam</p>
+                </div>
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  </div>
+                  <p className="text-lg font-bold text-green-600">{stats.approvedReceipts}</p>
+                  <p className="text-xs text-muted-foreground">Onaylı</p>
+                </div>
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Clock className="h-4 w-4 text-yellow-600" />
+                  </div>
+                  <p className="text-lg font-bold text-yellow-600">{stats.pendingReceipts}</p>
+                  <p className="text-xs text-muted-foreground">Bekleyen</p>
+                </div>
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Coins className="h-4 w-4 text-secondary" />
+                  </div>
+                  <p className="text-lg font-bold text-secondary">{stats.totalEarned}</p>
+                  <p className="text-xs text-muted-foreground">Toplam Puan</p>
+                </div>
+              </div>
+
+              {/* Detailed View */}
+              {showHistoryDetails && (
+                <div className="space-y-4 border-t pt-4">
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Fiş ara (mağaza veya ürün ismi)..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+
+                  {/* Filters */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowFilters(!showFilters)}
+                      className="flex items-center gap-2"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                      Filtreler
+                      {hasActiveFilters && (
+                        <Badge variant="secondary" className="ml-1">
+                          {[
+                            searchTerm && 'arama',
+                            filters.dateRange.from && 'tarih',
+                            filters.merchantFilter && 'mağaza',
+                            filters.statusFilter && 'durum',
+                            (filters.minAmount || filters.maxAmount) && 'tutar'
+                          ].filter(Boolean).length}
+                        </Badge>
+                      )}
+                    </Button>
+                    {hasActiveFilters && (
+                      <Button variant="ghost" size="sm" onClick={clearFilters}>
+                        <X className="h-4 w-4" />
+                        Temizle
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Advanced Filters Panel */}
+                  {showFilters && (
+                    <div className="p-4 border rounded-lg bg-muted/20 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Date Range */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Tarih Aralığı</label>
+                          <div className="flex gap-2">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" className="flex-1 justify-start text-left">
+                                  <CalendarIcon className="h-4 w-4 mr-2" />
+                                  {filters.dateRange.from ? format(filters.dateRange.from, 'dd/MM/yyyy') : 'Başlangıç'}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                  mode="single"
+                                  selected={filters.dateRange.from}
+                                  onSelect={(date) => setFilters(prev => ({
+                                    ...prev,
+                                    dateRange: { ...prev.dateRange, from: date }
+                                  }))}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" className="flex-1 justify-start text-left">
+                                  <CalendarIcon className="h-4 w-4 mr-2" />
+                                  {filters.dateRange.to ? format(filters.dateRange.to, 'dd/MM/yyyy') : 'Bitiş'}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                  mode="single"
+                                  selected={filters.dateRange.to}
+                                  onSelect={(date) => setFilters(prev => ({
+                                    ...prev,
+                                    dateRange: { ...prev.dateRange, to: date }
+                                  }))}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </div>
+
+                        {/* Merchant Filter */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Mağaza</label>
+                          <Select 
+                            value={filters.merchantFilter} 
+                            onValueChange={(value) => setFilters(prev => ({ ...prev, merchantFilter: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Tüm mağazalar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Tüm mağazalar</SelectItem>
+                              {uniqueMerchants.map(merchant => (
+                                <SelectItem key={merchant} value={merchant}>
+                                  {getCleanMerchantName(merchant)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Status Filter */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Durum</label>
+                          <Select 
+                            value={filters.statusFilter} 
+                            onValueChange={(value) => setFilters(prev => ({ ...prev, statusFilter: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Tüm durumlar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Tüm durumlar</SelectItem>
+                              <SelectItem value="approved">Onaylı</SelectItem>
+                              <SelectItem value="pending">Bekleyen</SelectItem>
+                              <SelectItem value="rejected">Reddedildi</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Amount Range */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Tutar Aralığı (₺)</label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Min"
+                              type="number"
+                              value={filters.minAmount}
+                              onChange={(e) => setFilters(prev => ({ ...prev, minAmount: e.target.value }))}
+                            />
+                            <Input
+                              placeholder="Max"
+                              type="number"
+                              value={filters.maxAmount}
+                              onChange={(e) => setFilters(prev => ({ ...prev, maxAmount: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Results */}
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {receiptsLoading ? (
+                      Array.from({ length: 3 }).map((_, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
+                          <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+                          <div className="flex-1">
+                            <div className="h-4 w-3/4 bg-muted rounded mb-1 animate-pulse" />
+                            <div className="h-3 w-1/2 bg-muted rounded animate-pulse" />
+                          </div>
+                          <div className="h-6 w-16 bg-muted rounded animate-pulse" />
+                        </div>
+                      ))
+                    ) : paginatedReceipts.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Receipt className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                        <p>Hiç fiş bulunamadı</p>
+                        <p className="text-xs mt-2">Fiş yükleyerek geçmiş oluşturmaya başlayın!</p>
+                      </div>
+                    ) : (
+                      <>
+                        {paginatedReceipts.map((receipt) => (
+                          <div key={receipt.id} className="flex items-center gap-3 p-3 border rounded-lg bg-muted/10">
+                            <Store className="h-4 w-4 text-primary" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="font-medium text-sm truncate">
+                                  {getCleanMerchantName(receipt.merchant_brand || receipt.merchant)}
+                                </p>
+                                {getStatusBadge(receipt.status)}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {formatTRY(receipt.total)} • {new Date(receipt.purchase_date).toLocaleDateString('tr-TR')}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">
+                                +{receipt.points}
+                              </Badge>
+                              {receipt.image_url && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleViewImage(receipt)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {hasMorePages && (
+                          <div className="text-center pt-4">
+                            <Button variant="outline" onClick={loadMore}>
+                              Daha Fazla Göster
+                            </Button>
+                          </div>
+                        )}
+                        
+                        {filteredReceipts.length > ITEMS_PER_PAGE && (
+                          <p className="text-xs text-center text-muted-foreground pt-2">
+                            {paginatedReceipts.length} / {filteredReceipts.length} fiş gösteriliyor
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {/* Image Modal */}
+      {imageModalData && (
+        <ReceiptImageModal
+          isOpen={imageModalOpen}
+          onClose={() => setImageModalOpen(false)}
+          imageUrl={imageModalData.imageUrl}
+          fileName={imageModalData.fileName}
+          merchant={imageModalData.merchant}
+          merchantBrand={imageModalData.merchantBrand}
+          purchaseDate={imageModalData.purchaseDate}
+          receiptId={imageModalData.receiptId}
+          receiptUniqueNo={imageModalData.receiptUniqueNo}
+          fisNo={imageModalData.fisNo}
+          barcodeNumbers={imageModalData.barcodeNumbers}
+        />
+      )}
     </div>
   );
 };

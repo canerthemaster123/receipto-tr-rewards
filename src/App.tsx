@@ -14,7 +14,6 @@ import AuthPage from "./pages/AuthPage";
 import AuthCallback from "./components/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import UploadReceipt from "./pages/UploadReceipt";
-import ReceiptHistory from "./pages/ReceiptHistory";
 import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
 import AdminHelp from "./pages/AdminHelp";
@@ -131,15 +130,7 @@ const App = () => (
               } 
             />
             <Route 
-              path="/history" 
-              element={
-                <ProtectedRoute>
-                  <ReceiptHistory />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/rewards" 
+              path="/rewards"
               element={
                 <ProtectedRoute>
                   <Rewards />

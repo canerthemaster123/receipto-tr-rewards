@@ -8,7 +8,6 @@ import LanguageSwitcher from './LanguageSwitcher';
 import { 
   Home, 
   Upload, 
-  History, 
   Gift, 
   User, 
   LogOut, 
@@ -39,7 +38,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navItems = [
     { path: '/dashboard', icon: Home, label: t('navigation.dashboard') },
     { path: '/upload', icon: Upload, label: t('navigation.upload') },
-    { path: '/history', icon: History, label: t('navigation.history') },
     { path: '/rewards', icon: Gift, label: t('navigation.rewards') },
     { path: '/leaderboard', icon: Crown, label: t('navigation.leaderboard') },
     { path: '/profile', icon: User, label: t('navigation.profile') },
