@@ -112,7 +112,10 @@ const UploadReceipt: React.FC = () => {
           upsert: true // Allow overwriting
         });
 
+      console.log('Upload result:', { uploadData, uploadError });
+
       if (uploadError) {
+        console.error('Upload error details:', uploadError);
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
@@ -121,7 +124,10 @@ const UploadReceipt: React.FC = () => {
         .from('receipts')
         .createSignedUrl(fileName, 60);
 
+      console.log('Signed URL result:', { signedData, signError });
+
       if (signError || !signedData?.signedUrl) {
+        console.error('Signed URL error:', signError);
         throw new Error(`Failed to create signed URL: ${signError?.message || 'unknown error'}`);
       }
 
@@ -221,6 +227,12 @@ const UploadReceipt: React.FC = () => {
 
     } catch (error) {
       console.error('OCR processing error:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        type: typeof error,
+        error: error
+      });
       
       // Fall back to manual entry
       setReceiptData({
@@ -437,6 +449,13 @@ const UploadReceipt: React.FC = () => {
       navigate('/dashboard');
     } catch (error) {
       console.error('Error submitting receipt:', error);
+      console.error('Submission error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        receiptData: receiptData,
+        user: user?.id
+      });
+      
       toast({
         title: t('toast.submissionFailed'),
         description: error instanceof Error ? error.message : t('toast.unexpectedError'),
