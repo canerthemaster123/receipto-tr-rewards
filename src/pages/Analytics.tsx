@@ -136,26 +136,35 @@ export default function Analytics() {
 
   const loadAvailableWeeks = async () => {
     if (!selectedChain) return;
-    
     try {
-      const { data, error } = await supabase
-        .from('period_geo_merchant_week')
-        .select('week_start')
-        .eq('chain_group', selectedChain)
-        .order('week_start', { ascending: false });
+      // Generate week starts from 2025-08-04 (Mon) up to current week's Monday
+      const start = new Date('2025-08-04T00:00:00Z');
+      const today = new Date();
 
-      if (error) throw error;
+      // Find current week's Monday in UTC
+      const lastMonday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const day = lastMonday.getUTCDay(); // Sun=0, Mon=1, ...
+      const diffToMonday = (day + 6) % 7; // 0 if Mon, 1 if Tue, ...
+      lastMonday.setUTCDate(lastMonday.getUTCDate() - diffToMonday);
+      lastMonday.setUTCHours(0, 0, 0, 0);
 
-      const uniqueWeeks = [...new Set(data.map(item => item.week_start))];
-      setAvailableWeeks(uniqueWeeks);
-      
-      // Auto-select most recent week if none selected
-      if (uniqueWeeks.length > 0 && !selectedWeek) {
-        setSelectedWeek(uniqueWeeks[0]);
+      const weeks: string[] = [];
+      const cursor = new Date(start);
+      while (cursor <= lastMonday) {
+        weeks.push(cursor.toISOString().slice(0, 10)); // YYYY-MM-DD
+        cursor.setUTCDate(cursor.getUTCDate() + 7);
+      }
+
+      weeks.reverse(); // Most recent first
+      setAvailableWeeks(weeks);
+
+      // Auto-select most recent week if none selected or selection is out of range
+      if (weeks.length > 0 && (!selectedWeek || !weeks.includes(selectedWeek))) {
+        setSelectedWeek(weeks[0]);
       }
     } catch (error) {
-      console.error('Error loading available weeks:', error);
-      toast.error('Hafta verileri yüklenemedi');
+      console.error('Error generating available weeks:', error);
+      toast.error('Hafta listesi oluşturulamadı');
     }
   };
 
