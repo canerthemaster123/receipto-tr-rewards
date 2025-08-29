@@ -26,16 +26,16 @@ export const RealtimeNotifications = () => {
           // Only show notification if status actually changed
           if (newRecord.status !== oldRecord.status) {
             if (newRecord.status === 'approved') {
-              toast.success('Receipt Approved!', {
-                description: `Your receipt from ${newRecord.merchant} has been approved. You earned ${newRecord.points} points!`,
+              toast.success('Fiş Onaylandı! ✅', {
+                description: `${newRecord.merchant} mağazasından fişiniz onaylandı. ${newRecord.points} puan kazandınız!`,
                 icon: <CheckCircle className="h-4 w-4" />,
-                duration: 5000,
+                duration: 6000,
               });
             } else if (newRecord.status === 'rejected') {
-              toast.error('Receipt Rejected', {
-                description: `Your receipt from ${newRecord.merchant} was rejected. Please contact support if you believe this is an error.`,
+              toast.error('Fiş Reddedildi ❌', {
+                description: `${newRecord.merchant} mağazasından fişiniz reddedildi. Hata olduğunu düşünüyorsanız destek ekibiyle iletişime geçin.`,
                 icon: <XCircle className="h-4 w-4" />,
-                duration: 5000,
+                duration: 6000,
               });
             }
           }
