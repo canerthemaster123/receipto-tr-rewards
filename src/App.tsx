@@ -19,7 +19,6 @@ import Rewards from "./pages/Rewards";
 import AdminPanel from "./pages/AdminPanel";
 import AdminHelp from "./pages/AdminHelp";
 import Profile from "./pages/Profile";
-import ReferralPage from "./pages/ReferralPage";
 import OCRDebugPage from "./pages/OCRDebugPage";
 import Settings from "./pages/Settings";
 import PointsHistory from "./pages/PointsHistory";
@@ -169,15 +168,7 @@ const App = () => (
               } 
             />
             <Route 
-              path="/referrals" 
-              element={
-                <ProtectedRoute>
-                  <ReferralPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/leaderboard" 
+              path="/leaderboard"
               element={
                 <ProtectedRoute>
                   <Leaderboard />

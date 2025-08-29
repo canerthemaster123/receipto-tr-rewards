@@ -11,7 +11,6 @@ import {
   History, 
   Gift, 
   User, 
-  Users,
   LogOut, 
   Receipt,
   Menu,
@@ -42,7 +41,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/upload', icon: Upload, label: t('navigation.upload') },
     { path: '/history', icon: History, label: t('navigation.history') },
     { path: '/rewards', icon: Gift, label: t('navigation.rewards') },
-    { path: '/referrals', icon: Users, label: t('navigation.referrals') },
     { path: '/leaderboard', icon: Crown, label: t('navigation.leaderboard') },
     { path: '/profile', icon: User, label: t('navigation.profile') },
     ...(isAdmin ? [{ path: '/admin', icon: Shield, label: t('navigation.admin') }] : [])

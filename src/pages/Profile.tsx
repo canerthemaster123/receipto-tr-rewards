@@ -8,7 +8,7 @@ import { Separator } from '../components/ui/separator';
 import { Badge } from '../components/ui/badge';
 import { useUserRole } from '../hooks/useUserRole';
 import { usePointsLedger } from '../hooks/usePointsLedger';
-import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp } from 'lucide-react';
+import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp, Users, Gift, UserPlus, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -22,6 +22,17 @@ interface PointsLedgerEntry {
   meta: any;
 }
 
+interface ReferralData {
+  id: string;
+  referrer_id: string;
+  referred_id: string;
+  created_at: string;
+  points_awarded: number;
+  referred_user: {
+    display_name: string;
+  };
+}
+
 const Profile: React.FC = () => {
   const { user, userProfile } = useAuth();
   const { userRole, isLoading: roleLoading } = useUserRole();
@@ -29,6 +40,62 @@ const Profile: React.FC = () => {
   const { toast } = useToast();
   const [displayName, setDisplayName] = useState(userProfile?.display_name || '');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showReferralDetails, setShowReferralDetails] = useState(false);
+  const [myReferrals, setMyReferrals] = useState<ReferralData[]>([]);
+  const [referralStats, setReferralStats] = useState({ totalReferred: 0, totalEarned: 0 });
+
+  useEffect(() => {
+    if (user && showReferralDetails) {
+      fetchReferralData();
+    }
+  }, [user, showReferralDetails]);
+
+  const fetchReferralData = async () => {
+    if (!user) return;
+
+    try {
+      // Fetch referrals where current user is the referrer
+      const { data: referrals, error } = await supabase
+        .from('referrals')
+        .select(`
+          id,
+          referrer_id,
+          referred_id,
+          created_at,
+          points_awarded
+        `)
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Get referred users' names
+      if (referrals && referrals.length > 0) {
+        const referredIds = referrals.map(r => r.referred_id);
+        const { data: users } = await supabase
+          .from('users_profile')
+          .select('id, display_name')
+          .in('id', referredIds);
+
+        const userMap = new Map(users?.map(u => [u.id, u.display_name]) || []);
+
+        const referralsWithNames = referrals.map(ref => ({
+          ...ref,
+          referred_user: {
+            display_name: userMap.get(ref.referred_id) || 'Unknown User'
+          }
+        }));
+
+        setMyReferrals(referralsWithNames);
+        setReferralStats({
+          totalReferred: referrals.length,
+          totalEarned: referrals.reduce((sum, r) => sum + r.points_awarded, 0)
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching referral data:', error);
+    }
+  };
 
   const getSourceIcon = (source: string) => {
     switch (source) {
@@ -215,14 +282,63 @@ const Profile: React.FC = () => {
              </CardContent>
            </Card>
 
-          {/* Referral Code */}
+          {/* Referral Section */}
           <Card>
             <CardHeader>
-              <CardTitle>Referral Program</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Davetler
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReferralDetails(!showReferralDetails)}
+                  className="flex items-center gap-1"
+                >
+                  {showReferralDetails ? (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Gizle
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Detayları Göster
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Quick Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                  <p className="text-lg font-bold">{referralStats.totalReferred}</p>
+                  <p className="text-xs text-muted-foreground">Davet Edilen</p>
+                </div>
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Award className="h-4 w-4 text-secondary" />
+                  </div>
+                  <p className="text-lg font-bold">{referralStats.totalEarned}</p>
+                  <p className="text-xs text-muted-foreground">Kazanılan Puan</p>
+                </div>
+                <div className="text-center p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-center mb-1">
+                    <Gift className="h-4 w-4 text-accent" />
+                  </div>
+                  <p className="text-lg font-bold">200</p>
+                  <p className="text-xs text-muted-foreground">Puan/Davet</p>
+                </div>
+              </div>
+
+              {/* Referral Code */}
               <div className="space-y-2">
-                <Label>Your Referral Code</Label>
+                <Label>Davet Kodunuz</Label>
                 <div className="flex gap-2">
                   <Input 
                     value={userProfile?.referral_code || ''} 
@@ -241,10 +357,50 @@ const Profile: React.FC = () => {
                 </div>
               </div>
               
-              <p className="text-sm text-muted-foreground">
-                Share your referral code to earn 200 points when someone signs up using it. 
-                They'll also get 200 points!
-              </p>
+              <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Nasıl çalışır:</strong> Davet kodunuzu arkadaşlarınızla paylaşın. 
+                  Kodunuzla kayıt olduklarında hem siz hem de onlar 200 puan kazanırsınız!
+                </p>
+              </div>
+
+              {/* Detailed View */}
+              {showReferralDetails && (
+                <div className="space-y-4 border-t pt-4">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <UserPlus className="h-4 w-4" />
+                    Davet Ettikleriniz
+                  </h4>
+                  
+                  {myReferrals.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Henüz kimseyi davet etmediniz</p>
+                      <p className="text-xs mt-1">Kodunuzu paylaşarak puan kazanmaya başlayın!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {myReferrals.map((referral) => (
+                        <div key={referral.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                          <div>
+                            <p className="font-medium text-sm">{referral.referred_user.display_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(referral.created_at).toLocaleDateString('tr-TR', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">
+                            +{referral.points_awarded}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
