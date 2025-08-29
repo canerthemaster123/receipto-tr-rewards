@@ -8,8 +8,8 @@ import { Separator } from '../components/ui/separator';
 import { Badge } from '../components/ui/badge';
 import { useUserRole } from '../hooks/useUserRole';
 import { usePointsLedger } from '../hooks/usePointsLedger';
-import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp, Users, Gift, UserPlus, ChevronDown, ChevronUp, Receipt, Search, Filter, CheckCircle, XCircle, Calendar as CalendarIcon, Store, Coins, Eye, SlidersHorizontal, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Copy, User, Award, Shield, HelpCircle, Clock, TrendingUp, Users, Gift, UserPlus, ChevronDown, ChevronUp, Receipt, Search, Filter, CheckCircle, XCircle, Calendar as CalendarIcon, Store, Coins, Eye, SlidersHorizontal, X, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
 import { useReceiptData } from '../hooks/useReceiptData';
 import { supabase } from '@/integrations/supabase/client';
@@ -75,11 +75,12 @@ interface AdvancedFilters {
 const ITEMS_PER_PAGE = 20;
 
 const Profile: React.FC = () => {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, logout } = useAuth();
   const { userRole, isLoading: roleLoading } = useUserRole();
   const { entries: pointsHistory, totalPoints, loading: isLoadingHistory } = usePointsLedger();
   const { receipts, loading: receiptsLoading, stats } = useReceiptData();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [displayName, setDisplayName] = useState(userProfile?.display_name || '');
   const [isUpdating, setIsUpdating] = useState(false);
   const [showReferralDetails, setShowReferralDetails] = useState(false);
@@ -969,6 +970,23 @@ const Profile: React.FC = () => {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Logout Section */}
+          <Card>
+            <CardContent className="pt-6">
+              <Button 
+                onClick={() => {
+                  logout();
+                  navigate('/auth');
+                }}
+                variant="destructive"
+                className="w-full flex items-center gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Çıkış Yap
+              </Button>
             </CardContent>
           </Card>
         </div>

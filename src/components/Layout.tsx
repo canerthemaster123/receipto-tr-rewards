@@ -100,31 +100,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {/* Desktop Right Section */}
             <div className="hidden md:flex items-center gap-2 lg:gap-4">
               <LanguageSwitcher />
-              
-              <div className="hidden lg:flex items-center gap-2">
-                <div className="text-right">
-                  <p className="text-sm font-medium">
-                    {userProfile?.display_name || user.email}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {userProfile?.total_points || 0} points
-                  </p>
-                </div>
-                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                  <User className="h-4 w-4 text-primary" />
-                </div>
-              </div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleLogout}
-                className="text-muted-foreground hover:text-foreground"
-                data-testid="logout-button"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden lg:ml-2 lg:block">{t('common.logout')}</span>
-              </Button>
             </div>
 
             {/* Mobile Menu Button */}
@@ -149,21 +124,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {mobileMenuOpen && (
             <div className="md:hidden border-t border-border bg-white">
               <div className="px-2 pt-2 pb-3 space-y-1">
-                {/* User Info */}
-                <div className="flex items-center gap-3 px-3 py-2 mb-3 bg-muted/30 rounded-lg">
-                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                    <User className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {userProfile?.display_name || user.email}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {userProfile?.total_points || 0} points
-                    </p>
-                  </div>
-                </div>
-
                 {/* Navigation Items */}
                 {navItems.map((item) => {
                   const Icon = item.icon;
@@ -189,18 +149,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="px-3 py-2">
                   <LanguageSwitcher />
                 </div>
-
-                {/* Logout Button */}
-                <button
-                  onClick={() => {
-                    handleLogout();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
-                >
-                  <LogOut className="h-4 w-4" />
-                  {t('common.logout')}
-                </button>
               </div>
             </div>
           )}
