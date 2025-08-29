@@ -170,6 +170,7 @@ export type Database = {
           completed: boolean
           completed_at: string | null
           id: string
+          meta: Json | null
           progress: number
           user_id: string
         }
@@ -178,6 +179,7 @@ export type Database = {
           completed?: boolean
           completed_at?: string | null
           id?: string
+          meta?: Json | null
           progress?: number
           user_id: string
         }
@@ -186,6 +188,7 @@ export type Database = {
           completed?: boolean
           completed_at?: string | null
           id?: string
+          meta?: Json | null
           progress?: number
           user_id?: string
         }
@@ -875,6 +878,10 @@ export type Database = {
       build_leaderboard_snapshot: {
         Args: { p_end_date: string; p_period_key: string; p_start_date: string }
         Returns: undefined
+      }
+      claim_challenge_reward: {
+        Args: { p_challenge_id: string }
+        Returns: Json
       }
       cleanup_throttle_records: {
         Args: Record<PropertyKey, never>
