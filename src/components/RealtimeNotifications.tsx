@@ -92,6 +92,36 @@ export const RealtimeNotifications = () => {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'challenge_progress',
+          filter: `user_id=eq.${user.id}`
+        },
+        async (payload) => {
+          const { new: newProgress, old: oldProgress } = payload;
+          
+          // Only notify when challenge is newly completed
+          if (newProgress.completed && !oldProgress.completed) {
+            // Fetch challenge details
+            const { data: challengeData } = await supabase
+              .from('challenges')
+              .select('title_tr, title_en, reward_points')
+              .eq('id', newProgress.challenge_id)
+              .single();
+            
+            if (challengeData) {
+              toast.success('🎯 Görev Tamamlandı!', {
+                description: `"${challengeData.title_tr}" görevini başarıyla tamamladınız! Meydan Okumalar bölümünden ${challengeData.reward_points} puanınızı alabilirsiniz.`,
+                icon: <Award className="h-4 w-4" />,
+                duration: 8000,
+              });
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => {
