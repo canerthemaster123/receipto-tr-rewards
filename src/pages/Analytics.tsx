@@ -46,6 +46,8 @@ export default function Analytics() {
   const [report, setReport] = useState<InsightBundle | null>(null);
   const [chainGroups, setChainGroups] = useState<string[]>([]);
   const [selectedChain, setSelectedChain] = useState<string>('');
+  const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
+  const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [rollupsLoading, setRollupsLoading] = useState(false);
   const [seedLoading, setSeedLoading] = useState(false);
@@ -63,10 +65,16 @@ export default function Analytics() {
 
   useEffect(() => {
     if (selectedChain) {
+      loadAvailableWeeks();
+    }
+  }, [selectedChain]);
+
+  useEffect(() => {
+    if (selectedChain && selectedWeek) {
       loadReport();
       // Don't auto-load AI analysis anymore
     }
-  }, [selectedChain]);
+  }, [selectedChain, selectedWeek]);
 
   useEffect(() => {
     (async () => {
@@ -126,8 +134,33 @@ export default function Analytics() {
     }
   };
 
-  const loadReport = async () => {
+  const loadAvailableWeeks = async () => {
     if (!selectedChain) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('period_geo_merchant_week')
+        .select('week_start')
+        .eq('chain_group', selectedChain)
+        .order('week_start', { ascending: false });
+
+      if (error) throw error;
+
+      const uniqueWeeks = [...new Set(data.map(item => item.week_start))];
+      setAvailableWeeks(uniqueWeeks);
+      
+      // Auto-select most recent week if none selected
+      if (uniqueWeeks.length > 0 && !selectedWeek) {
+        setSelectedWeek(uniqueWeeks[0]);
+      }
+    } catch (error) {
+      console.error('Error loading available weeks:', error);
+      toast.error('Hafta verileri yüklenemedi');
+    }
+  };
+
+  const loadReport = async () => {
+    if (!selectedChain || !selectedWeek) return;
     
     setLoading(true);
     try {
@@ -135,7 +168,10 @@ export default function Analytics() {
       if (!session.session) throw new Error('Not authenticated');
 
       const response = await supabase.functions.invoke('reports', {
-        body: { chain_group: selectedChain }
+        body: { 
+          chain_group: selectedChain,
+          week_start: selectedWeek
+        }
       });
 
       if (response.error) throw response.error;
@@ -154,7 +190,7 @@ export default function Analytics() {
   };
 
   const loadAIAnalysis = async () => {
-    if (!selectedChain) return;
+    if (!selectedChain || !selectedWeek) return;
     
     setAnalysisLoading(true);
     try {
@@ -162,7 +198,10 @@ export default function Analytics() {
       if (!session.session) throw new Error('Not authenticated');
 
       const response = await supabase.functions.invoke('market-analysis', {
-        body: { chain_group: selectedChain }
+        body: { 
+          chain_group: selectedChain,
+          week_start: selectedWeek
+        }
       });
 
       if (response.error) throw response.error;
@@ -189,6 +228,7 @@ export default function Analytics() {
 
       toast.success('Weekly rollups completed successfully');
       if (selectedChain) {
+        await loadAvailableWeeks(); // Refresh weeks
         await loadReport(); // Refresh current report
       }
     } catch (error) {
@@ -214,6 +254,7 @@ export default function Analytics() {
       if (!selectedChain) {
         setSelectedChain('Migros'); // Default after seeding
       } else {
+        await loadAvailableWeeks();
         await loadReport(); // Refresh current report
       }
     } catch (error) {
@@ -271,7 +312,10 @@ export default function Analytics() {
 
       toast.success('Veriler sıfırlandı ve test verisi eklendi');
       await loadChainGroups();
-      if (selectedChain) await loadReport();
+      if (selectedChain) {
+        await loadAvailableWeeks();
+        await loadReport();
+      }
     } catch (error) {
       console.error('Reset+Seed error:', error);
       toast.error('Sıfırlama/seed işlemi başarısız');
@@ -404,6 +448,21 @@ export default function Analytics() {
                   {chainGroups.map(chain => (
                     <SelectItem key={chain} value={chain} className="hover:bg-accent">
                       {chain}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium mb-2 block">Hafta Seçin</label>
+              <Select value={selectedWeek} onValueChange={setSelectedWeek} disabled={!selectedChain || availableWeeks.length === 0}>
+                <SelectTrigger className="bg-background border-border">
+                  <SelectValue placeholder="Hafta seçin" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border-border z-50">
+                  {availableWeeks.map(week => (
+                    <SelectItem key={week} value={week} className="hover:bg-accent">
+                      {new Date(week).toLocaleDateString('tr-TR')} haftası
                     </SelectItem>
                   ))}
                 </SelectContent>
