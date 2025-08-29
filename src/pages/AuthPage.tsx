@@ -5,7 +5,7 @@ import { Button } from '../components/ui/enhanced-button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Receipt, Mail, Lock, User, Loader2, UserPlus, X, Calendar, Phone, MapPin, Users } from 'lucide-react';
+import { Receipt, Mail, Lock, User, Loader2, UserPlus, X, Calendar, Phone, MapPin, Users, ArrowLeft } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { supabase } from '../integrations/supabase/client';
 import { getSiteUrl } from '@/lib/siteUrl';
@@ -297,9 +297,21 @@ const AuthPage: React.FC = () => {
         {/* Auth Form */}
         <Card className="bg-white/95 backdrop-blur-sm border-white/20 shadow-elegant">
           <CardHeader>
-            <CardTitle className="text-2xl text-center">
-              {isLogin ? 'Welcome Back' : 'Create Account'}
-            </CardTitle>
+            <div className="flex items-center justify-center relative">
+              {!isLogin && (
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  className="absolute left-0 p-2 hover:bg-accent rounded-full transition-colors"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+              )}
+              <CardTitle className="text-2xl text-center">
+                {isLogin ? 'Welcome Back' : 'Create Account'}
+              </CardTitle>
+            </div>
             <CardDescription className="text-center">
               {isLogin 
                 ? 'Sign in to start earning rewards' 
