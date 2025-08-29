@@ -26,6 +26,11 @@ const AuthPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const handleBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/');
+  };
+
   // Check if in iframe and show banner
   useEffect(() => {
     if (window.self !== window.top) {
@@ -301,7 +306,7 @@ const AuthPage: React.FC = () => {
               {!isLogin && (
                 <button
                   type="button"
-                  onClick={() => navigate(-1)}
+                  onClick={handleBack}
                   className="absolute left-0 p-2 hover:bg-accent rounded-full transition-colors"
                   aria-label="Go back"
                 >
