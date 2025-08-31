@@ -617,16 +617,35 @@ function parseReceiptText(rawText: string): any {
   );
   const merchantLine = merchantIdx >= 0 ? lines[merchantIdx] : lines[0];
   
+  // Enhanced Turkish retail parsing with Migros focus
   const merchantName = merchantLine ? merchantLine.trim() : 'Unknown';
-  // Prefer chain group name
+  
+  // Enhanced chain detection with specific patterns
   const merchantDisplay = (() => {
-    if (formatDetection.format !== 'Unknown') {
-      return formatDetection.format === 'BIM' ? 'BİM' : formatDetection.format;
+    const text = normalizedText.toLowerCase();
+    
+    // Migros detection (priority patterns)
+    if (text.includes('m*gros') || text.includes('migros') || 
+        text.includes('e-arşiv faturasina') || text.includes('ortak pos') ||
+        text.includes('mersis no: 062') || text.includes('müşteri tckn')) {
+      return 'Migros';
     }
-    if (/carrefour/i.test(merchantName)) return 'CarrefourSA';
-    if (/b[iİ]m/i.test(merchantName)) return 'BİM';
-    if (/migros|mi̇gros/i.test(merchantName)) return 'Migros';
-    return merchantName;
+    
+    // BIM detection
+    if (text.includes('bim birleşik mağazalar') || text.includes('ettn') ||
+        text.includes('ödenecek kdv dahil tutar') || /b[iİ]m/i.test(merchantName)) {
+      return 'BİM';
+    }
+    
+    // CarrefourSA detection
+    if (text.includes('carrefoursa') || text.includes('carrefour') || 
+        /carrefour/i.test(merchantName)) {
+      return 'CarrefourSA';
+    }
+    
+    return formatDetection.format !== 'Unknown' ? 
+      (formatDetection.format === 'BIM' ? 'BİM' : formatDetection.format) : 
+      merchantName;
   })();
   
   const addressLines = lines.filter(line => 
@@ -635,24 +654,37 @@ function parseReceiptText(rawText: string): any {
   const addressFull = addressLines.join(' ');
   const addressParsed = parseAddress(addressFull);
   
-  // Extract receipt details
-  // Extract purchase date/time with format-aware logic
+  // Enhanced date/time extraction with Turkish format priority
   let receiptDate: string | null = null;
   let receiptTime: string | null = null;
 
-  if (formatDetection.format === 'CarrefourSA') {
+  // Migros-specific date/time extraction
+  if (merchantDisplay === 'Migros') {
+    // Look for "TARİH:" pattern specifically
+    const dateMatch = normalizedText.match(/TARİH[:.\s]*(\d{2}\/\d{2}\/\d{4})/i);
+    if (dateMatch) {
+      const [day, month, year] = dateMatch[1].split('/');
+      receiptDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    // Look for "SAAT:" pattern specifically  
+    const timeMatch = normalizedText.match(/SAAT[:.\s]*([01]?\d|2[0-3]):[0-5]\d/i);
+    if (timeMatch) {
+      receiptTime = timeMatch[1];
+    }
+  }
+
+  // CarrefourSA format handling (existing logic)
+  if (formatDetection.format === 'CarrefourSA' && !receiptDate) {
     const alphaLines = lines.map(l => alphaNormalize(l));
     const idxDate = alphaLines.findIndex(l => /\btari[h]?\b/i.test(l));
     if (idxDate !== -1) {
-      // Date is next to 'TARİH'
       receiptDate = extractDate(lines[idxDate]) || extractDate(lines[idxDate + 1] || '') || null;
-      // Time is usually on the next line with 'SAAT'
       const relativeSaatIdx = alphaLines.slice(idxDate, idxDate + 4).findIndex(l => /\bsaat\b/i.test(l));
       if (relativeSaatIdx !== -1) {
         const saatIdx = idxDate + relativeSaatIdx;
         receiptTime = extractTime(lines[saatIdx]) || extractTime(lines[saatIdx + 1] || '') || null;
       } else {
-        // Fallback: search in the next two lines
         receiptTime = extractTime(lines[idxDate]) || extractTime(lines[idxDate + 1] || '') || extractTime(lines[idxDate + 2] || '') || null;
       }
     }
@@ -668,9 +700,22 @@ function parseReceiptText(rawText: string): any {
     receiptTime = extractTime(timeText);
   }
   
-  // Extract receipt number
-  const receiptNoMatch = normalizedText.match(/(?:fiş|fis|no|belge)\s*[:=]?\s*([a-z0-9\-\/]{4,})/i);
-  const receiptNo = receiptNoMatch ? receiptNoMatch[1] : null;
+  // Enhanced receipt number extraction with Migros pattern
+  let receiptNo: string | null = null;
+  
+  if (merchantDisplay === 'Migros') {
+    // Look for "FİŞ NO:" pattern specifically
+    const migrosFisMatch = normalizedText.match(/FİŞ\s*NO\s*[:\-]?\s*([0-9A-Za-z]+)/i);
+    if (migrosFisMatch) {
+      receiptNo = migrosFisMatch[1];
+    }
+  }
+  
+  // Fallback to general pattern
+  if (!receiptNo) {
+    const receiptNoMatch = normalizedText.match(/(?:fiş|fis|no|belge)\s*[:=]?\s*([a-z0-9\-\/]{4,})/i);
+    receiptNo = receiptNoMatch ? receiptNoMatch[1] : null;
+  }
   
   // Extract payment method and masked PAN (Carrefour/BİM variations)
   const panRegexes = [
