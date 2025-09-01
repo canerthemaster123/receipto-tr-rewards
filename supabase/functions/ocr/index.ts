@@ -120,9 +120,9 @@ function extractTime(text: string): string | null {
     /(\d{1,2}):(\d{2})/,           // Standard HH:MM
     /(\d{1,2});(\d{2})/,           // OCR may confuse : with ;
     /(\d{1,2})\.(\d{2})/,          // OCR may confuse : with .
-    /SAAT[:.\s]*(\d{1,2}):(\d{2})/i, // Migros specific pattern
-    /SAAT[:.\s]*(\d{1,2});(\d{2})/i, // Migros with OCR error
-    /SAAT[:.\s]*(\d{1,2})\.(\d{2})/i  // Migros with OCR error
+    /SAAT[:.:\s]*(\d{1,2}):(\d{2})/i, // Migros specific pattern
+    /SAAT[:.:\s]*(\d{1,2});(\d{2})/i, // Migros with OCR error
+    /SAAT[:.:\s]*(\d{1,2})\.(\d{2})/i  // Migros with OCR error
   ];
   
   for (const pattern of patterns) {
@@ -239,57 +239,248 @@ function detectFormat(text: string): { format: string; confidence: number } {
 }
 
 /**
- * Parse items from receipt lines based on format - Enhanced for Migros v2
+ * Enhanced Migros V3 parsing for products and handling discounts correctly
+ */
+function migrosParseV3(rawText: string): any {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const items: any[] = [];
+  const discounts: any[] = [];
+  
+  // Helper function to normalize prices
+  const toNumber = (s: string): number => {
+    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  };
+  
+  // 1. Product section detection - more conservative approach
+  let productStart = -1;
+  let productEnd = lines.length;
+  
+  // Find start after key anchors but don't get stuck on document codes
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].toLowerCase();
+    
+    // Start markers
+    if (line.includes('müşteri tckn') || line.includes('tarih:') || line.includes('saat:')) {
+      productStart = i;
+      break;
+    }
+    
+    // If we see a document code (#600208...), skip it but don't stop
+    if (/^\s*#\d{10,}\s*$/.test(lines[i])) {
+      productStart = i;
+      continue;
+    }
+  }
+  
+  // Find end before totals section
+  for (let i = productStart + 1; i < lines.length; i++) {
+    const line = lines[i].toLowerCase();
+    if (line.match(/^(topkdv|kdv|ara toplam|genel toplam|toplam tutar|toplam|satiş|satis)$/)) {
+      productEnd = i;
+      break;
+    }
+  }
+  
+  // 2. Noise patterns (exclude from products but don't stop parsing)
+  const noisePatterns = [
+    /^\s*(bilgi fiş|tür:?\s*e-arşiv|müşteri tckn|fiş no|tarih|saat|kasa|kasiyer)/i,
+    /^\s*(jetkasa|ortak pos|mersis|e-arşiv faturasina|http|www|tel:)/i,
+    /^\s*(ara toplam|topkdv|genel toplam|toplam tutar|satiş|satis|ref no|onay kodu)/i,
+    /^\s*(işyeri id|terminal|bu belgeye istinadne|irsaliye yerine geçer)/i,
+    /^\s*#\d{10,}\s*$/i, // Document codes - skip but continue
+    /^\s*(tutar ind\.|tutar indirim|indirimler?|kocailem|money)\b/i,
+    /^\s*(txw|bbsm|absm|l2ek|kvdev|joand|ha dtml|rmeyen kutularda sak|sea)\s*$/i
+  ];
+  
+  // 3. Parse products in the detected window
+  for (let i = productStart + 1; i < productEnd; i++) {
+    const line = lines[i];
+    if (!line) continue;
+    
+    // Skip noise patterns
+    const isNoise = noisePatterns.some(pattern => pattern.test(line));
+    if (isNoise) {
+      if (/^\s*#\d{10,}\s*$/.test(line)) {
+        console.log(`Skipping document code but continuing: ${line}`);
+      }
+      continue;
+    }
+    
+    // Must have letters and price pattern for products
+    if (!/[A-ZÇĞİÖŞÜa-zçğıöşü]/.test(line)) continue;
+    if (!/\d+[.,]\d{2}/.test(line)) continue;
+    
+    let item = null;
+    
+    // 3.1 Weight-based items (KG format)
+    const weightMatch1 = line.match(/^(.+?)\s+(\d+[.,]\d{1,3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2})\s*TL\/KG\s*=\s*(\d{1,4}[.,]\d{2})$/i);
+    if (weightMatch1) {
+      const [, name, qty, unit, total] = weightMatch1;
+      item = {
+        name: name.trim(),
+        quantity: `${qty} KG`,
+        unit_price: toNumber(unit),
+        line_total: toNumber(total)
+      };
+    }
+    
+    // Alternative weight format
+    if (!item) {
+      const weightMatch2 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{1,3})\s*x\s*(\d{1,4}[.,]\d{2}).*=\s*(\d{1,4}[.,]\d{2})$/i);
+      if (weightMatch2) {
+        const [, name, qty, unit, total] = weightMatch2;
+        item = {
+          name: name.trim(),
+          quantity: `${qty} KG`,
+          unit_price: toNumber(unit),
+          line_total: toNumber(total)
+        };
+      }
+    }
+    
+    // 3.2 Regular items with quantity (x1, x2, etc.)
+    if (!item) {
+      const qtyMatch = line.match(/^(.+?)\s+x(\d+)\s+(\d{1,4}[.,]\d{2})$/i);
+      if (qtyMatch) {
+        const [, name, qty, price] = qtyMatch;
+        const quantity = parseInt(qty);
+        const lineTotal = toNumber(price);
+        item = {
+          name: name.trim(),
+          quantity: `x${qty}`,
+          unit_price: quantity > 0 ? lineTotal / quantity : lineTotal,
+          line_total: lineTotal
+        };
+      }
+    }
+    
+    // 3.3 Simple items (name and price)
+    if (!item) {
+      const simpleMatch = line.match(/^(.+?)\s+(\d{1,4}[.,]\d{2})$/);
+      if (simpleMatch) {
+        const [, name, price] = simpleMatch;
+        if (name.length > 3 && /[A-ZÇĞİÖŞÜa-zçğıöşü]/.test(name)) {
+          item = {
+            name: name.trim(),
+            quantity: 'x1',
+            unit_price: toNumber(price),
+            line_total: toNumber(price)
+          };
+        }
+      }
+    }
+    
+    // Clean and validate item
+    if (item && item.name && item.line_total > 0) {
+      // Clean product name
+      item.name = item.name
+        .replace(/\s*%\d+\s*$/g, '') // Remove VAT percentages
+        .replace(/\s*kdv\w*\s*$/gi, '') // Remove KDV suffixes
+        .replace(/\s*x\d+\s*$/g, '') // Remove quantity remnants
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      // Exclude discount lines disguised as products
+      if (!/^(indirim|tutar ind|kocailem|money)/i.test(item.name)) {
+        items.push(item);
+      }
+    }
+  }
+  
+  // 4. Parse discounts (separate from products)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Discount patterns
+    const discountMatch = line.match(/^\s*(tutar\s*ind\.?|tutar\s*indirim|indirimler?|kocailem)\b.*?(\d+[.,]\d{2})/i);
+    if (discountMatch) {
+      let amount = toNumber(discountMatch[2]);
+      // Store as negative for discounts
+      if (amount > 0) {
+        discounts.push({
+          label: discountMatch[1].trim(),
+          amount: `-${amount.toFixed(2).replace('.', ',')}`
+        });
+      }
+    }
+  }
+  
+  // 5. Calculate totals - real paid amount
+  const itemsSum = items.reduce((sum, item) => sum + item.line_total, 0);
+  const discountSum = discounts.reduce((sum, disc) => sum + Math.abs(toNumber(disc.amount)), 0);
+  const grandTotal = itemsSum - discountSum;
+  
+  // 6. Extract time in HH:MM format
+  let timeFormatted = null;
+  for (const line of lines) {
+    const timeMatch = line.match(/saat:\s*(\d{1,2}):(\d{2})/i);
+    if (timeMatch) {
+      timeFormatted = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+      break;
+    }
+  }
+  
+  // 7. Extract clean address (remove phone numbers)
+  let addressClean = '';
+  for (const line of lines) {
+    if (line.includes('MERKEZ ADRESİ:')) {
+      addressClean = line.replace(/.*MERKEZ ADRESİ:\s*/, '')
+        .replace(/\s*TEL.*$/, '')
+        .replace(/\d{4}\s*\d{3}\s*\d{2}\s*\d{2}/, '')
+        .replace(/0\(\d{3}\)\s*\d{3}\s*\d{2}\s*\d{2}/, '')
+        .trim();
+      break;
+    }
+  }
+  
+  return {
+    items,
+    discounts,
+    grand_total: grandTotal.toFixed(2).replace('.', ','),
+    vat_total: null, // Will be extracted separately if needed
+    time: timeFormatted,
+    store_address: addressClean,
+    items_count: items.length,
+    discount_total: discountSum.toFixed(2).replace('.', ','),
+    sum_items: itemsSum.toFixed(2).replace('.', ','),
+    delta: Math.abs(grandTotal - itemsSum + discountSum).toFixed(2),
+    warnings: items.length === 0 ? ['NO_PRODUCTS_FOUND'] : []
+  };
+}
+
+/**
+ * Parse items from receipt lines based on format - Now calls migrosParseV3 for Migros
  */
 function parseItems(lines: string[], format: string): any[] {
+  // Use new Migros V3 parser for Migros receipts
+  if (format === 'Migros') {
+    const migrosResult = migrosParseV3(lines.join('\n'));
+    return migrosResult.items.map((item: any) => ({
+      name: item.name,
+      qty: item.quantity === 'x1' ? 1 : item.quantity,
+      unit_price: item.unit_price,
+      line_total: item.line_total,
+      raw_line: `${item.name} ${item.quantity} ${item.line_total}`,
+      product_code: null
+    }));
+  }
+
+  // Existing logic for BIM and CarrefourSA (unchanged)
   const items: any[] = [];
   let startIndex = -1;
   let endIndex = lines.length;
 
-  // Format-specific item extraction
   if (format === 'BIM') {
-    // BIM: between 'NIHAI TUKETİCİ' and 'Toplam KDV'
     startIndex = lines.findIndex(line => /nihai\s*tuketi[çc]i/i.test(alphaNormalize(line)));
     endIndex = lines.findIndex(line => /toplam\s*kdv/i.test(alphaNormalize(line)));
   } else if (format === 'CarrefourSA') {
-    // Carrefour: between 'FİŞ NO' and 'TOPKDV'
     startIndex = lines.findIndex(line => /fi[şs]\s*no/i.test(alphaNormalize(line)));
     endIndex = lines.findIndex(line => /topkdv/i.test(alphaNormalize(line)));
-  } else if (format === 'Migros') {
-    // Migros: Enhanced section detection - look for start anchors
-    const alphaLines = lines.map(l => alphaNormalize(l));
-    
-    // Start after TCKN or date or document code
-    let idxTckn = alphaLines.findIndex(line => /m[uü]şter[iİ]\s*tckn/i.test(line));
-    let idxDate = alphaLines.findIndex(line => /\btari[h]?\b/i.test(line));
-    let idxDocCode = alphaLines.findIndex(line => /^\s*#\d{10,}\s*$/i.test(line));
-    
-    // Prefer TCKN, then doc code, then date
-    if (idxTckn !== -1) {
-      startIndex = idxTckn;
-    } else if (idxDocCode !== -1) {
-      startIndex = idxDocCode;
-    } else if (idxDate !== -1) {
-      startIndex = idxDate;
-    }
-    
-    // Find end: before TUTAR İND/TOPKDV/TOPLAM block
-    const endCandidates = [
-      alphaLines.findIndex(line => /tutar\s*[iİ]nd/i.test(line)),
-      alphaLines.findIndex(line => /ara\s*toplam/i.test(line)),
-      alphaLines.findIndex(line => /topkdv/i.test(line)),
-      alphaLines.findIndex(line => /\btoplam\b/i.test(line) && !/ara\s*toplam/i.test(line))
-    ].filter(i => i !== -1) as number[];
-    
-    if (endCandidates.length > 0) {
-      endIndex = Math.min(...endCandidates);
-    }
   }
 
   if (startIndex === -1) startIndex = 0;
   if (endIndex === -1) endIndex = lines.length;
 
-  // Enhanced Migros noise filtering and product parsing
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -297,156 +488,40 @@ function parseItems(lines: string[], format: string): any[] {
     const alphaLine = alphaNormalize(line);
     const rawLower = line.toLowerCase();
 
-    // MIGROS V2: Comprehensive noise filtering
-    if (format === 'Migros') {
-      // Enhanced non-item patterns - expanded for better filtering
-      const migrosNonItemPatterns = [
-        // Header and document info
-        /^\s*(b[iİ]lg[iİ]\s*f[iİ]ş[iİ]|t[uü]r:?\s*e-?arş[iİ]v\s*fatura)\s*$/i,
-        /^\s*(e-arş[iİ]v\s*faturasina|bu\s*belgeye\s*istinadne|nihai\s*tuketici)\s*$/i,
-        /^\s*(irsaliye\s*yerine\s*gecer|musteri\s*iletisim\s*merkezi)\s*$/i,
-        /^\s*m[uü]şter[iİ]\s*tckn.*$/i,
-        /^\s*m[eu]rs[iİ]s\s*no.*$/i,
-        /^\s*merkez\s*adresi.*$/i,
-        /^\s*(kampanya|adresi\s*uzerinden\s*ulasabilirsiniz).*$/i,
-        
-        // Totals and calculations
-        /^\s*ara\s*toplam\s*$/i,
-        /^\s*topkdv\s*$/i,
-        /^\s*toplam\s*$/i,
-        /^\s*genel\s*toplam\s*$/i,
-        /^\s*toplam\s*tutar\s*$/i,
-        /^\s*kdv(\s*tutari|l[iİ]|\s*%\d+)?.*$/i,
-        
-        // Discount and payment lines (CRITICAL: exclude from products)
-        /^\s*(tutar\s*ind\.?|tutar\s*indirim|indirim|indiriml?er)\s*$/i,
-        /^\s*(kocailem|money)\s*$/i,
-        
-        // POS and payment info
-        /^\s*ortak\s*pos.*$/i,
-        /^\s*onay\s*kodu.*$/i,
-        /^\s*ref\s*no.*$/i,
-        /^\s*isyeri\s*id.*$/i,
-        /^\s*terminal\s*id.*$/i,
-        /^\s*batch.*$/i,
-        /^\s*satiş\s*$/i,
-        /^\s*kas[iİ]yer.*$/i,
-        /^\s*(z\s*no.*|eku\s*no.*|mf\s*tv.*)\s*$/i,
-        
-        // Document/stock codes (skip but continue parsing)
-        /^\s*#\d{10,}\s*$/i,
-        
-        // Web and contact info
-        /^\s*http.*$/i,
-        /^\s*www\..*$/i,
-        /^\s*jetkasa.*$/i,
-        
-        // OCR noise patterns (specific problematic patterns)
-        /^\s*(txw|bbsm|absm|l2ek|kvdev|joand|ha\s*dtml)\s*a?\d*\s*$/i,
-        /^\s*rmeyen\s*kutularda\s*sak.*$/i,
-        /^\s*sea\s*$/i,
-        /^\s*[a-z0-9+/'". -]{1,4}\s*$/i, // Short random character combinations
-      ];
-      
-      // Check against Migros-specific noise patterns
-      let isMigrosNonItem = false;
-      for (const pattern of migrosNonItemPatterns) {
-        if (pattern.test(line)) {
-          isMigrosNonItem = true;
-          // Document codes don't stop parsing, just skip
-          if (/^\s*#\d{10,}\s*$/i.test(line)) {
-            console.log(`Skipping document code but continuing: ${line}`);
-          }
-          break;
-        }
-      }
-      
-      if (isMigrosNonItem) continue;
-    }
-
-    // General system line detection (for all formats)
+    // General system line detection (for BIM/CarrefourSA)
     const isSystemLine = /tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres|₺|tl|\d+[.,]\d{2}|^\d+$|^[*]+$|^#+/i.test(alphaLine);
 
-    // Skip quantity-only unit lines like ",564 KG X" or "0,836 KG X"
-    const isQtyUnitOnly = (
-      /^\s*[.,-]?\d*[.,]\d+\s*(kg|gr|lt|l)\b.*\b(x|×)\b/i.test(rawLower)
-    ) || (
-      /^\s*[,\.\d][\d.,]*\s*(kg|gr|lt|l)\b.*\bx\b/i.test(alphaLine)
-    );
-
-    // Skip discount suffix-only lines like ",18-D"
-    const isDiscountNoise = (
-      /[.,]\d+\s*[-–]?\s*d\b/i.test(rawLower)
-    ) || (
-      /^\s*[,\.\d][\d.,]*\s*[-–]?\s*d\b/i.test(alphaLine)
-    );
-
-    // Skip card/payment comment lines
+    const isQtyUnitOnly = /^\s*[.,-]?\d*[.,]\d+\s*(kg|gr|lt|l)\b.*\b(x|×)\b/i.test(rawLower);
+    const isDiscountNoise = /[.,]\d+\s*[-–]?\s*d\b/i.test(rawLower);
     const isCardNoise = /(kart\s*ile|csa\s*kart|kart\s*indirimi|kasa\s*ind|promo|kupon|electron|elektron)/i.test(alphaLine);
 
     if (isSystemLine || isQtyUnitOnly || isDiscountNoise || isCardNoise) continue;
 
-    // Must contain letters for product name
     const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line);
     if (!hasLetters) continue;
 
-    // Enhanced item parsing for different formats
     let item = null;
 
-    // 1. Weight-based items (KG format - Migros specific)
-    if (format === 'Migros') {
-      // Full weight format: ÇILEK KG 0,485 KG x 119,95 TL/KG = 58,18
-      const weightMatch1 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{3})\s*KG\s+x\s*(\d{1,4}[.,]\d{2})\s*TL\/KG\s*=\s*(\d{1,4}[.,]\d{2})$/i);
-      if (weightMatch1) {
-        const [, name, weight, unitPrice, total] = weightMatch1;
-        item = {
-          name: name.trim(),
-          qty: parseFloat(weight.replace(',', '.')),
-          unit_price: parseFloat(unitPrice.replace(',', '.')),
-          line_total: parseFloat(total.replace(',', '.')),
-          raw_line: line
-        };
-      }
-
-      // Simplified weight format: NAME 0,485 KG x 119,95 = 58,18
-      if (!item) {
-        const weightMatch2 = line.match(/^(.+?)\s+(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2}).*?(\d{1,4}[.,]\d{2})$/i);
-        if (weightMatch2) {
-          const [, name, weight, unitPrice, total] = weightMatch2;
-          item = {
-            name: name.trim(),
-            qty: parseFloat(weight.replace(',', '.')),
-            unit_price: parseFloat(unitPrice.replace(',', '.')),
-            line_total: parseFloat(total.replace(',', '.')),
-            raw_line: line
-          };
-        }
-      }
+    // Regular items with explicit quantity
+    const regularMatch = line.match(/^(.+?)\s+x(\d+)\s+[*]?(\d{1,4}[.,]\d{2})$/i);
+    if (regularMatch) {
+      const [, name, qty, price] = regularMatch;
+      const quantity = parseInt(qty);
+      const lineTotal = parseFloat(price.replace(',', '.'));
+      item = {
+        name: name.trim(),
+        qty: quantity,
+        unit_price: quantity > 0 ? lineTotal / quantity : lineTotal,
+        line_total: lineTotal,
+        raw_line: line
+      };
     }
 
-    // 2. Regular items with explicit quantity (x1, x2, etc.)
-    if (!item) {
-      const regularMatch = line.match(/^(.+?)\s+x(\d+)\s+[*]?(\d{1,4}[.,]\d{2})$/i);
-      if (regularMatch) {
-        const [, name, qty, price] = regularMatch;
-        const quantity = parseInt(qty);
-        const lineTotal = parseFloat(price.replace(',', '.'));
-        item = {
-          name: name.trim(),
-          qty: quantity,
-          unit_price: quantity > 0 ? lineTotal / quantity : lineTotal,
-          line_total: lineTotal,
-          raw_line: line
-        };
-      }
-    }
-
-    // 3. Simple items (name and price only)
+    // Simple items (name and price only)
     if (!item) {
       const simpleMatch = line.match(/^(.+?)\s+[*]?(\d{1,4}[.,]\d{2})$/);
       if (simpleMatch) {
         const [, name, price] = simpleMatch;
-        // Validate this looks like a product name
         if (name.length > 3 && /[A-ZÇĞİÖŞÜa-zçğıöşü]/.test(name)) {
           item = {
             name: name.trim(),
@@ -459,22 +534,16 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
-    // Clean and validate item
     if (item && item.name && item.line_total > 0) {
-      // Enhanced product name cleaning
       item.name = item.name
-        .replace(/^\*+|^#+/, '') // Remove leading symbols
-        .replace(/^\d+\s*/, '') // Remove leading numbers
-        .replace(/\s+\d+[.,]\d{2}\s*[*]?\s*$/, '') // Remove trailing prices
-        .replace(/\s+\d+[.,]\d{2}[^A-Za-zÇĞİÖŞÜçğıöşü]*$/, '') // Remove price with suffixes
-        .replace(/\s*x\s*\d+\s*$/i, '') // Remove quantity markers
-        .replace(/\s*\*.*$/, '') // Remove everything after "*"
-        .replace(/\s*(sex|edu|sons|kdv)\s*/gi, ' ') // Remove OCR garbage words
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .replace(/^[-.*,:\s]+|[-.*,:\s]+$/g, '') // Remove leading/trailing punctuation
+        .replace(/^\*+|^#+/, '')
+        .replace(/^\d+\s*/, '')
+        .replace(/\s+\d+[.,]\d{2}\s*[*]?\s*$/, '')
+        .replace(/\s*x\s*\d+\s*$/i, '')
+        .replace(/\s*\*.*$/, '')
+        .replace(/\s+/g, ' ')
         .trim();
 
-      // Final validation: reasonable product name
       if (item.name.length >= 3 && !item.name.match(/^[^A-ZÇĞİÖŞÜa-zçğıöşü]*$/)) {
         items.push({
           name: item.name,
@@ -492,101 +561,35 @@ function parseItems(lines: string[], format: string): any[] {
 }
 
 /**
- * Parse discounts from receipt lines - Enhanced for Migros v2
+ * Parse discounts from receipt lines - Enhanced for Migros v3 with proper detection
  */
 function parseDiscounts(lines: string[], format: string = 'Unknown'): any[] {
+  // For Migros, use the V3 parser's discount handling
+  if (format === 'Migros') {
+    const migrosResult = migrosParseV3(lines.join('\n'));
+    return migrosResult.discounts.map((disc: any) => ({
+      description: disc.label,
+      amount: Math.abs(parseFloat(disc.amount.replace(',', '.')))
+    }));
+  }
+
   const discounts: any[] = [];
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
     
-    // Enhanced discount detection for Migros v2
-    if (format === 'Migros') {
-      // 1. Look for "TUTAR İND." or "TUTAR İNDİRİM" patterns
-      const migrosDiscountMatch = line.match(/(tutar\s*[iİ]nd\.?|tutar\s*[iİ]nd[iİ]r[iİ]m)\s*[-:]?\s*(-?\d+[.,]\d{2})/i);
-      if (migrosDiscountMatch) {
-        let amount = parseAmount(migrosDiscountMatch[2]);
-        if (amount) {
-          // Store as positive value (we'll subtract when calculating totals)
-          amount = Math.abs(amount);
+    // General discount patterns for BIM/CarrefourSA
+    const generalDiscountMatch = line.match(/(ind|indirim|kasa\s*ind|kart\s*ind|promo|kupon)/i);
+    if (generalDiscountMatch) {
+      const amountMatch = line.match(/(-?\d+[.,]\d{2})/);
+      if (amountMatch) {
+        let amount = parseAmount(amountMatch[1]);
+        if (amount && amount > 0) {
           discounts.push({
-            description: 'TUTAR İNDİRİM',
+            description: generalDiscountMatch[1],
             amount: amount
           });
-          continue;
-        }
-      }
-      
-      // 2. Look for "İNDİRİM" or "İNDİRİMLER" standalone lines with amounts
-      if (/^\s*(indirim|indiriml?er)\s*$/i.test(line)) {
-        // Check same line or next few lines for amounts
-        for (let j = i; j <= Math.min(i + 2, lines.length - 1); j++) {
-          const checkLine = lines[j];
-          const amountMatch = checkLine.match(/(-?\d+[.,]\d{2})/);
-          if (amountMatch) {
-            let amount = parseAmount(amountMatch[1]);
-            if (amount) {
-              amount = Math.abs(amount); // Always store as positive
-              discounts.push({
-                description: 'İNDİRİM',
-                amount: amount
-              });
-              break;
-            }
-          }
-        }
-        continue;
-      }
-      
-      // 3. Look for (KOCAİLEM) discount patterns
-      if (/\(koca[iİ]lem\)/i.test(line)) {
-        // Check current line first, then next few lines for amounts
-        for (let j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
-          const checkLine = lines[j];
-          const negativeAmountMatch = checkLine.match(/-(\d+[.,]\d{2})/);
-          if (negativeAmountMatch) {
-            const amount = parseAmount(negativeAmountMatch[1]);
-            if (amount) {
-              discounts.push({
-                description: 'KOCAİLEM',
-                amount: amount
-              });
-              break;
-            }
-          }
-        }
-        continue;
-      }
-      
-      // 4. Look for lines containing discount keywords with amounts on same line
-      const discountKeywordMatch = line.match(/(indirim|tutar\s*ind|koca[iİ]lem).*?(-?\d+[.,]\d{2})/i);
-      if (discountKeywordMatch) {
-        let amount = parseAmount(discountKeywordMatch[2]);
-        if (amount) {
-          amount = Math.abs(amount);
-          discounts.push({
-            description: discountKeywordMatch[1].trim().toUpperCase(),
-            amount: amount
-          });
-          continue;
-        }
-      }
-    }
-    
-    // General discount patterns for all formats (BIM, CarrefourSA)
-    if (format !== 'Migros') {
-      const generalDiscountMatch = line.match(/(ind|indirim|kasa\s*ind|kart\s*ind|promo|kupon)/i);
-      if (generalDiscountMatch) {
-        const amountMatch = line.match(/(-?\d+[.,]\d{2})/);
-        if (amountMatch) {
-          let amount = parseAmount(amountMatch[1]);
-          if (amount && amount > 0) {
-            discounts.push({
-              description: generalDiscountMatch[1],
-              amount: amount
-            });
-          }
         }
       }
     }
@@ -604,7 +607,17 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const linesAlpha = textAlpha.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Format-specific total patterns
+  // For Migros, use V3 parser's total calculation
+  if (format === 'Migros') {
+    const migrosResult = migrosParseV3(text);
+    return {
+      grand_total: parseFloat(migrosResult.grand_total.replace(',', '.')),
+      vat_total: migrosResult.vat_total ? parseFloat(migrosResult.vat_total.replace(',', '.')) : null,
+      subtotal: null // Will be calculated from items if needed
+    };
+  }
+
+  // Format-specific total patterns for other formats
   let totalPatterns: RegExp[] = [];
   
   if (format === 'BIM') {
@@ -617,12 +630,6 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
     // Carrefour: 'TOPLAM' (but NOT 'Toplam KDV')
     totalPatterns = [
       /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
-    ];
-  } else if (format === 'Migros') {
-    // Migros: 'TOPLAM' (but NOT 'TOPKDV' - this is critical!)
-    totalPatterns = [
-      /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i,
-      /(?:genel\s*)?toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else {
     // Default patterns
@@ -933,14 +940,14 @@ function parseReceiptText(rawText: string): any {
   // Migros-specific date/time extraction
   if (merchantDisplay === 'Migros') {
     // Look for "TARİH:" pattern specifically
-    const dateMatch = normalizedText.match(/TARİH[:.\s]*(\d{2}\/\d{2}\/\d{4})/i);
+    const dateMatch = normalizedText.match(/TARİH[.:\s]*(\d{2}\/\d{2}\/\d{4})/i);
     if (dateMatch) {
       const [day, month, year] = dateMatch[1].split('/');
       receiptDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
     
     // Look for "SAAT:" pattern specifically with full HH:MM capture
-    const timeMatch = normalizedText.match(/SAAT[:.\s]*([01]?\d|2[0-3]):([0-5]\d)/i);
+    const timeMatch = normalizedText.match(/SAAT[.:\s]*([01]?\d|2[0-3]):([0-5]\d)/i);
     if (timeMatch) {
       receiptTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
     }
@@ -989,175 +996,132 @@ function parseReceiptText(rawText: string): any {
     receiptNo = receiptNoMatch ? receiptNoMatch[1] : null;
   }
   
-  // Extract payment method and masked PAN (Carrefour/BİM variations)
-  const panRegexes = [
-    /\b\d{4,6}\*{4,10}\d{4}\b/,                   // 406281******9820
-    /\b(?:[Xx\*#•·●]{4}\s*){2,4}\d{4}\b/,         // **** **** **** 1234 (2-4 masked groups)
-    /\*{6,}\d{4}\b/,                                 // ************1234
-    /(?:[Xx\*#•·●]{1,4}\s*){2,6}\d{4}\b/,          // generic masks with varying group counts
-    /\b\d{4}\s+\*{2,}\s+\d{2,4}\s+\*{2,}\s+\d{4}\b/ // mixed spacing masks
+  // Enhanced card number extraction with better patterns
+  const cardPatterns = [
+    /\b(\d{4}\*{2,}\d{4})\b/g,           // 1234**1234
+    /\b(\d{6}\*{6}\d{4})\b/g,            // 123456******1234
+    /\b(?:(\d[\s*xX•]{0,}){12}\d{4})\b/g // 1234 **** **** 1234
   ];
-  let panRaw: string | null = null;
-
-  // Carrefour: PAN and card info is typically 2 lines above the bottom 'TUTAR' line
-  if (formatDetection.format === 'CarrefourSA') {
-    const alphaLines = lines.map(l => alphaNormalize(l));
-    let idxTutar = -1;
-    for (let i = alphaLines.length - 1; i >= 0; i--) {
-      if (/\btutar\b/i.test(alphaLines[i]) && !/\bkdv\b/i.test(alphaLines[i])) {
-        idxTutar = i;
-        break;
-      }
-    }
-    if (idxTutar >= 1) {
-      // Look primarily 4 lines above TUTAR (per receipt pattern), but scan a window of -6..-1
-      const regionCandidates: string[] = [];
-      for (let off = 6; off >= 1; off--) {
-        if (idxTutar - off >= 0) regionCandidates.push(lines[idxTutar - off]);
-      }
-      for (const candidate of regionCandidates) {
-        if (!candidate) continue;
-        // Try strict patterns first
-        for (const rx of panRegexes) {
-          const m = candidate.match(rx);
-          if (m) { panRaw = m[0]; break; }
-        }
-        if (panRaw) break;
-        const candAlpha = alphaNormalize(candidate);
-        // If line mentions card brand or has mask chars, guess last 4 at line end
-        if (/(mastercard|visa|debit|kredi|kart|\*{2,}|[#•·●]{2,})/i.test(candAlpha)) {
-          const last4Match = candidate.match(/(\d{4})(?!.*\d)/);
-          if (last4Match) {
-            panRaw = `**** **** **** ${last4Match[1]}`;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  // Global fallback search
-  if (!panRaw) {
-    for (const rx of panRegexes) {
-      const m = normalizedText.match(rx);
-      if (m) { panRaw = m[0]; break; }
-    }
-  }
-  const cardLast4 = panRaw ? panRaw.replace(/[^0-9]/g, '').slice(-4) : null;
-  const cardMasked = cardLast4 ? `---${cardLast4}` : null;
-  const isCash = /\bNAK[İI]T\b/i.test(normalizedText);
-  const isCardKeyword = /(kredi\s*kart|debit|visa|mastercard|world|bonus|axess|maxim(?:um)?|paraf|troy|kart)/i.test(normalizedText);
-  const paymentMethod = isCash ? 'NAKIT' : (cardLast4 || isCardKeyword ? 'KART' : null);
   
-  // Parse items and discounts (pass format for better extraction)
-  const items = parseItems(lines, merchantDisplay).slice(0, 50);
+  let cardMasked: string | null = null;
+  for (const pattern of cardPatterns) {
+    const matches = [...normalizedText.matchAll(pattern)];
+    if (matches.length > 0) {
+      const cardNumber = matches[0][0];
+      cardMasked = maskCardNumber(cardNumber);
+      if (cardMasked) break;
+    }
+  }
+  
+  // Enhanced payment method extraction with Turkish bank detection
+  let paymentMethod: string | null = null;
+  const paymentPatterns = [
+    /(?:YAPI|AKBANK|GARANTİ|BBVA|ZİRAAT|İŞ BANKASI|VAKIF|HALK)/i,
+    /(?:ORTAK POS|WORLDCARD|MasterCard|VISA)/i,
+    /(?:KREDİ KARTI|NAKIT|HAVALE)/i
+  ];
+  
+  for (const pattern of paymentPatterns) {
+    const match = normalizedText.match(pattern);
+    if (match) {
+      paymentMethod = match[0];
+      break;
+    }
+  }
+  
+  // Parse items using format-specific logic
+  const items = parseItems(lines, merchantDisplay);
   const discounts = parseDiscounts(lines, merchantDisplay);
-  
-  // Extract totals (pass format for better detection)
   const totals = extractTotals(normalizedText, merchantDisplay);
   
-  // Enhanced total validation for Migros
+  // Enhanced computed totals and reconciliation
+  const computed = calculateComputedTotals(items, discounts, totals);
+  
+  // Enhanced confidence scoring
+  let confidence = 0.0;
+  if (receiptDate && receiptTime) confidence += 0.15;
+  if (totals.grand_total) confidence += 0.2;
+  if (computed.reconciles) confidence += 0.2;
+  if (items.length >= 3) confidence += 0.15;
+  if (merchantDisplay === 'Migros' && formatDetection.confidence > 0.5) confidence += 0.1;
+  if (cardMasked) confidence += 0.2;
+  
+  confidence = Math.min(1.0, confidence);
+  
+  // Enhanced warnings
+  if (items.length === 0) warnings.push('NO_ITEMS_FOUND');
+  if (!totals.grand_total) warnings.push('TOTAL_MISSING');
+  if (!computed.reconciles) warnings.push('ITEMS_MISMATCH');
+  if (!cardMasked && paymentMethod) warnings.push('CARD_MISSING');
+  
+  // Format specific validation warnings
   if (merchantDisplay === 'Migros') {
-    // Ensure TOPKDV is never used as grand_total
-    if (totals.grand_total === totals.vat_total && totals.vat_total) {
-      console.log('WARNING: Detected TOPKDV being used as grand_total, resetting...');
-      totals.grand_total = null;
-    }
+    if (!receiptTime || !receiptTime.includes(':')) warnings.push('TIME_FORMAT_ISSUE');
+    if (addressFull.includes('TEL:')) warnings.push('ADDRESS_CONTAINS_PHONE');
     
-    // Try to compute grand_total from items and discounts if missing
-    if (!totals.grand_total && items.length > 0) {
-      const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
-      const discountSum = discounts.reduce((sum, discount) => sum + (discount.amount || 0), 0);
-      const computedTotal = itemsSum - discountSum;
-      
-      if (computedTotal > 0) {
-        totals.grand_total = Math.round(computedTotal * 100) / 100;
-        warnings.push('Grand total computed from items and discounts');
-      }
-    }
+    // Log debug information for Migros
+    console.log(`Migros parsing results: items=${items.length}, discounts=${discounts.length}, grand_total=${totals.grand_total}`);
   }
   
-  // Fallback: choose largest money value when still missing (but avoid TOPKDV for Migros)
-  if (!totals.grand_total) {
-    const matches = [...normalizedText.matchAll(/(\d{1,4}[.,]\d{2})/g)];
-    let maxVal = 0;
-    for (const m of matches) {
-      const v = parseAmount(m[1]);
-      if (v && v > maxVal && (merchantDisplay !== 'Migros' || v !== totals.vat_total)) {
-        maxVal = v;
-      }
-    }
-    if (maxVal > 0) totals.grand_total = maxVal;
-  }
-  
-  // Calculate computed totals
-  const computedTotals = calculateComputedTotals(items, discounts, totals);
-  
-  // Tax ID extraction
-  const taxIdMatch = normalizedText.match(/(?:vkn|vergi\s*no)\s*[:=]?\s*(\d{10,11})/i);
-  const taxId = taxIdMatch ? taxIdMatch[1] : null;
-  
-  // Phone extraction
-  const phoneMatch = normalizedText.match(/tel\s*[:=]?\s*([\d\s\(\)\-]{10,})/i);
-  const phone = phoneMatch ? phoneMatch[1].replace(/\D/g, '') : null;
-  
-  // Add warnings for missing or uncertain data
-  if (!receiptDate) warnings.push('Date not found or uncertain');
-  if (!totals.grand_total) warnings.push('Grand total not found');
-  if (items.length === 0) warnings.push('No items detected');
-  if (!computedTotals.reconciles) warnings.push('Totals do not reconcile');
-  
-  // Build final result
-  const result = {
-    merchant: {
-      name: merchantDisplay,
-      branch: null,
-      address_full: addressFull || null,
-      address_parsed: addressParsed,
-      tax_id: taxId,
-      phone: phone
-    },
-    receipt: {
-      date: receiptDate,
-      time: receiptTime,
-      receipt_no: receiptNo,
-      pos_id: null,
-      cashier_id: null,
-      payment_method: paymentMethod,
-      card_last4_masked: cardMasked
-    },
-    items: items,
+  // Build final response matching expected schema
+  return {
+    merchant_raw: merchantName,
+    merchant_brand: merchantDisplay,
+    purchase_date: receiptDate,
+    purchase_time: receiptTime,
+    store_address: addressFull,
+    total: totals.grand_total || 0,
+    items: items.map(item => ({
+      name: item.name,
+      qty: item.qty,
+      unit_price: item.unit_price,
+      line_total: item.line_total,
+      raw_line: item.raw_line,
+      product_code: item.product_code
+    })),
+    payment_method: paymentMethod,
+    receipt_unique_no: receiptNo,
+    fis_no: receiptNo, // Alias for compatibility
+    barcode_numbers: [], // TODO: extract barcodes if present
+    raw_text: rawText,
+    
+    // Enhanced metadata
+    format_detected: merchantDisplay,
+    confidence: confidence,
+    warnings: warnings,
     discounts: discounts,
     totals: {
-      subtotal: totals.subtotal || null,
-      vat_total: totals.vat_total || null,
-      grand_total: totals.grand_total || null
+      subtotal: totals.subtotal,
+      vat_total: totals.vat_total,
+      grand_total: totals.grand_total
     },
-    computed_totals: computedTotals,
-    source: {
-      format_detected: formatDetection.format,
-      confidence: Math.round(formatDetection.confidence * 100) / 100,
-      warnings: warnings
-    },
-    raw_text: rawText
+    computed_totals: computed,
+    address_parsed: addressParsed,
+    masked_card: cardMasked
   };
-  
-  return result;
 }
 
-// ============= MAIN HANDLER =============
+// ============= MAIN SERVER HANDLER =============
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: getCorsHeaders(req) });
+    return new Response(null, { headers: corsHeaders });
   }
   
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { 
-      status: 405, 
-      headers: getCorsHeaders(req) 
-    });
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }), 
+      { 
+        status: 405, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
   }
   
   try {
@@ -1165,44 +1129,41 @@ serve(async (req: Request) => {
     
     if (!imageUrl) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing imageUrl' }),
+        JSON.stringify({ error: 'Missing imageUrl parameter' }), 
         { 
           status: 400, 
-          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );
     }
     
-    console.log('Processing OCR for image:', imageUrl);
+    console.log(`Processing OCR for image: ${imageUrl}`);
     
     // Process OCR
     const rawText = await processOCR(imageUrl);
-    console.log('OCR completed, raw text length:', rawText.length);
+    console.log(`OCR completed, raw text length: ${rawText.length}`);
     
-    // Parse to structured format
-    const result = parseReceiptText(rawText);
-    console.log('Parsing completed, confidence:', result.source.confidence);
-    
-    return new Response(JSON.stringify(result), {
-      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-    });
-    
-  } catch (error) {
-    console.error('OCR processing error:', error);
+    // Parse the OCR text
+    const parsedData = parseReceiptText(rawText);
+    console.log(`Parsing completed, confidence: ${parsedData.confidence.toFixed(2)}`);
     
     return new Response(
+      JSON.stringify(parsedData), 
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+    
+  } catch (error) {
+    console.error('OCR function error:', error);
+    return new Response(
       JSON.stringify({ 
-        success: false, 
-        error: error.message || 'Processing failed',
-        source: {
-          format_detected: 'Unknown',
-          confidence: 0,
-          warnings: ['Processing error: ' + error.message]
-        }
-      }),
+        error: 'OCR processing failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      }), 
       { 
         status: 500, 
-        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     );
   }
