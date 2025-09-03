@@ -259,24 +259,28 @@ function parseItems(lines: string[], format: string): any[] {
     // Migros: Enhanced section detection - look for start anchors
     const alphaLines = lines.map(l => alphaNormalize(l));
     
-    // Start after TCKN or date or document code
+    // Start after TCKN, FİŞ NO, or first product-like line
     let idxTckn = alphaLines.findIndex(line => /m[uü]şter[iİ]\s*tckn/i.test(line));
-    let idxDate = alphaLines.findIndex(line => /\btari[h]?\b/i.test(line));
+    let idxFisNo = alphaLines.findIndex(line => /f[iİ]ş\s*no/i.test(line));
     let idxDocCode = alphaLines.findIndex(line => /^\s*#\d{10,}\s*$/i.test(line));
     
-    // Prefer TCKN, then doc code, then date
+    // Start parsing after the administrative section
     if (idxTckn !== -1) {
       startIndex = idxTckn;
+    } else if (idxFisNo !== -1) {
+      startIndex = idxFisNo;
     } else if (idxDocCode !== -1) {
       startIndex = idxDocCode;
-    } else if (idxDate !== -1) {
-      startIndex = idxDate;
+    } else {
+      // Look for first product-like line (contains price pattern)
+      startIndex = alphaLines.findIndex(line => /\d+[.,]\d{2}/.test(line)) - 1;
+      if (startIndex < 0) startIndex = 0;
     }
     
-    // Find end: before TUTAR İND/TOPKDV/TOPLAM block
+    // Find end: before discount/total blocks
     const endCandidates = [
+      alphaLines.findIndex(line => /ind[iİ]r[iİ]mler/i.test(line)),
       alphaLines.findIndex(line => /tutar\s*[iİ]nd/i.test(line)),
-      alphaLines.findIndex(line => /ara\s*toplam/i.test(line)),
       alphaLines.findIndex(line => /topkdv/i.test(line)),
       alphaLines.findIndex(line => /\btoplam\b/i.test(line) && !/ara\s*toplam/i.test(line))
     ].filter(i => i !== -1) as number[];
@@ -395,10 +399,10 @@ function parseItems(lines: string[], format: string): any[] {
 
     // 1. Weight-based items (KG format - Migros specific)
     if (format === 'Migros') {
-      // Full weight format: ÇILEK KG 0,485 KG x 119,95 TL/KG = 58,18
-      const weightMatch1 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{3})\s*KG\s+x\s*(\d{1,4}[.,]\d{2})\s*TL\/KG\s*=\s*(\d{1,4}[.,]\d{2})$/i);
+      // Weight format with leading quantity: 0,485 KG x 119,95 TL/KG PEPINO KG %1 *58,18
+      const weightMatch1 = line.match(/^(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2}).*?([A-ZÇĞİÖŞÜa-zçğıöşü\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
       if (weightMatch1) {
-        const [, name, weight, unitPrice, total] = weightMatch1;
+        const [, weight, unitPrice, name, total] = weightMatch1;
         item = {
           name: name.trim(),
           qty: parseFloat(weight.replace(',', '.')),
@@ -408,9 +412,9 @@ function parseItems(lines: string[], format: string): any[] {
         };
       }
 
-      // Simplified weight format: NAME 0,485 KG x 119,95 = 58,18
+      // Alternative weight format: NAME KG 0,485 KG x 119,95 TL/KG = 58,18
       if (!item) {
-        const weightMatch2 = line.match(/^(.+?)\s+(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2}).*?(\d{1,4}[.,]\d{2})$/i);
+        const weightMatch2 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})$/i);
         if (weightMatch2) {
           const [, name, weight, unitPrice, total] = weightMatch2;
           item = {
@@ -895,8 +899,8 @@ function parseReceiptText(rawText: string): any {
   let addressParsed = {};
   
   if (merchantDisplay === 'Migros') {
-    // Enhanced address extraction - remove phone numbers and noise
-    const merkez_pattern = /MERKEZ\s*ADRESİ[:]\s*([^]+?)(?:TEL:|İSTANBUL\s*TEL:|SARIYER.*TEL:|$)/i;
+    // Enhanced address extraction - properly stop at city boundaries
+    const merkez_pattern = /MERKEZ\s*ADRESİ[:]\s*([^]+?)(?:TARİH:|TEL:|İSTANBUL\s*TEL:|SARIYER.*TEL:|$)/i;
     const merkez_match = normalizedText.match(merkez_pattern);
     
     if (merkez_match) {
@@ -904,16 +908,29 @@ function parseReceiptText(rawText: string): any {
         .replace(/\s*TEL.*$/gmi, '') // Remove all phone lines
         .replace(/\d{4}\s*\d{3}\s*\d{2}\s*\d{2}/g, '') // Remove phone patterns
         .replace(/0\(\d{3}\)\s*\d{3}\s*\d{2}\s*\d{2}/g, '') // Remove (850) format phones
-        .replace(/\s*İSTANBUL\s*$/, '/İSTANBUL') // Proper city format
+        .replace(/\s*TARİH:.*$/gmi, '') // Remove everything after TARİH:
+        .replace(/\s*SAAT:.*$/gmi, '') // Remove everything after SAAT:
+        .replace(/\s*FİŞ.*$/gmi, '') // Remove everything after FİŞ
         .replace(/\s+/g, ' ') // Normalize spaces
         .trim();
     } else {
-      // Fallback for address detection
-      const addressLines = lines.filter(line => 
-        line.match(/atatürk|turgut|özal|bulv|mah|cad|sok|no:/i) && 
-        !line.match(/migros|tel:|phone/i)
-      );
-      addressFull = addressLines.join(' ').replace(/\d{4}\s*\d{3}/g, '').trim();
+      // Fallback: Look for address pattern before TARİH
+      const addressMatch = normalizedText.match(/(ATATÜRK\s+MAH\.\s+[^]+?)(?:\s*TARİH:|$)/i);
+      if (addressMatch) {
+        addressFull = addressMatch[1]
+          .replace(/\s*TARİH:.*$/gmi, '')
+          .replace(/\s*SAAT:.*$/gmi, '')
+          .replace(/\s*FİŞ.*$/gmi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      } else {
+        // Final fallback for address detection
+        const addressLines = lines.filter(line => 
+          line.match(/atatürk|turgut|özal|bulv|mah|cad|sok|no:/i) && 
+          !line.match(/migros|tel:|phone|tarih|saat|fiş/i)
+        );
+        addressFull = addressLines.join(' ').replace(/\d{4}\s*\d{3}/g, '').trim();
+      }
     }
   } else {
     // General address extraction for other formats
