@@ -623,11 +623,9 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
       /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else if (format === 'Migros') {
-    // Migros: Look for 'TOPLAM' but exclude 'ARA TOPLAM', 'TOPKDV'
-    totalPatterns = [
-      /(?:^|\s)(?<!ara\s)toplam(?!\s*kdv)(?!\s*$)\s*[:=]?\s*(\d+[.,]\d{2})/i,
-      /(?:genel\s*)?toplam(?!\s*kdv)(?!\s*$)\s*[:=]?\s*(\d+[.,]\d{2})/i
-    ];
+    // Migros: Do not use broad regex here (it catches "KDV'Lİ TOPLAM").
+    // We'll resolve using the line-by-line scan below to avoid VAT lines and ARA TOPLAM.
+    totalPatterns = [];
   } else {
     // Default patterns
     totalPatterns = [
@@ -1157,6 +1155,15 @@ function parseReceiptText(rawText: string): any {
   
   // Calculate computed totals
   const computedTotals = calculateComputedTotals(items, discounts, totals);
+
+  // For Migros, if detected grand_total doesn't reconcile, correct it to items - discounts
+  if (merchantDisplay === 'Migros' && totals.grand_total && !computedTotals.reconciles) {
+    const corrected = Math.round((computedTotals.items_sum - computedTotals.discounts_sum) * 100) / 100;
+    if (corrected > 0) {
+      totals.grand_total = corrected;
+      warnings.push('Grand total corrected using items minus discounts');
+    }
+  }
   
   // Tax ID extraction
   const taxIdMatch = normalizedText.match(/(?:vkn|vergi\s*no)\s*[:=]?\s*(\d{10,11})/i);
