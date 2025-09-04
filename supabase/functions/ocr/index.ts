@@ -894,44 +894,62 @@ function parseReceiptText(rawText: string): any {
       merchantName;
   })();
   
-  // Enhanced address extraction with Migros-specific cleaning
+  // Strict Store Location extraction for Migros per rules
   let addressFull = '';
   let addressParsed = {};
   
   if (merchantDisplay === 'Migros') {
-    // Enhanced address extraction - properly stop at city boundaries
-    const merkez_pattern = /MERKEZ\s*ADRESİ[:]\s*([^]+?)(?:TARİH:|TEL:|İSTANBUL\s*TEL:|SARIYER.*TEL:|$)/i;
-    const merkez_match = normalizedText.match(merkez_pattern);
-    
-    if (merkez_match) {
-      addressFull = merkez_match[1]
-        .replace(/\s*TEL.*$/gmi, '') // Remove all phone lines
-        .replace(/\d{4}\s*\d{3}\s*\d{2}\s*\d{2}/g, '') // Remove phone patterns
-        .replace(/0\(\d{3}\)\s*\d{3}\s*\d{2}\s*\d{2}/g, '') // Remove (850) format phones
-        .replace(/\s*TARİH:.*$/gmi, '') // Remove everything after TARİH:
-        .replace(/\s*SAAT:.*$/gmi, '') // Remove everything after SAAT:
-        .replace(/\s*FİŞ.*$/gmi, '') // Remove everything after FİŞ
-        .replace(/\s+/g, ' ') // Normalize spaces
-        .trim();
+    // Stop markers and patterns to prevent address spillover
+    const stopLineRe = /(?:TAR[İI]H|SAAT|F[İI]Ş\s*NO|F[İI]Ş|KDV|TOPKDV|GENEL\s*TOPLAM|TOPLAM|TUTAR|KAS[İI]YER|SATI[ŞS]|ORTAK\s*POS|MERS[İI]S|REF\s*NO|ONAY|EKU|Z\s*NO)/i;
+    const productStartRe = /^\s*(?:[#*]?\d{6,}|(?:\d+[.,]\d{3})\s*(?:KG|GR|LT|L)\s*x)/i;
+    const looksLikeAddress = (s: string) => {
+      const a = alphaNormalize(s);
+      return /(MAH|MAHALLE|CAD|CADDE|SOK|SOKAK|BULV|BULVAR|NO[:.]|\/[A-ZÇĞİÖŞÜ])/i.test(a) && !stopLineRe.test(a) && !/TEL/i.test(a);
+    };
+
+    const alphaLines = lines.map(l => alphaNormalize(l));
+    let startIdx = alphaLines.findIndex(l => /MERKEZ\s*ADRES[İI]?\s*[:：]?/i.test(l));
+
+    if (startIdx !== -1) {
+      // Take remainder of the MERKEZ ADRES line only, cut at stop markers
+      let remainder = lines[startIdx].replace(/.*ADRES[İI]?\s*[:：]/i, '').trim();
+      remainder = remainder.replace(/\b(TEL|PHONE)\b.*$/i, '').trim();
+      remainder = remainder.replace(/(?:TAR[İI]H|SAAT|F[İI]Ş\s*NO|F[İI]Ş|KDV|TOPKDV|GENEL\s*TOPLAM|TOPLAM|TUTAR).*$/i, '').trim();
+      addressFull = remainder;
+
+      // Optionally append the next line if it still looks like address
+      const next = lines[startIdx + 1];
+      if (next && looksLikeAddress(next) && !productStartRe.test(next)) {
+        let extra = next.replace(/\b(TEL|PHONE)\b.*$/i, '')
+                        .replace(/(?:TAR[İI]H|SAAT|F[İI]Ş\s*NO|F[İI]Ş|KDV|TOPKDV|GENEL\s*TOPLAM|TOPLAM|TUTAR).*$/i, '')
+                        .trim();
+        if (extra) addressFull = `${addressFull} ${extra}`.trim();
+      }
     } else {
-      // Fallback: Look for address pattern before TARİH
-      const addressMatch = normalizedText.match(/(ATATÜRK\s+MAH\.\s+[^]+?)(?:\s*TARİH:|$)/i);
-      if (addressMatch) {
-        addressFull = addressMatch[1]
-          .replace(/\s*TARİH:.*$/gmi, '')
-          .replace(/\s*SAAT:.*$/gmi, '')
-          .replace(/\s*FİŞ.*$/gmi, '')
-          .replace(/\s+/g, ' ')
-          .trim();
-      } else {
-        // Final fallback for address detection
-        const addressLines = lines.filter(line => 
-          line.match(/atatürk|turgut|özal|bulv|mah|cad|sok|no:/i) && 
-          !line.match(/migros|tel:|phone|tarih|saat|fiş/i)
-        );
-        addressFull = addressLines.join(' ').replace(/\d{4}\s*\d{3}/g, '').trim();
+      // Fallback: find the first address-like line and accumulate up to 3 lines until a stop marker
+      const idx = lines.findIndex(looksLikeAddress);
+      if (idx !== -1) {
+        const parts: string[] = [];
+        for (let i = idx; i < Math.min(lines.length, idx + 3); i++) {
+          const l = lines[i];
+          const a = alphaNormalize(l);
+          if (stopLineRe.test(a) || productStartRe.test(l)) break;
+          if (!looksLikeAddress(l)) break;
+          let cleaned = l.replace(/\b(TEL|PHONE)\b.*$/i, '')
+                         .replace(/(?:TAR[İI]H|SAAT|F[İI]Ş\s*NO|F[İI]Ş|KDV|TOPKDV|GENEL\s*TOPLAM|TOPLAM|TUTAR).*$/i, '')
+                         .trim();
+          if (cleaned) parts.push(cleaned);
+        }
+        addressFull = parts.join(' ').trim();
       }
     }
+
+    // Final cleanup: squeeze spaces and ensure we cut anything after a stop token
+    addressFull = (addressFull || '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s*,\s*/g, ', ')
+      .replace(/(?:TAR[İI]H|SAAT|F[İI]Ş\s*NO|F[İI]Ş|KDV|TOPKDV|GENEL\s*TOPLAM|TOPLAM|TUTAR|KAS[İI]YER|SATI[ŞS]|ORTAK\s*POS|MERS[İI]S|REF\s*NO|ONAY|EKU|Z\s*NO).*$/i, '')
+      .trim();
   } else {
     // General address extraction for other formats
     const addressLines = lines.filter(line => 
@@ -942,7 +960,6 @@ function parseReceiptText(rawText: string): any {
   }
   
   addressParsed = parseAddress(addressFull);
-  
   // Enhanced date/time extraction with Turkish format priority
   let receiptDate: string | null = null;
   let receiptTime: string | null = null;
