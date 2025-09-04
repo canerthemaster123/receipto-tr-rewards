@@ -623,10 +623,10 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
       /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else if (format === 'Migros') {
-    // Migros: 'TOPLAM' (but NOT 'TOPKDV' - this is critical!)
+    // Migros: Look for 'TOPLAM' but exclude 'ARA TOPLAM', 'TOPKDV'
     totalPatterns = [
-      /(?:^|\s)toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i,
-      /(?:genel\s*)?toplam(?!\s*kdv)\s*[:=]?\s*(\d+[.,]\d{2})/i
+      /(?:^|\s)(?<!ara\s)toplam(?!\s*kdv)(?!\s*$)\s*[:=]?\s*(\d+[.,]\d{2})/i,
+      /(?:genel\s*)?toplam(?!\s*kdv)(?!\s*$)\s*[:=]?\s*(\d+[.,]\d{2})/i
     ];
   } else {
     // Default patterns
@@ -680,7 +680,24 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
 
   // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
-    if (format === 'CarrefourSA') {
+    if (format === 'Migros') {
+      // For Migros: Look for 'TOPLAM' (but NOT 'ARA TOPLAM' or 'TOPKDV')
+      let idxToplam = -1;
+      for (let i = linesAlpha.length - 1; i >= 0; i--) {
+        if (/\btoplam\b/i.test(linesAlpha[i]) && 
+            !/\bara\s*toplam\b/i.test(linesAlpha[i]) && 
+            !/\btopkdv\b/i.test(linesAlpha[i])) {
+          idxToplam = i;
+          break;
+        }
+      }
+      if (idxToplam >= 0) {
+        const amount = moneyNear(idxToplam);
+        if (amount) {
+          result.grand_total = amount;
+        }
+      }
+    } else if (format === 'CarrefourSA') {
       // Prefer the bottom 'TUTAR' line (exclude lines mentioning KDV)
       let idxTutar = -1;
       for (let i = linesAlpha.length - 1; i >= 0; i--) {
@@ -712,14 +729,28 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
       let totalKeywords: string[] = [];
       if (format === 'BIM') {
         totalKeywords = ['odenecek kdv dahil tutar', 'kdv dahil tutar'];
+      } else if (format === 'Migros') {
+        // For Migros, be very specific about what we consider as final total
+        totalKeywords = ['genel toplam', 'kdv li toplam', 'toplam'];
       } else {
         totalKeywords = ['genel toplam', 'kdv li toplam', 'odenecek.*tutar', 'toplam'];
       }
       for (const keyword of totalKeywords) {
-        const idx = linesAlpha.findIndex(l => new RegExp(`\\b${keyword}\\b`, 'i').test(l));
-        if (idx >= 0) {
+        const idx = linesAlpha.findIndex(l => {
+          const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+          const hasKeyword = regex.test(l);
+          
+          // For Migros, exclude lines with "ARA TOPLAM" when looking for "toplam"
+          if (format === 'Migros' && keyword === 'toplam' && /\bara\s*toplam\b/i.test(l)) {
+            return false;
+          }
           // Skip lines that mention KDV when keyword is generic 'toplam'
-          if (/toplam/i.test(keyword) && /\bkdv\b/i.test(linesAlpha[idx])) continue;
+          if (/toplam/i.test(keyword) && /\bkdv\b/i.test(l)) return false;
+          
+          return hasKeyword;
+        });
+        
+        if (idx >= 0) {
           const amount = moneyNear(idx);
           if (amount) {
             result.grand_total = amount;
