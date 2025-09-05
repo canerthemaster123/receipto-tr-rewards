@@ -563,7 +563,28 @@ function parseDiscounts(lines: string[], format: string = 'Unknown'): any[] {
         continue;
       }
       
-      // 4. Look for lines containing discount keywords with amounts on same line
+      // 4. Look for product-specific discounts (negative amounts after products)
+      if (line.includes('*İNDİRİM') || line.includes('*INDIRIM')) {
+        // Look for negative amounts on same line or next line
+        for (let j = i; j <= Math.min(i + 1, lines.length - 1); j++) {
+          const checkLine = lines[j];
+          const negativeMatch = checkLine.match(/\*(-?\d+[.,]\d{2})/);
+          if (negativeMatch) {
+            let amount = parseAmount(negativeMatch[1]);
+            if (amount < 0) {
+              amount = Math.abs(amount);
+              discounts.push({
+                description: 'ÜRÜN İNDİRİMİ',
+                amount: amount
+              });
+              break;
+            }
+          }
+        }
+        continue;
+      }
+      
+      // 5. Look for lines containing discount keywords with amounts on same line
       const discountKeywordMatch = line.match(/(indirim|tutar\s*ind|koca[iİ]lem).*?(-?\d+[.,]\d{2})/i);
       if (discountKeywordMatch) {
         let amount = parseAmount(discountKeywordMatch[2]);
@@ -1119,7 +1140,7 @@ function parseReceiptText(rawText: string): any {
   // Extract totals (pass format for better detection)
   const totals = extractTotals(normalizedText, merchantDisplay);
   
-  // Enhanced total validation for Migros
+  // Enhanced total validation for Migros - ALWAYS compute from items
   if (merchantDisplay === 'Migros') {
     // Ensure TOPKDV is never used as grand_total
     if (totals.grand_total === totals.vat_total && totals.vat_total) {
@@ -1127,26 +1148,34 @@ function parseReceiptText(rawText: string): any {
       totals.grand_total = null;
     }
     
-    // Try to compute grand_total from items and discounts if missing
-    if (!totals.grand_total && items.length > 0) {
+    // ALWAYS compute from items for Migros to avoid picking wrong large numbers
+    if (items.length > 0) {
       const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
       const discountSum = discounts.reduce((sum, discount) => sum + (discount.amount || 0), 0);
       const computedTotal = itemsSum - discountSum;
       
+      console.log(`Migros total calculation: Items sum: ${itemsSum}, Discounts: ${discountSum}, Computed: ${computedTotal}`);
+      
       if (computedTotal > 0) {
+        // If we found a TOPLAM in the text, verify it matches our computation
+        if (totals.grand_total && Math.abs(totals.grand_total - computedTotal) > 0.5) {
+          console.log(`Migros: Detected total ${totals.grand_total} doesn't match computed ${computedTotal}, using computed`);
+          warnings.push(`Grand total corrected from ${totals.grand_total} to ${computedTotal} using items calculation`);
+        } else if (!totals.grand_total) {
+          warnings.push('Grand total computed from items and discounts');
+        }
         totals.grand_total = Math.round(computedTotal * 100) / 100;
-        warnings.push('Grand total computed from items and discounts');
       }
     }
   }
   
-  // Fallback: choose largest money value when still missing (but avoid TOPKDV for Migros)
-  if (!totals.grand_total) {
+  // Fallback: choose largest money value when still missing (but NOT for Migros - too unreliable)
+  if (!totals.grand_total && merchantDisplay !== 'Migros') {
     const matches = [...normalizedText.matchAll(/(\d{1,4}[.,]\d{2})/g)];
     let maxVal = 0;
     for (const m of matches) {
       const v = parseAmount(m[1]);
-      if (v && v > maxVal && (merchantDisplay !== 'Migros' || v !== totals.vat_total)) {
+      if (v && v > maxVal && v !== totals.vat_total) {
         maxVal = v;
       }
     }
