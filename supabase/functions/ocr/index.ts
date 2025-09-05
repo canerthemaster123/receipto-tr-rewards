@@ -445,12 +445,12 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
-    // 3. Simple items (name and price only)
+    // 3. Simple items (name and price only) - Enhanced for Migros
     if (!item) {
-      const simpleMatch = line.match(/^(.+?)\s+[*]?(\d{1,4}[.,]\d{2})$/);
-      if (simpleMatch) {
-        const [, name, price] = simpleMatch;
-        // Validate this looks like a product name
+      // First try: Pattern with * prefix: NESQUIK CILEKLI SUT %1 *29,75
+      const starMatch = line.match(/^(.+?)\s+[%]\d+\s+\*(\d{1,4}[.,]\d{2})$/);
+      if (starMatch) {
+        const [, name, price] = starMatch;
         if (name.length > 3 && /[A-ZÇĞİÖŞÜa-zçğıöşü]/.test(name)) {
           item = {
             name: name.trim(),
@@ -459,6 +459,24 @@ function parseItems(lines: string[], format: string): any[] {
             line_total: parseFloat(price.replace(',', '.')),
             raw_line: line
           };
+        }
+      }
+      
+      // Second try: Simple pattern without * but with price at end
+      if (!item) {
+        const simpleMatch = line.match(/^(.+?)\s+[*]?(\d{1,4}[.,]\d{2})$/);
+        if (simpleMatch) {
+          const [, name, price] = simpleMatch;
+          // Validate this looks like a product name
+          if (name.length > 3 && /[A-ZÇĞİÖŞÜa-zçğıöşü]/.test(name)) {
+            item = {
+              name: name.trim(),
+              qty: 1,
+              unit_price: parseFloat(price.replace(',', '.')),
+              line_total: parseFloat(price.replace(',', '.')),
+              raw_line: line
+            };
+          }
         }
       }
     }
@@ -1142,6 +1160,16 @@ function parseReceiptText(rawText: string): any {
   
   // Enhanced total validation for Migros - ALWAYS compute from items
   if (merchantDisplay === 'Migros') {
+    console.log(`\n=== MIGROS TOTAL CALCULATION DEBUG ===`);
+    console.log(`Items found: ${items.length}`);
+    items.forEach((item, idx) => {
+      console.log(`Item ${idx + 1}: ${item.name} - ${item.line_total}`);
+    });
+    console.log(`Discounts found: ${discounts.length}`);
+    discounts.forEach((discount, idx) => {
+      console.log(`Discount ${idx + 1}: ${discount.description} - ${discount.amount}`);
+    });
+    
     // Ensure TOPKDV is never used as grand_total
     if (totals.grand_total === totals.vat_total && totals.vat_total) {
       console.log('WARNING: Detected TOPKDV being used as grand_total, resetting...');
@@ -1154,19 +1182,25 @@ function parseReceiptText(rawText: string): any {
       const discountSum = discounts.reduce((sum, discount) => sum + (discount.amount || 0), 0);
       const computedTotal = itemsSum - discountSum;
       
-      console.log(`Migros total calculation: Items sum: ${itemsSum}, Discounts: ${discountSum}, Computed: ${computedTotal}`);
+      console.log(`Items sum: ${itemsSum}, Discounts sum: ${discountSum}, Computed total: ${computedTotal}`);
       
       if (computedTotal > 0) {
         // If we found a TOPLAM in the text, verify it matches our computation
         if (totals.grand_total && Math.abs(totals.grand_total - computedTotal) > 0.5) {
-          console.log(`Migros: Detected total ${totals.grand_total} doesn't match computed ${computedTotal}, using computed`);
+          console.log(`Detected total ${totals.grand_total} doesn't match computed ${computedTotal}, using computed`);
           warnings.push(`Grand total corrected from ${totals.grand_total} to ${computedTotal} using items calculation`);
         } else if (!totals.grand_total) {
           warnings.push('Grand total computed from items and discounts');
         }
         totals.grand_total = Math.round(computedTotal * 100) / 100;
+        console.log(`Final grand total set to: ${totals.grand_total}`);
+      } else {
+        console.log(`Computed total ${computedTotal} is not positive, not setting grand_total`);
       }
+    } else {
+      console.log('No items found, cannot compute total');
     }
+    console.log(`=== END MIGROS DEBUG ===\n`);
   }
   
   // Fallback: choose largest money value when still missing (but NOT for Migros - too unreliable)
@@ -1185,12 +1219,15 @@ function parseReceiptText(rawText: string): any {
   // Calculate computed totals
   const computedTotals = calculateComputedTotals(items, discounts, totals);
 
-  // For Migros, if detected grand_total doesn't reconcile, correct it to items - discounts
-  if (merchantDisplay === 'Migros' && totals.grand_total && !computedTotals.reconciles) {
+  // For Migros, if detected grand_total doesn't reconcile or is missing, use items - discounts
+  if (merchantDisplay === 'Migros') {
     const corrected = Math.round((computedTotals.items_sum - computedTotals.discounts_sum) * 100) / 100;
-    if (corrected > 0) {
+    console.log(`Migros reconciliation check: Current total: ${totals.grand_total}, Computed: ${corrected}, Reconciles: ${computedTotals.reconciles}`);
+    
+    if (!totals.grand_total || (!computedTotals.reconciles && corrected > 0)) {
+      console.log(`Setting grand_total to computed value: ${corrected}`);
       totals.grand_total = corrected;
-      warnings.push('Grand total corrected using items minus discounts');
+      warnings.push('Grand total set from items minus discounts calculation');
     }
   }
   
