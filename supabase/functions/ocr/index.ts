@@ -718,12 +718,14 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
   // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
     if (format === 'Migros') {
-      // For Migros: Look for 'TOPLAM' (but NOT 'ARA TOPLAM' or 'TOPKDV')
+      // For Migros: Prefer 'KDV'Lİ TOPLAM' or plain 'TOPLAM' near the bottom (exclude ARA TOPLAM, TOPKDV, KDV TUTARI)
       let idxToplam = -1;
       for (let i = linesAlpha.length - 1; i >= 0; i--) {
-        if (/\btoplam\b/i.test(linesAlpha[i]) && 
-            !/\bara\s*toplam\b/i.test(linesAlpha[i]) && 
-            !/\btopkdv\b/i.test(linesAlpha[i])) {
+        const la = linesAlpha[i];
+        if ((/\bkdv[’'`]?li\s*toplam\b/i.test(la) || /\btoplam\b/i.test(la)) &&
+            !/\bara\s*toplam\b/i.test(la) &&
+            !/\btopkdv\b/i.test(la) &&
+            !/\bkdv\s*tutari\b/i.test(la)) {
           idxToplam = i;
           break;
         }
