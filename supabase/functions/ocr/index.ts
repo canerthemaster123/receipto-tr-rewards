@@ -296,6 +296,8 @@ function parseItems(lines: string[], format: string): any[] {
   // Enhanced Migros noise filtering and product parsing
   console.log(`\n=== ITEM PARSING DEBUG (${format}) ===`);
   console.log(`Parsing range: ${startIndex + 1} to ${endIndex}`);
+  // Track previous line that looks like a product name (for price-on-next-line cases)
+  let lastNameCandidate: string | null = null;
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -371,8 +373,9 @@ function parseItems(lines: string[], format: string): any[] {
       if (isMigrosNonItem) continue;
     }
 
-    // General system line detection (for all formats)
-    const isSystemLine = /tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres|₺|tl|\d+[.,]\d{2}|^\d+$|^[*]+$|^#+/i.test(alphaLine);
+    // General system line detection (for all formats) - keep narrow to avoid filtering product lines
+    const isSystemLine = /(tarih|saat|fi[şs]|no|kdv|toplam|tutar|ref|onay|kodu|pos|terminal|batch|eku|mersis|tckn|vkn|tel|adres)/i.test(alphaLine)
+      || /^[\d\s*#]+$/.test(line);
 
     // Skip quantity-only unit lines like ",564 KG X" or "0,836 KG X"
     const isQtyUnitOnly = (
@@ -397,13 +400,18 @@ function parseItems(lines: string[], format: string): any[] {
     const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(line);
     if (!hasLetters) continue;
 
+    // Track potential product name for next-line price (Migros)
+    if (format === 'Migros' && !/\d+[.,]\d{2}\s*$/.test(line)) {
+      lastNameCandidate = line;
+    }
+ 
     // Enhanced item parsing for different formats
     let item = null;
 
     // 1. Weight-based items (KG format - Migros specific)
     if (format === 'Migros') {
       // Weight format with leading quantity: 0,485 KG x 119,95 TL/KG PEPINO KG %1 *58,18
-      const weightMatch1 = line.match(/^(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2}).*?([A-ZÇĞİÖŞÜa-zçğıöşü\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
+      const weightMatch1 = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2}).*?([A-ZÇĞİÖŞÜa-zçğıöşü\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
       if (weightMatch1) {
         const [, weight, unitPrice, name, total] = weightMatch1;
         item = {
@@ -417,7 +425,7 @@ function parseItems(lines: string[], format: string): any[] {
 
       // Alternative weight format: NAME KG 0,485 KG x 119,95 TL/KG = 58,18
       if (!item) {
-        const weightMatch2 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{3})\s*KG\s*x\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})$/i);
+        const weightMatch2 = line.match(/^(.+?)\s+KG\s+(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})$/i);
         if (weightMatch2) {
           const [, name, weight, unitPrice, total] = weightMatch2;
           item = {
@@ -502,6 +510,24 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
+    // 4. Price-only line pairing with previous name (Migros)
+    if (!item && format === 'Migros') {
+      const priceOnlyMatch = line.match(/^\s*[*x×]?\s*(\d{1,4}[.,]\d{2})\s*$/i);
+      if (priceOnlyMatch && lastNameCandidate && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(lastNameCandidate)) {
+        const priceVal = parseFloat(priceOnlyMatch[1].replace(',', '.'));
+        if (!isNaN(priceVal) && priceVal > 0) {
+          item = {
+            name: lastNameCandidate.trim(),
+            qty: 1,
+            unit_price: priceVal,
+            line_total: priceVal,
+            raw_line: `${lastNameCandidate} *${priceOnlyMatch[1]}`
+          };
+          lastNameCandidate = null;
+        }
+      }
+    }
+ 
     // Debug item creation attempt
     if (item) {
       console.log(`  ✅ Item parsed: ${JSON.stringify(item)}`);
@@ -534,6 +560,8 @@ function parseItems(lines: string[], format: string): any[] {
           raw_line: item.raw_line,
           product_code: null
         });
+        // Reset name candidate after successful item creation
+        lastNameCandidate = null;
       }
     }
   }
