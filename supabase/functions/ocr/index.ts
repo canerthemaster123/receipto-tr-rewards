@@ -294,9 +294,12 @@ function parseItems(lines: string[], format: string): any[] {
   if (endIndex === -1) endIndex = lines.length;
 
   // Enhanced Migros noise filtering and product parsing
+  console.log(`\n=== ITEM PARSING DEBUG (${format}) ===`);
+  console.log(`Parsing range: ${startIndex + 1} to ${endIndex}`);
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
     if (!line) continue;
+    console.log(`Line ${i}: "${line}"`);
 
     const alphaLine = alphaNormalize(line);
     const rawLower = line.toLowerCase();
@@ -428,11 +431,12 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
-    // 2. Regular items with explicit quantity (x1, x2, etc.)
+    // 2. Regular items with explicit quantity (x1, x2, etc.) - Enhanced for Migros
     if (!item) {
-      const regularMatch = line.match(/^(.+?)\s+x(\d+)\s+[*]?(\d{1,4}[.,]\d{2})$/i);
-      if (regularMatch) {
-        const [, name, qty, price] = regularMatch;
+      // Enhanced pattern to catch Migros format: "CIF LIMONLU         x20    x45.95"
+      const migrosRegularMatch = line.match(/^(.+?)\s+x(\d+)\s+x(\d{1,4}[.,]\d{2})$/i);
+      if (migrosRegularMatch) {
+        const [, name, qty, price] = migrosRegularMatch;
         const quantity = parseInt(qty);
         const lineTotal = parseFloat(price.replace(',', '.'));
         item = {
@@ -442,6 +446,23 @@ function parseItems(lines: string[], format: string): any[] {
           line_total: lineTotal,
           raw_line: line
         };
+      }
+      
+      // Original pattern for other formats: "PRODUCT x2 *25.50"
+      if (!item) {
+        const regularMatch = line.match(/^(.+?)\s+x(\d+)\s+[*]?(\d{1,4}[.,]\d{2})$/i);
+        if (regularMatch) {
+          const [, name, qty, price] = regularMatch;
+          const quantity = parseInt(qty);
+          const lineTotal = parseFloat(price.replace(',', '.'));
+          item = {
+            name: name.trim(),
+            qty: quantity,
+            unit_price: quantity > 0 ? lineTotal / quantity : lineTotal,
+            line_total: lineTotal,
+            raw_line: line
+          };
+        }
       }
     }
 
@@ -481,6 +502,13 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
+    // Debug item creation attempt
+    if (item) {
+      console.log(`  ✅ Item parsed: ${JSON.stringify(item)}`);
+    } else {
+      console.log(`  ❌ No item match for: "${line}"`);
+    }
+
     // Clean and validate item
     if (item && item.name && item.line_total > 0) {
       // Enhanced product name cleaning
@@ -510,6 +538,12 @@ function parseItems(lines: string[], format: string): any[] {
     }
   }
 
+  console.log(`=== ITEMS PARSING COMPLETE: Found ${items.length} items ===`);
+  items.forEach((item, idx) => {
+    console.log(`Item ${idx + 1}: ${item.name} - qty:${item.qty} - price:${item.line_total}`);
+  });
+  console.log(`=== END ITEMS DEBUG ===\n`);
+  
   return items;
 }
 
@@ -718,7 +752,12 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
   // Multi-line total fallback with format-specific keywords
   if (result.grand_total == null) {
     if (format === 'Migros') {
-      // For Migros: Prefer 'KDV'Lİ TOPLAM' or plain 'TOPLAM' near the bottom (exclude ARA TOPLAM, TOPKDV, KDV TUTARI)
+      // Enhanced Migros total detection with debug logging
+      console.log('\n=== MIGROS TOTAL DETECTION ===');
+      console.log('Available lines for total detection:');
+      lines.forEach((line, idx) => {
+        if (line.trim()) console.log(`${idx}: "${line}"`);
+      });
       let idxToplam = -1;
       for (let i = linesAlpha.length - 1; i >= 0; i--) {
         const la = linesAlpha[i];
