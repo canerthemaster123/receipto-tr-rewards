@@ -432,19 +432,14 @@ function extractCardInfo(text: string): string | null {
 function extractStoreLocation(text: string): string | null {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let addressLines: string[] = [];
-  let stopFound = false;
 
   for (const line of lines) {
     // Stop at TARIH or FIS NO
-    if (/\b(tarih|fis\s*no)\b/i.test(line)) {
-      stopFound = true;
-      break;
-    }
+    if (/\b(tarih|fis\s*no)\b/i.test(line)) break;
 
-    // Skip phone numbers and TEL: lines
-    if (/\b(tel|telefon)\s*[:=]?\s*\d/i.test(line)) {
-      continue;
-    }
+    // Skip phone numbers, TEL, customer service, and URLs
+    if (/\b(tel|telefon|m[uü]steri|iletis[iı]m)\b/i.test(line)) continue;
+    if (/https?:\/\//i.test(line) || /\bwww\./i.test(line)) continue;
 
     // Collect address-like lines (contain location keywords)
     if (/\b(mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir)\b/i.test(line)) {
@@ -474,11 +469,15 @@ function parseReceiptText(rawText: string): any {
   console.log(`Detected format: ${formatDetection.format} (confidence: ${formatDetection.confidence})`);
 
   // Extract basic info
-  const dateMatch = rawText.match(/TAR\u0130H[:.\s]*(\d{2}\/\d{2}\/\d{4})/i);
-  const timeMatch = rawText.match(/SAAT[:.\s]*(\d{1,2}):(\d{2})/i);
-  
+  // Support both TARİH and TARIH, with '/' or '.' separators
+  const dateMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{2}[\/.]\d{2}[\/.]\d{4})/i);
+  // SAAT may be HH or HH:MM
+  const timeMatchFull = rawText.match(/SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
+
   const purchaseDate = dateMatch ? dateMatch[1] : null;
-  const purchaseTime = timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}` : null;
+  const purchaseTime = timeMatchFull
+    ? `${timeMatchFull[1].padStart(2, '0')}:${(timeMatchFull[2] ?? '00')}`
+    : null;
 
   // Parse items (NEVER leave empty)
   const items = parseItems(lines, formatDetection.format);
@@ -493,15 +492,22 @@ function parseReceiptText(rawText: string): any {
   let grandTotal = totals.grand_total;
   if (items.length > 0) {
     const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
-    const discountSum = discounts.reduce((sum, discount) => sum + (discount.amount || 0), 0);
-    const computedTotal = itemsSum - discountSum;
-    
+    const discountSum = discounts.reduce((sum, d) => sum + (d.amount || 0), 0); // discounts negative
+    const computedTotal = itemsSum + discountSum;
+
     console.log(`Items sum: ${itemsSum}, Discount sum: ${discountSum}, Computed: ${computedTotal}`);
-    
-    // Use computed total if no total found or if it's more reliable
-    if (!grandTotal || (computedTotal > 0 && Math.abs(computedTotal - grandTotal) > 0.5)) {
-      grandTotal = Math.round(computedTotal * 100) / 100;
-      console.log(`Using computed total: ${grandTotal}`);
+
+    const computedRounded = Math.round(computedTotal * 100) / 100;
+
+    // Prefer computed if no OCR total, or if within ±0.10 TL of OCR total
+    if (!grandTotal) {
+      grandTotal = computedRounded;
+      console.log(`Using computed total (no OCR total): ${grandTotal}`);
+    } else if (Math.abs(computedRounded - grandTotal) <= 0.10) {
+      grandTotal = computedRounded;
+      console.log(`Using computed total (within tolerance): ${grandTotal}`);
+    } else {
+      console.log(`Keeping OCR total: ${grandTotal}`);
     }
   }
 
@@ -523,7 +529,7 @@ function parseReceiptText(rawText: string): any {
     purchase_date: purchaseDate,
     store_address: storeLocation,
     total: grandTotal || 0,
-    payment_method: cardLast4 ? 'KART' : null,
+    payment_method: cardLast4 ? `Kredi Kartı (****${cardLast4})` : 'KART',
     receipt_unique_no: null,
     fis_no: null,
     barcode_numbers: [],
