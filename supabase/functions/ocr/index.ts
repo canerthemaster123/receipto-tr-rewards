@@ -510,20 +510,87 @@ function parseReceiptText(rawText: string): any {
   
   console.log(`Detected format: ${formatDetection.format} (confidence: ${formatDetection.confidence})`);
 
-  // Extract basic info - STRICT DATE/TIME FORMATTING
-  // Support both TARİH and TARIH, ensure DD/MM/YYYY format
-  const dateMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})/i);
-  // SAAT parsing for HH:MM format
-  const timeMatch = rawText.match(/SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
-
-  // Format date as DD/MM/YYYY (Turkish standard)
-  const purchaseDate = dateMatch ? 
-    `${dateMatch[1].padStart(2, '0')}/${dateMatch[2].padStart(2, '0')}/${dateMatch[3]}` : null;
+  // Extract basic info - STRICT DATE/TIME FORMATTING for Migros
+  console.log('\n=== DATE & TIME EXTRACTION ===');
   
-  // Format time as HH:MM
-  const purchaseTime = timeMatch
-    ? `${timeMatch[1].padStart(2, '0')}:${(timeMatch[2] ?? '00')}`
-    : null;
+  let purchaseDate = null;
+  let purchaseTime = null;
+  
+  // Strategy 1: Look for combined date and time patterns
+  const combinedMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})[\s\S]*?SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
+  if (combinedMatch) {
+    purchaseDate = `${combinedMatch[1].padStart(2, '0')}/${combinedMatch[2].padStart(2, '0')}/${combinedMatch[3]}`;
+    purchaseTime = `${combinedMatch[4].padStart(2, '0')}:${(combinedMatch[5] ?? '00')}`;
+    console.log(`Found combined date/time: ${purchaseDate} ${purchaseTime}`);
+  }
+  
+  // Strategy 2: Separate date and time extraction
+  if (!purchaseDate || !purchaseTime) {
+    // Extract date - support various separators and formats
+    const datePattern = /TAR[İI]H[:.\s]*(\d{1,2})[\/.:-](\d{1,2})[\/.:-](\d{2,4})/i;
+    const dateMatch = rawText.match(datePattern);
+    
+    if (dateMatch) {
+      let day = dateMatch[1].padStart(2, '0');
+      let month = dateMatch[2].padStart(2, '0');
+      let year = dateMatch[3];
+      
+      // Handle 2-digit years (assume 20xx)
+      if (year.length === 2) {
+        year = '20' + year;
+      }
+      
+      purchaseDate = `${day}/${month}/${year}`;
+      console.log(`Found date: ${purchaseDate}`);
+    }
+    
+    // Extract time
+    const timePattern = /SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i;
+    const timeMatch = rawText.match(timePattern);
+    
+    if (timeMatch) {
+      purchaseTime = `${timeMatch[1].padStart(2, '0')}:${(timeMatch[2] ?? '00')}`;
+      console.log(`Found time: ${purchaseTime}`);
+    }
+  }
+  
+  // Strategy 3: Fallback - extract any date-like numbers if primary patterns fail
+  if (!purchaseDate) {
+    console.log('Primary date extraction failed, trying fallback...');
+    // Look for any DD/MM/YYYY or DD.MM.YYYY pattern in the text
+    const fallbackDateMatch = rawText.match(/(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})/);
+    if (fallbackDateMatch) {
+      purchaseDate = `${fallbackDateMatch[1].padStart(2, '0')}/${fallbackDateMatch[2].padStart(2, '0')}/${fallbackDateMatch[3]}`;
+      console.log(`Fallback date found: ${purchaseDate}`);
+    }
+  }
+  
+  // Strategy 4: If still no time, look for any HH:MM pattern
+  if (!purchaseTime) {
+    console.log('Primary time extraction failed, trying fallback...');
+    const fallbackTimeMatch = rawText.match(/(\d{1,2}):(\d{2})/);
+    if (fallbackTimeMatch && parseInt(fallbackTimeMatch[1]) <= 23 && parseInt(fallbackTimeMatch[2]) <= 59) {
+      purchaseTime = `${fallbackTimeMatch[1].padStart(2, '0')}:${fallbackTimeMatch[2]}`;
+      console.log(`Fallback time found: ${purchaseTime}`);
+    }
+  }
+  
+  // Ensure we always have some date (use current date as last resort)
+  if (!purchaseDate) {
+    const now = new Date();
+    purchaseDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+    console.log(`Using current date as fallback: ${purchaseDate}`);
+  }
+  
+  // Default time if not found
+  if (!purchaseTime) {
+    purchaseTime = '00:00';
+    console.log(`Using default time: ${purchaseTime}`);
+  }
+  
+  const fullDateTime = `${purchaseDate} ${purchaseTime}`;
+  console.log(`Final Date/Time: ${fullDateTime}`);
+  console.log('=== DATE & TIME EXTRACTION COMPLETE ===\n');
 
   // Parse items (NEVER leave empty)
   const items = parseItems(lines, formatDetection.format);
@@ -580,7 +647,7 @@ function parseReceiptText(rawText: string): any {
 
   const result = {
     store_location: storeLocation,
-    purchase_time: purchaseTime,
+    purchase_time: fullDateTime, // Now includes both date and time in DD/MM/YYYY HH:MM format
     items: items,
     discounts: discounts,
     grand_total: grandTotal,
@@ -589,7 +656,7 @@ function parseReceiptText(rawText: string): any {
     // Additional fields for compatibility
     merchant_raw: formatDetection.format,
     merchant_brand: formatDetection.format,
-    purchase_date: purchaseDate,
+    purchase_date: purchaseDate, // Keep separate for backward compatibility
     store_address: storeLocation,
     total: grandTotal || 0,
     payment_method: cardLast4 ? `Kredi Kartı (****${cardLast4})` : 'KART',
