@@ -120,8 +120,9 @@ function detectFormat(text: string): { format: string; confidence: number } {
 }
 
 /**
- * Enhanced Migros items parser following user requirements
+ * Enhanced Migros items parser following strict user requirements
  * NEVER leave items list empty if receipt has products
+ * Filter ALL noise patterns and only include real products
  */
 function parseItems(lines: string[], format: string): any[] {
   const items: any[] = [];
@@ -151,7 +152,7 @@ function parseItems(lines: string[], format: string): any[] {
   let endIndex = lines.length;
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
-    if (/\b(topkdv|kdv|genel\s*toplam|tutar|ara\s*toplam)\b/i.test(line)) {
+    if (/\b(topkdv|kdv|genel\s*toplam|tutar|ara\s*toplam|toplam)\b/i.test(line)) {
       endIndex = i;
       break;
     }
@@ -160,6 +161,7 @@ function parseItems(lines: string[], format: string): any[] {
   console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
 
   let pendingProductName: string | null = null;
+  const processedItems = new Map<string, any>(); // Group identical items
 
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
@@ -167,16 +169,22 @@ function parseItems(lines: string[], format: string): any[] {
 
     console.log(`Processing line ${i}: "${line}"`);
 
-    // Skip non-product lines
+    // Enhanced noise filtering - skip ALL non-product lines
     const alphaLine = alphaNormalize(line);
-    if (/\b(bilgi\s*fisi|tur\s*e\s*arsiv\s*fatura|indirimlr|tutar\s*ind|kocailem|topkdv|kdv)\b/i.test(alphaLine)) {
-      console.log(`  ❌ Skipping non-product line`);
+    if (/\b(bilgi\s*fisi|tur\s*e\s*arsiv\s*fatura|indirimlr|tutar\s*ind|kocailem|topkdv|kdv|dem|kg\s*x)\b/i.test(alphaLine)) {
+      console.log(`  ❌ Skipping non-product line (noise)`);
       continue;
     }
 
-    // Skip lines that are only numbers, stars, or system codes
+    // Skip system codes, reference numbers, and pure numeric lines
     if (/^[\d\s*#-]+$/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
       console.log(`  ❌ Skipping system line`);
+      continue;
+    }
+
+    // Skip lines starting with # (barcode/system codes)
+    if (/^#/.test(line)) {
+      console.log(`  ❌ Skipping barcode/system code`);
       continue;
     }
 
@@ -187,8 +195,9 @@ function parseItems(lines: string[], format: string): any[] {
     const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2}).*?([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
     if (weightMatch) {
       const [, weight, unitPrice, name, total] = weightMatch;
+      const cleanName = name.trim().replace(/\s*KG\s*$/, '');
       item = {
-        name: name.trim(),
+        name: cleanName,
         qty: parseFloat(weight.replace(',', '.')) + ' KG',
         unit_price: parseFloat(unitPrice.replace(',', '.')),
         line_total: parseFloat(total.replace(',', '.')),
@@ -197,16 +206,39 @@ function parseItems(lines: string[], format: string): any[] {
       console.log(`  ✅ Weight item: ${JSON.stringify(item)}`);
     }
 
-    // Pattern 2: Regular items with embedded price
+    // Pattern 2: Items with quantity multiplier (e.g., "NESQUIK ÇİLEKLİ SÜT x2 *47,00")
+    if (!item) {
+      const qtyMatch = line.match(/^([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?)\s*[x×](\d+)\s*.*?\*(\d{1,4}[.,]\d{2})$/i);
+      if (qtyMatch) {
+        const [, name, qty, total] = qtyMatch;
+        const quantity = parseInt(qty);
+        const totalPrice = parseFloat(total.replace(',', '.'));
+        if (name.length > 2 && quantity > 0 && totalPrice > 0) {
+          item = {
+            name: name.trim(),
+            qty: quantity,
+            unit_price: totalPrice / quantity,
+            line_total: totalPrice,
+            raw_line: line
+          };
+          console.log(`  ✅ Multi-qty item: ${JSON.stringify(item)}`);
+        }
+      }
+    }
+
+    // Pattern 3: Regular items with embedded price
     // e.g., "CIF LIMONLU %20 *46,95"
     if (!item) {
       const regularMatch = line.match(/^([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
       if (regularMatch) {
         const [, name, price] = regularMatch;
         const priceVal = parseFloat(price.replace(',', '.'));
-        if (name.length > 2 && priceVal > 0) {
+        const cleanName = name.trim();
+        // Additional filtering for known noise patterns
+        if (cleanName.length > 2 && priceVal > 0 && 
+            !/^(migros|tel|adres|saat|tarih|fis|dem|kg|kdv|toplam|tutar|bilgi)/i.test(cleanName)) {
           item = {
-            name: name.trim(),
+            name: cleanName,
             qty: 1,
             unit_price: priceVal,
             line_total: priceVal,
@@ -217,18 +249,19 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
-    // Pattern 3: Product name without price (save for next line)
+    // Pattern 4: Product name without price (save for next line)
     if (!item && /[A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc]{3,}/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
-      // Clean the product name
+      // Clean the product name and filter noise
       const cleanName = line.replace(/^[^A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc]*/, '').replace(/[^A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]*$/, '').trim();
-      if (cleanName.length > 2) {
+      if (cleanName.length > 2 && 
+          !/^(migros|tel|adres|saat|tarih|fis|dem|kg|kdv|toplam|tutar|bilgi)/i.test(cleanName)) {
         pendingProductName = cleanName;
         console.log(`  💾 Pending product name: "${pendingProductName}"`);
       }
       continue;
     }
 
-    // Pattern 4: Price-only line (pair with pending name)
+    // Pattern 5: Price-only line (pair with pending name)
     if (!item && pendingProductName) {
       const priceMatch = line.match(/^\s*[*]?\s*(\d{1,4}[.,]\d{2})\s*$/);
       if (priceMatch) {
@@ -247,43 +280,35 @@ function parseItems(lines: string[], format: string): any[] {
       }
     }
 
-    // Pattern 5: Fallback - any line with product name and price
-    if (!item) {
-      const fallbackMatch = line.match(/([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]{3,}).*?(\d{1,4}[.,]\d{2})/i);
-      if (fallbackMatch) {
-        const [, name, price] = fallbackMatch;
-        const priceVal = parseFloat(price.replace(',', '.'));
-        const cleanName = name.trim();
-        if (cleanName.length > 2 && priceVal > 0 && !/^(migros|tel|adres|saat|tarih|fis)/i.test(cleanName)) {
-          item = {
-            name: cleanName,
-            qty: 1,
-            unit_price: priceVal,
-            line_total: priceVal,
-            raw_line: line
-          };
-          console.log(`  ✅ Fallback item: ${JSON.stringify(item)}`);
-        }
-      }
-    }
-
     if (item) {
-      items.push({
-        name: item.name,
-        qty: item.qty,
-        unit_price: item.unit_price,
-        line_total: item.line_total,
-        raw_line: item.raw_line,
-        product_code: null
-      });
+      // Group identical items by name
+      const key = item.name.toLowerCase();
+      if (processedItems.has(key)) {
+        const existing = processedItems.get(key);
+        existing.qty = (typeof existing.qty === 'number' ? existing.qty : 1) + (typeof item.qty === 'number' ? item.qty : 1);
+        existing.line_total += item.line_total;
+        existing.raw_line += ` + ${item.raw_line}`;
+        console.log(`  🔄 Grouped with existing item: ${JSON.stringify(existing)}`);
+      } else {
+        processedItems.set(key, {
+          name: item.name,
+          qty: item.qty,
+          unit_price: item.unit_price,
+          line_total: item.line_total,
+          raw_line: item.raw_line,
+          product_code: null
+        });
+      }
       pendingProductName = null; // Reset after successful item creation
     } else {
       console.log(`  ❌ No item pattern matched`);
     }
   }
 
-  console.log(`=== MIGROS ITEMS COMPLETE: Found ${items.length} items ===\n`);
-  return items;
+  // Convert map to array
+  const finalItems = Array.from(processedItems.values());
+  console.log(`=== MIGROS ITEMS COMPLETE: Found ${finalItems.length} items ===\n`);
+  return finalItems;
 }
 
 // Keep existing logic for other formats
@@ -344,7 +369,8 @@ function parseDiscounts(lines: string[], format: string): any[] {
 }
 
 /**
- * Enhanced total extraction for Migros - prioritizes TOPLAM pattern
+ * Enhanced total extraction for Migros - strict TOPLAM prioritization
+ * NEVER use TOPKDV as grand_total, only real payment amounts
  */
 function extractTotals(text: string, format: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
   const result: any = {};
@@ -353,7 +379,7 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
   console.log('\n=== TOTAL EXTRACTION ===');
   
   if (format === 'Migros') {
-    // Priority 1: Direct "TOPLAM *XX.XX" pattern
+    // Priority 1: Direct "TOPLAM *XX.XX" pattern (most reliable)
     const toplamDirectMatch = text.match(/TOPLAM\s*[*]\s*(\d{1,4}[.,]\d{2})/i);
     if (toplamDirectMatch) {
       result.grand_total = parseFloat(toplamDirectMatch[1].replace(',', '.'));
@@ -376,13 +402,29 @@ function extractTotals(text: string, format: string): { subtotal?: number; vat_t
       }
     }
 
-    // Priority 3: "KDV'LI TOPLAM" but only if no regular TOPLAM found
+    // Priority 3: Look for final payment amount in POS section
+    if (!result.grand_total) {
+      const posAmountMatch = text.match(/ORTAK\s*POS[\s\S]*?\*(\d{1,4}[.,]\d{2})/i);
+      if (posAmountMatch) {
+        result.grand_total = parseFloat(posAmountMatch[1].replace(',', '.'));
+        console.log(`Found POS payment amount: ${result.grand_total}`);
+      }
+    }
+
+    // Priority 4: "KDV'LI TOPLAM" only as last resort
     if (!result.grand_total) {
       const kdvliToplamMatch = text.match(/KDV['']?L[\u0131I]\s*TOPLAM\s*[*]?\s*(\d{1,4}[.,]\d{2})/i);
       if (kdvliToplamMatch) {
         result.grand_total = parseFloat(kdvliToplamMatch[1].replace(',', '.'));
         console.log(`Found KDV'LI TOPLAM: ${result.grand_total}`);
       }
+    }
+
+    // Extract subtotal (before discounts)
+    const araToplamMatch = text.match(/ARA\s*TOPLAM\s*[*]?\s*(\d{1,4}[.,]\d{2})/i);
+    if (araToplamMatch) {
+      result.subtotal = parseFloat(araToplamMatch[1].replace(',', '.'));
+      console.log(`Found ARA TOPLAM (subtotal): ${result.subtotal}`);
     }
 
     // Extract TOPKDV (VAT total) - NEVER use as grand_total
@@ -468,15 +510,19 @@ function parseReceiptText(rawText: string): any {
   
   console.log(`Detected format: ${formatDetection.format} (confidence: ${formatDetection.confidence})`);
 
-  // Extract basic info
-  // Support both TARİH and TARIH, with '/' or '.' separators
-  const dateMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{2}[\/.]\d{2}[\/.]\d{4})/i);
-  // SAAT may be HH or HH:MM
-  const timeMatchFull = rawText.match(/SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
+  // Extract basic info - STRICT DATE/TIME FORMATTING
+  // Support both TARİH and TARIH, ensure DD/MM/YYYY format
+  const dateMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})/i);
+  // SAAT parsing for HH:MM format
+  const timeMatch = rawText.match(/SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
 
-  const purchaseDate = dateMatch ? dateMatch[1] : null;
-  const purchaseTime = timeMatchFull
-    ? `${timeMatchFull[1].padStart(2, '0')}:${(timeMatchFull[2] ?? '00')}`
+  // Format date as DD/MM/YYYY (Turkish standard)
+  const purchaseDate = dateMatch ? 
+    `${dateMatch[1].padStart(2, '0')}/${dateMatch[2].padStart(2, '0')}/${dateMatch[3]}` : null;
+  
+  // Format time as HH:MM
+  const purchaseTime = timeMatch
+    ? `${timeMatch[1].padStart(2, '0')}:${(timeMatch[2] ?? '00')}`
     : null;
 
   // Parse items (NEVER leave empty)
@@ -488,28 +534,45 @@ function parseReceiptText(rawText: string): any {
   // Extract totals
   const totals = extractTotals(rawText, formatDetection.format);
   
-  // Calculate grand total: sum(items) + sum(discounts)
+  // Calculate grand total: sum(items) + sum(discounts) with strict ±0.05 TL tolerance
   let grandTotal = totals.grand_total;
+  
+  console.log(`\n=== GRAND TOTAL CALCULATION ===`);
+  console.log(`OCR extracted total: ${grandTotal}`);
+  
   if (items.length > 0) {
     const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
-    const discountSum = discounts.reduce((sum, d) => sum + (d.amount || 0), 0); // discounts negative
-    const computedTotal = itemsSum + discountSum;
+    const discountSum = discounts.reduce((sum, d) => sum + (d.amount || 0), 0); // discounts are negative
+    const computedTotal = itemsSum + discountSum; // discounts reduce the total
 
-    console.log(`Items sum: ${itemsSum}, Discount sum: ${discountSum}, Computed: ${computedTotal}`);
+    console.log(`Items sum: ${itemsSum} TL`);
+    console.log(`Discount sum: ${discountSum} TL (negative)`);
+    console.log(`Computed total: ${computedTotal} TL`);
 
     const computedRounded = Math.round(computedTotal * 100) / 100;
 
-    // Prefer computed if no OCR total, or if within ±0.10 TL of OCR total
+    // Use strict tolerance of ±0.05 TL as requested
     if (!grandTotal) {
       grandTotal = computedRounded;
-      console.log(`Using computed total (no OCR total): ${grandTotal}`);
-    } else if (Math.abs(computedRounded - grandTotal) <= 0.10) {
+      console.log(`Using computed total (no OCR total): ${grandTotal} TL`);
+    } else if (Math.abs(computedRounded - grandTotal) <= 0.05) {
       grandTotal = computedRounded;
-      console.log(`Using computed total (within tolerance): ${grandTotal}`);
+      console.log(`Using computed total (within ±0.05 TL tolerance): ${grandTotal} TL`);
     } else {
-      console.log(`Keeping OCR total: ${grandTotal}`);
+      console.log(`OCR total: ${grandTotal} TL vs Computed: ${computedRounded} TL`);
+      console.log(`Difference: ${Math.abs(computedRounded - grandTotal)} TL (>0.05 tolerance)`);
+      // Prefer computed total if it makes more sense (items + discounts)
+      if (computedRounded > 0 && computedRounded < grandTotal * 2) {
+        grandTotal = computedRounded;
+        console.log(`Using computed total (more reliable): ${grandTotal} TL`);
+      } else {
+        console.log(`Keeping OCR total: ${grandTotal} TL`);
+      }
     }
   }
+  
+  console.log(`Final grand total: ${grandTotal} TL`);
+  console.log(`=== GRAND TOTAL CALCULATION COMPLETE ===\n`);
 
   // Extract card info and store location
   const cardLast4 = extractCardInfo(rawText);
