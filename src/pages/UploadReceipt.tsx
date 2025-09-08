@@ -661,7 +661,7 @@ const UploadReceipt: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="date">{t('upload.purchaseDate')}</Label>
+                <Label htmlFor="date">Satın Alma Tarihi</Label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -677,7 +677,7 @@ const UploadReceipt: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="purchaseTime">Purchase Time</Label>
+                  <Label htmlFor="purchaseTime">Saat</Label>
                   <Input
                     id="purchaseTime"
                     placeholder="14:32"
@@ -687,7 +687,7 @@ const UploadReceipt: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="storeAddress">Store Address</Label>
+                  <Label htmlFor="storeAddress">Mağaza Adresi</Label>
                   <Input
                     id="storeAddress"
                     placeholder="Store location"

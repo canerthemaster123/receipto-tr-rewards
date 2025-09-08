@@ -329,36 +329,38 @@ function parseDiscounts(lines: string[], format: string): any[] {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // KOCAILEM discount
-    if (/\(koca[i\u0131]lem\)/i.test(line)) {
-      // Look for negative amount in current or next lines
-      for (let j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
-        const negativeMatch = lines[j].match(/-(\d+[.,]\d{2})/);
-        if (negativeMatch) {
-          const amount = parseFloat(negativeMatch[1].replace(',', '.'));
-          if (amount > 0) {
+    // KOCAILEM discount - look for "TUTAR İND. (KOCAILEM)" pattern
+    if (line.includes('TUTAR İND.') && line.includes('KOCAİLEM')) {
+      // Look for the discount amount in previous lines (typical Migros pattern)
+      for (let j = i - 3; j <= i + 1; j++) {
+        if (j >= 0 && j < lines.length) {
+          const discountLine = lines[j];
+          const discountMatch = discountLine.match(/[\*\s]*(-\d+[.,]\d+)/);
+          if (discountMatch) {
+            const discountAmount = parseFloat(discountMatch[1].replace(',', '.'));
             discounts.push({
-              description: 'KOCAILEM',
-              amount: amount
+              description: 'KOCAILEM İNDİRİMİ',
+              amount: discountAmount // Keep as negative
             });
-            console.log(`Found KOCAILEM discount: ${amount}`);
+            console.log(`Found KOCAILEM discount: ${discountAmount} TL`);
             break;
           }
         }
       }
     }
 
-    // TUTAR IND discount
-    if (/tutar\s*ind/i.test(line)) {
-      const amountMatch = line.match(/(\d+[.,]\d{2})/);
-      if (amountMatch) {
-        const amount = parseFloat(amountMatch[1].replace(',', '.'));
-        if (amount > 0) {
+    // Other discount patterns
+    if (/\b(tutar\s*ind|indirim)\b/i.test(line) && !line.includes('KOCAİLEM')) {
+      const currentMatch = line.match(/[\*\s]*(-?\d+[.,]\d+)/);
+      if (currentMatch) {
+        const amount = parseFloat(currentMatch[1].replace(',', '.'));
+        if (amount < 0) {
+          const discountName = line.replace(/[\*\d\.,\s-]+$/, '').trim() || 'İNDİRİM';
           discounts.push({
-            description: 'TUTAR IND.',
+            description: discountName,
             amount: amount
           });
-          console.log(`Found TUTAR IND discount: ${amount}`);
+          console.log(`Found discount: ${discountName} = ${amount} TL`);
         }
       }
     }
