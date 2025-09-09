@@ -96,6 +96,10 @@ function detectFormat(text: string): { format: string; confidence: number } {
       patterns: ['migros', 'ticaret', 'versitesi', 'magazasi', 'rumeli', 'fener']
     },
     {
+      name: 'Şok',
+      patterns: ['sok', 'marketler', 'ticaret', 'a.s.', 'sok market']
+    },
+    {
       name: 'BIM',
       patterns: ['bim', 'birlesik', 'magazalar', 'nihai', 'tuketi']
     },
@@ -127,7 +131,9 @@ function detectFormat(text: string): { format: string; confidence: number } {
 function parseItems(lines: string[], format: string): any[] {
   const items: any[] = [];
   
-  if (format !== 'Migros') {
+  if (format === 'Şok') {
+    return parseŞokItems(lines);
+  } else if (format !== 'Migros') {
     // Keep existing logic for other formats
     return parseItemsOtherFormats(lines, format);
   }
@@ -471,6 +477,292 @@ function extractCardInfo(text: string): string | null {
 }
 
 /**
+ * Parse Şok Market items following strict user requirements
+ */
+function parseŞokItems(lines: string[]): any[] {
+  const items: any[] = [];
+  
+  console.log(`\n=== ŞOK ITEMS PARSING ===`);
+  console.log('All lines:');
+  lines.forEach((line, idx) => {
+    console.log(`${idx}: "${line}"`);
+  });
+
+  // Find start: after FIS NO or TARIH
+  let startIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = alphaNormalize(lines[i]);
+    if (/\b(fis\s*no|tarih)\b/i.test(line)) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  // Find end: before payment details/totals
+  let endIndex = lines.length;
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = alphaNormalize(lines[i]);
+    if (/\b(topkdv|kdv|genel\s*toplam|toplam|ara\s*toplam|tutar|indirim|satis|odeme)\b/i.test(line)) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
+
+  const processedItems = new Map<string, any>(); // Group identical items
+
+  for (let i = startIndex + 1; i < endIndex; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    console.log(`Processing line ${i}: "${line}"`);
+
+    // Enhanced noise filtering for Şok receipts
+    const alphaLine = alphaNormalize(line);
+    if (/\b(bilgi\s*fisi|tur|indirim|tutar\s*ind|kocailem|topkdv|kdv|toplam|ara\s*toplam|satis|odeme)\b/i.test(alphaLine)) {
+      console.log(`  ❌ Skipping non-product line (noise)`);
+      continue;
+    }
+
+    // Skip system codes, reference numbers, and pure numeric lines
+    if (/^[\d\s*#%-]+$/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
+      console.log(`  ❌ Skipping system line`);
+      continue;
+    }
+
+    // Skip lines starting with % (tax lines)
+    if (/^%/.test(line)) {
+      console.log(`  ❌ Skipping tax line`);
+      continue;
+    }
+
+    let item: any = null;
+
+    // Pattern 1: Weight-based items (e.g., "0,485 KG x 29,95 TL/KG = 14,52")
+    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?=?\s*(\d{1,4}[.,]\d{2})/i);
+    if (weightMatch) {
+      const [, weight, unitPrice, total] = weightMatch;
+      // Look for product name in previous or next lines
+      let productName = 'Ağırlıklı Ürün';
+      if (i > 0 && lines[i-1] && !/\d+[.,]\d{2}/.test(lines[i-1])) {
+        productName = lines[i-1].trim();
+      }
+      
+      item = {
+        name: `${productName} — ${weight.replace(',', '.')} KG x ${unitPrice.replace(',', '.')} TL/KG`,
+        qty: parseFloat(weight.replace(',', '.')),
+        unit_price: parseFloat(unitPrice.replace(',', '.')),
+        line_total: parseFloat(total.replace(',', '.')),
+        raw_line: line
+      };
+      console.log(`  ✅ Weight item: ${item.name} — ${item.line_total} TL`);
+    }
+    // Pattern 2: Regular items with quantity (e.g., "ÜLKER ÇİKOLATA x3 12,75")
+    else if (/[x×]\s*(\d+)\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
+      const match = line.match(/^(.+?)\s*[x×]\s*(\d+)\s*(\d{1,4}[.,]\d{2})$/i);
+      if (match) {
+        const [, name, qty, total] = match;
+        const unitPrice = parseFloat(total.replace(',', '.')) / parseInt(qty);
+        
+        item = {
+          name: `${name.trim()} x${qty}`,
+          qty: parseInt(qty),
+          unit_price: Math.round(unitPrice * 100) / 100,
+          line_total: parseFloat(total.replace(',', '.')),
+          raw_line: line
+        };
+        console.log(`  ✅ Multi-quantity item: ${item.name} — ${item.line_total} TL`);
+      }
+    }
+    // Pattern 3: Simple items with price at end (e.g., "ÜLKER ÇİKOLATA 4,25")
+    else if (/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i.test(line)) {
+      const match = line.match(/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i);
+      if (match) {
+        const [, name, price] = match;
+        const cleanName = name.trim();
+        
+        // Skip if it looks like a discount or total line
+        if (/\b(indirim|toplam|ara|tutar|kdv)\b/i.test(cleanName)) {
+          console.log(`  ❌ Skipping total/discount line`);
+          continue;
+        }
+        
+        item = {
+          name: cleanName,
+          qty: 1,
+          unit_price: parseFloat(price.replace(',', '.')),
+          line_total: parseFloat(price.replace(',', '.')),
+          raw_line: line
+        };
+        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
+      }
+    }
+
+    // Add item to processed list (group identical items)
+    if (item) {
+      const key = item.name.toLowerCase();
+      if (processedItems.has(key)) {
+        const existing = processedItems.get(key);
+        existing.qty += item.qty;
+        existing.line_total += item.line_total;
+        existing.name = `${existing.name.replace(/ x\d+$/, '')} x${existing.qty}`;
+        console.log(`  🔄 Updated existing item: ${existing.name} — ${existing.line_total} TL`);
+      } else {
+        processedItems.set(key, item);
+        items.push(item);
+      }
+    } else {
+      console.log(`  ❓ Could not parse line as item`);
+    }
+  }
+
+  console.log(`=== ŞOK ITEMS PARSING COMPLETE: Found ${items.length} items ===\n`);
+  return items;
+}
+
+/**
+ * Parse discounts for Şok Market receipts
+ */
+function parseŞokDiscounts(lines: string[]): any[] {
+  const discounts: any[] = [];
+  
+  console.log(`\n=== ŞOK DISCOUNT PARSING ===`);
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const alphaLine = alphaNormalize(line);
+    
+    // Look for discount patterns
+    if (/\b(indirim|tutar\s*ind)\b/i.test(alphaLine)) {
+      console.log(`Found discount line: "${line}"`);
+      
+      // Extract discount amount
+      const amountMatch = line.match(/-?\s*(\d{1,4}[.,]\d{2})/);
+      if (amountMatch) {
+        const amount = -Math.abs(parseFloat(amountMatch[1].replace(',', '.'))); // Ensure negative
+        
+        // Look for discount description in nearby lines
+        let description = 'İndirim';
+        for (let j = Math.max(0, i-2); j <= Math.min(lines.length-1, i+2); j++) {
+          if (j !== i && /\b(kocailem|member|uye|promosyon)\b/i.test(alphaNormalize(lines[j]))) {
+            description = lines[j].trim();
+            break;
+          }
+        }
+        
+        discounts.push({
+          description: description,
+          amount: amount,
+          raw_line: line
+        });
+        
+        console.log(`  ✅ Discount: ${description} — ${amount} TL`);
+      }
+    }
+  }
+  
+  console.log(`=== ŞOK DISCOUNT PARSING COMPLETE: Found ${discounts.length} discounts ===\n`);
+  return discounts;
+}
+
+/**
+ * Extract totals for Şok Market receipts
+ */
+function extractŞokTotals(text: string): { grand_total: number | null } {
+  console.log(`\n=== ŞOK TOTAL EXTRACTION ===`);
+  
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let grandTotal: number | null = null;
+  
+  // Look for "TOPLAM" or "GENEL TOPLAM" patterns
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    const alphaLine = alphaNormalize(line);
+    
+    if (/\b(genel\s*toplam|toplam)\b/i.test(alphaLine) && !/ara\s*toplam/i.test(alphaLine)) {
+      console.log(`Found total line: "${line}"`);
+      
+      // Extract amount
+      const amountMatch = line.match(/(\d{1,4}[.,]\d{2})/);
+      if (amountMatch) {
+        grandTotal = parseFloat(amountMatch[1].replace(',', '.'));
+        console.log(`  ✅ Grand total: ${grandTotal} TL`);
+        break;
+      }
+    }
+  }
+  
+  console.log(`=== ŞOK TOTAL EXTRACTION COMPLETE ===\n`);
+  return { grand_total: grandTotal };
+}
+
+/**
+ * Extract card info for Şok Market receipts
+ */
+function extractŞokCardInfo(text: string): string | null {
+  console.log(`\n=== ŞOK CARD INFO EXTRACTION ===`);
+  
+  // Look for card patterns specific to Şok
+  const cardPatterns = [
+    /(\d{4,6})\*+(\d{4})/,  // 528208******6309
+    /\*+(\d{4})/,           // ******6309
+    /(\d{4})\s*\*+\s*(\d{4})/,  // 5282 **** 6309
+    /KART.*?(\d{4})$/m      // KART ending with 4 digits
+  ];
+
+  for (const pattern of cardPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const lastGroup = match[match.length - 1];
+      if (lastGroup && /^\d{4}$/.test(lastGroup)) {
+        console.log(`Found card last 4: ${lastGroup}`);
+        return lastGroup;
+      }
+    }
+  }
+
+  console.log('No card last 4 digits found');
+  return null;
+}
+
+/**
+ * Extract store location for Şok Market receipts
+ */
+function extractŞokStoreLocation(text: string): string | null {
+  console.log(`\n=== ŞOK STORE LOCATION EXTRACTION ===`);
+  
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let addressLines: string[] = [];
+
+  for (const line of lines) {
+    // Stop at TARIH or FIS NO
+    if (/\b(tarih|fis\s*no)\b/i.test(line)) break;
+
+    // Skip phone numbers, TEL, customer service, URLs, and tax info
+    if (/\b(tel|telefon|m[uü]steri|iletis[iı]m|kdv|vergi|mersis)\b/i.test(line)) continue;
+    if (/https?:\/\//i.test(line) || /\bwww\./i.test(line)) continue;
+    if (/^\d+$/.test(line.trim())) continue; // Skip pure numbers
+
+    // Collect address-like lines
+    if (/\b(mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir|esenyurt|cumhuriyet)\b/i.test(line)) {
+      addressLines.push(line);
+    }
+  }
+
+  if (addressLines.length > 0) {
+    const location = addressLines.join(' ').trim();
+    console.log(`Found store location: ${location}`);
+    return location;
+  }
+
+  console.log('No store location found');
+  return null;
+}
+
+/**
  * Extract store location - physical address only, stop at TARIH/FIS NO
  */
 function extractStoreLocation(text: string): string | null {
@@ -598,10 +890,20 @@ function parseReceiptText(rawText: string): any {
   const items = parseItems(lines, formatDetection.format);
   
   // Parse discounts
-  const discounts = parseDiscounts(lines, formatDetection.format);
+  let discounts = [];
+  if (formatDetection.format === 'Şok') {
+    discounts = parseŞokDiscounts(lines);
+  } else {
+    discounts = parseDiscounts(lines, formatDetection.format);
+  }
   
   // Extract totals
-  const totals = extractTotals(rawText, formatDetection.format);
+  let totals;
+  if (formatDetection.format === 'Şok') {
+    totals = extractŞokTotals(rawText);
+  } else {
+    totals = extractTotals(rawText, formatDetection.format);
+  }
   
   // Calculate grand total: sum(items) + sum(discounts) with strict ±0.05 TL tolerance
   let grandTotal = totals.grand_total;
@@ -644,8 +946,14 @@ function parseReceiptText(rawText: string): any {
   console.log(`=== GRAND TOTAL CALCULATION COMPLETE ===\n`);
 
   // Extract card info and store location
-  const cardLast4 = extractCardInfo(rawText);
-  const storeLocation = extractStoreLocation(rawText);
+  let cardLast4, storeLocation;
+  if (formatDetection.format === 'Şok') {
+    cardLast4 = extractŞokCardInfo(rawText);
+    storeLocation = extractŞokStoreLocation(rawText);
+  } else {
+    cardLast4 = extractCardInfo(rawText);
+    storeLocation = extractStoreLocation(rawText);
+  }
 
   const result = {
     store_location: storeLocation,
