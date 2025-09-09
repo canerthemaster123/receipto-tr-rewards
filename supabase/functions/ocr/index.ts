@@ -649,7 +649,7 @@ function parseReceiptText(rawText: string): any {
 
   const result = {
     store_location: storeLocation,
-    purchase_time: fullDateTime, // Now includes both date and time in DD/MM/YYYY HH:MM format
+    purchase_time: purchaseTime, // Time only in HH:MM format
     items: items,
     discounts: discounts,
     grand_total: grandTotal,

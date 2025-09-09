@@ -160,8 +160,8 @@ const UploadReceipt: React.FC = () => {
         if (ocrResult.merchant && ocrResult.receipt) {
           extractedData = {
             storeName: ocrResult.merchant.name || '',
-            date: ocrResult.receipt.date || new Date().toISOString().split('T')[0],
-            purchaseTime: ocrResult.receipt.time || '',
+            date: (() => { const s = ocrResult.receipt.date || ''; const m = s.match(/(\d{2})[\/.](\d{2})[\/.](\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : (/(\d{4})-(\d{2})-(\d{2})/.test(s) ? s : new Date().toISOString().split('T')[0]); })(),
+            purchaseTime: (() => { const s = ocrResult.receipt.time || ''; const m = s.match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2,'0')}:${m[2]}` : ''; })(),
             storeAddress: ocrResult.merchant.address_full || '',
             totalAmount: ocrResult.totals?.grand_total ? ocrResult.totals.grand_total.toString() : '',
             paymentMethod: ocrResult.receipt.card_last4_masked || ocrResult.receipt.payment_method || '',
@@ -175,7 +175,7 @@ const UploadReceipt: React.FC = () => {
             merchant_raw: ocrResult.merchant.name,
             merchant_brand: ocrResult.merchant.name,
             purchase_date: ocrResult.receipt.date,
-            purchase_time: ocrResult.receipt.time,
+            purchase_time: (() => { const s = ocrResult.receipt.time || ''; const m = s.match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2,'0')}:${m[2]}` : s; })(),
             store_address: ocrResult.merchant.address_full,
             total: ocrResult.totals?.grand_total || 0,
             items: ocrResult.items || [],
@@ -191,8 +191,8 @@ const UploadReceipt: React.FC = () => {
           // Legacy format
           extractedData = {
             storeName: ocrResult.merchant_brand || ocrResult.merchant_raw || '',
-            date: ocrResult.purchase_date || new Date().toISOString().split('T')[0],
-            purchaseTime: ocrResult.purchase_time || '',
+            date: (() => { const s = ocrResult.purchase_date || ''; const m = s.match(/(\d{2})[\/.](\d{2})[\/.](\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : (/(\d{4})-(\d{2})-(\d{2})/.test(s) ? s : new Date().toISOString().split('T')[0]); })(),
+            purchaseTime: (() => { const s = ocrResult.purchase_time || ''; const m = s.match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2,'0')}:${m[2]}` : ''; })(),
             storeAddress: ocrResult.store_address || '',
             totalAmount: ocrResult.total ? ocrResult.total.toString() : '',
             paymentMethod: ocrResult.payment_method || '',
@@ -680,7 +680,7 @@ const UploadReceipt: React.FC = () => {
                   <Label htmlFor="purchaseTime">Saat</Label>
                   <Input
                     id="purchaseTime"
-                    placeholder="14:32"
+                    type="time"
                     value={receiptData.purchaseTime}
                     onChange={(e) => setReceiptData({...receiptData, purchaseTime: e.target.value})}
                     disabled={!isProcessed}
