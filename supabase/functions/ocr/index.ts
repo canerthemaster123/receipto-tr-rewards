@@ -502,7 +502,7 @@ function parseŞokItems(lines: string[]): any[] {
   let endIndex = lines.length;
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
-    if (/\b(topkdv|kdv|genel\s*toplam|toplam|ara\s*toplam|tutar|indirim|satis|odeme)\b/i.test(line)) {
+    if (/\b(topkdv|kdv|genel\s*toplam|toplam|ara\s*toplam|satis|odeme|kart|pos|nakit)\b/i.test(line)) {
       endIndex = i;
       break;
     }
@@ -520,7 +520,7 @@ function parseŞokItems(lines: string[]): any[] {
 
     // Enhanced noise filtering for Şok receipts
     const alphaLine = alphaNormalize(line);
-    if (/\b(bilgi\s*fisi|tur|indirim|tutar\s*ind|kocailem|topkdv|kdv|toplam|ara\s*toplam|satis|odeme)\b/i.test(alphaLine)) {
+    if (/\b(bilgi\s*fisi|tur|mersis|vergi|tel|telefon|www|http)\b/i.test(alphaLine)) {
       console.log(`  ❌ Skipping non-product line (noise)`);
       continue;
     }
@@ -539,14 +539,18 @@ function parseŞokItems(lines: string[]): any[] {
 
     let item: any = null;
 
-    // Pattern 1: Weight-based items (e.g., "0,485 KG x 29,95 TL/KG = 14,52")
-    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?=?\s*(\d{1,4}[.,]\d{2})/i);
+    // Pattern 1: Weight-based items - look for product name in PREVIOUS line
+    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})/i);
     if (weightMatch) {
       const [, weight, unitPrice, total] = weightMatch;
-      // Look for product name in previous or next lines
+      // Look for product name in previous line
       let productName = 'Ağırlıklı Ürün';
-      if (i > 0 && lines[i-1] && !/\d+[.,]\d{2}/.test(lines[i-1])) {
-        productName = lines[i-1].trim();
+      if (i > 0 && lines[i-1]) {
+        const prevLine = lines[i-1].trim();
+        // Make sure previous line doesn't contain price or system info
+        if (prevLine && !/\d+[.,]\d{2}/.test(prevLine) && !/^%/.test(prevLine)) {
+          productName = prevLine;
+        }
       }
       
       item = {
@@ -558,9 +562,9 @@ function parseŞokItems(lines: string[]): any[] {
       };
       console.log(`  ✅ Weight item: ${item.name} — ${item.line_total} TL`);
     }
-    // Pattern 2: Regular items with quantity (e.g., "ÜLKER ÇİKOLATA x3 12,75")
-    else if (/[x×]\s*(\d+)\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
-      const match = line.match(/^(.+?)\s*[x×]\s*(\d+)\s*(\d{1,4}[.,]\d{2})$/i);
+    // Pattern 2: Regular items with explicit quantity (e.g., "ÜLKER ÇİKOLATA x3 12,75")
+    else if (/[x×]\s*(\d+)\s*[*]?\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
+      const match = line.match(/^(.+?)\s*[x×]\s*(\d+)\s*[*]?\s*(\d{1,4}[.,]\d{2})$/i);
       if (match) {
         const [, name, qty, total] = match;
         const unitPrice = parseFloat(total.replace(',', '.')) / parseInt(qty);
@@ -575,7 +579,30 @@ function parseŞokItems(lines: string[]): any[] {
         console.log(`  ✅ Multi-quantity item: ${item.name} — ${item.line_total} TL`);
       }
     }
-    // Pattern 3: Simple items with price at end (e.g., "ÜLKER ÇİKOLATA 4,25")
+    // Pattern 3: Standard product line ending with *PRICE
+    else if (/^(.+?)\s*[*]\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
+      const match = line.match(/^(.+?)\s*[*]\s*(\d{1,4}[.,]\d{2})$/i);
+      if (match) {
+        const [, name, price] = match;
+        const cleanName = name.trim();
+        
+        // Skip if it looks like a discount or total line
+        if (/\b(indirim|toplam|ara|tutar|kdv|satis|odeme)\b/i.test(cleanName)) {
+          console.log(`  ❌ Skipping total/discount line`);
+          continue;
+        }
+        
+        item = {
+          name: cleanName,
+          qty: 1,
+          unit_price: parseFloat(price.replace(',', '.')),
+          line_total: parseFloat(price.replace(',', '.')),
+          raw_line: line
+        };
+        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
+      }
+    }
+    // Pattern 4: Simple items with price at end (no asterisk)
     else if (/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i.test(line)) {
       const match = line.match(/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i);
       if (match) {
@@ -583,7 +610,7 @@ function parseŞokItems(lines: string[]): any[] {
         const cleanName = name.trim();
         
         // Skip if it looks like a discount or total line
-        if (/\b(indirim|toplam|ara|tutar|kdv)\b/i.test(cleanName)) {
+        if (/\b(indirim|toplam|ara|tutar|kdv|satis|odeme)\b/i.test(cleanName)) {
           console.log(`  ❌ Skipping total/discount line`);
           continue;
         }
@@ -677,20 +704,46 @@ function extractŞokTotals(text: string): { grand_total: number | null } {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let grandTotal: number | null = null;
   
-  // Look for "TOPLAM" or "GENEL TOPLAM" patterns
+  // Strategy 1: Look for final payment amount with * prefix
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
-    const alphaLine = alphaNormalize(line);
     
-    if (/\b(genel\s*toplam|toplam)\b/i.test(alphaLine) && !/ara\s*toplam/i.test(alphaLine)) {
-      console.log(`Found total line: "${line}"`);
+    // Look for *XXX,XX TL pattern (final amount paid)
+    const finalAmountMatch = line.match(/[*]\s*(\d{1,4}[.,]\d{2})\s*TL$/i);
+    if (finalAmountMatch) {
+      grandTotal = parseFloat(finalAmountMatch[1].replace(',', '.'));
+      console.log(`Found final payment amount: ${grandTotal} TL`);
+      break;
+    }
+  }
+  
+  // Strategy 2: Look for "TOPLAM" lines if final amount not found
+  if (!grandTotal) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      const alphaLine = alphaNormalize(line);
       
-      // Extract amount
-      const amountMatch = line.match(/(\d{1,4}[.,]\d{2})/);
-      if (amountMatch) {
-        grandTotal = parseFloat(amountMatch[1].replace(',', '.'));
-        console.log(`  ✅ Grand total: ${grandTotal} TL`);
-        break;
+      if (/\b(toplam)\b/i.test(alphaLine) && !/ara\s*toplam|topkdv/i.test(alphaLine)) {
+        console.log(`Found total line: "${line}"`);
+        
+        // Extract amount from same line or next line
+        let amountMatch = line.match(/[*]?\s*(\d{1,4}[.,]\d{2})/);
+        if (amountMatch) {
+          grandTotal = parseFloat(amountMatch[1].replace(',', '.'));
+          console.log(`  ✅ Grand total from same line: ${grandTotal} TL`);
+          break;
+        }
+        
+        // Check next line for amount
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          amountMatch = nextLine.match(/[*]?\s*(\d{1,4}[.,]\d{2})/);
+          if (amountMatch) {
+            grandTotal = parseFloat(amountMatch[1].replace(',', '.'));
+            console.log(`  ✅ Grand total from next line: ${grandTotal} TL`);
+            break;
+          }
+        }
       }
     }
   }
@@ -741,19 +794,28 @@ function extractŞokStoreLocation(text: string): string | null {
     // Stop at TARIH or FIS NO
     if (/\b(tarih|fis\s*no)\b/i.test(line)) break;
 
-    // Skip phone numbers, TEL, customer service, URLs, and tax info
-    if (/\b(tel|telefon|m[uü]steri|iletis[iı]m|kdv|vergi|mersis)\b/i.test(line)) continue;
+    // Skip phone numbers, TEL, customer service, URLs, tax info, and company identifiers
+    if (/\b(tel|telefon|m[uü]steri|iletis[iı]m|kdv|vergi|mersis|v\.d\.|anadolu|kurumlar)\b/i.test(line)) continue;
     if (/https?:\/\//i.test(line) || /\bwww\./i.test(line)) continue;
     if (/^\d+$/.test(line.trim())) continue; // Skip pure numbers
+    if (/^[\d\s-]+$/.test(line.trim())) continue; // Skip number sequences
 
-    // Collect address-like lines
-    if (/\b(mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir|esenyurt|cumhuriyet)\b/i.test(line)) {
-      addressLines.push(line);
+    // Extract company name and address parts
+    if (/\b(şok\s*marketler|mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir|esenyurt|cumhuriyet|halilbey)\b/i.test(line)) {
+      // Clean the line and add to address
+      let cleanLine = line.replace(/^[\d-]+\s*/, ''); // Remove leading numbers
+      cleanLine = cleanLine.replace(/\s*TEL.*$/i, ''); // Remove TEL and everything after
+      
+      if (cleanLine.trim()) {
+        addressLines.push(cleanLine.trim());
+      }
     }
   }
 
   if (addressLines.length > 0) {
-    const location = addressLines.join(' ').trim();
+    let location = addressLines.join(' ').trim();
+    // Clean up extra spaces and normalize
+    location = location.replace(/\s+/g, ' ');
     console.log(`Found store location: ${location}`);
     return location;
   }
@@ -955,9 +1017,12 @@ function parseReceiptText(rawText: string): any {
     storeLocation = extractStoreLocation(rawText);
   }
 
+  // Ensure proper formatting for Turkish requirements
+  const formattedDateTime = `${purchaseDate} ${purchaseTime}`;
+  
   const result = {
     store_location: storeLocation,
-    purchase_time: purchaseTime, // Time only in HH:MM format
+    purchase_time: purchaseTime, // Time only in Turkish 24-hour format (HH:MM)
     items: items,
     discounts: discounts,
     grand_total: grandTotal,
@@ -966,14 +1031,17 @@ function parseReceiptText(rawText: string): any {
     // Additional fields for compatibility
     merchant_raw: formatDetection.format,
     merchant_brand: formatDetection.format,
-    purchase_date: purchaseDate, // Keep separate for backward compatibility
+    purchase_date: purchaseDate, // Date only in DD/MM/YYYY format
     store_address: storeLocation,
     total: grandTotal || 0,
-    payment_method: cardLast4 ? `Kredi Kartı (****${cardLast4})` : 'KART',
+    payment_method: cardLast4 ? `Credit Card (****${cardLast4})` : 'Cash',
     receipt_unique_no: null,
     fis_no: null,
     barcode_numbers: [],
-    raw_text: rawText
+    raw_text: rawText,
+    
+    // Combined date/time field for backward compatibility
+    date_time: formattedDateTime
   };
 
   console.log('=== FINAL RESULT ===');
