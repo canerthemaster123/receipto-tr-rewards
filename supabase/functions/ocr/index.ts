@@ -478,6 +478,8 @@ function extractCardInfo(text: string): string | null {
 
 /**
  * Parse Şok Market items following strict user requirements
+ * CRITICAL: Rule - ANY line ending with a price must be treated as a product
+ * NEVER leave items empty if receipt has products
  */
 function parseŞokItems(lines: string[]): any[] {
   const items: any[] = [];
@@ -488,21 +490,33 @@ function parseŞokItems(lines: string[]): any[] {
     console.log(`${idx}: "${line}"`);
   });
 
-  // Find start: after FIS NO or TARIH
+  // Find start: after FIS NO or TARIH but be more flexible
   let startIndex = -1;
   for (let i = 0; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
-    if (/\b(fis\s*no|tarih)\b/i.test(line)) {
+    if (/\b(fis\s*no|tarih|saat)\b/i.test(line)) {
       startIndex = i;
       break;
     }
   }
 
-  // Find end: before payment details/totals
+  // If no clear start found, start from beginning but skip header
+  if (startIndex === -1) {
+    startIndex = 0;
+    // Skip first few lines which are usually headers
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      if (/\b(şok|marketler|t\.a\.ş)\b/i.test(lines[i])) {
+        startIndex = i;
+        break;
+      }
+    }
+  }
+
+  // Find end: before payment details/totals but be more conservative
   let endIndex = lines.length;
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
-    if (/\b(topkdv|kdv|genel\s*toplam|toplam|ara\s*toplam|satis|odeme|kart|pos|nakit)\b/i.test(line)) {
+    if (/\b(topkdv|ara\s*toplam|genel\s*toplam|satis|odeme|kart|pos|nakit|garanti|onay\s*kodu)\b/i.test(line)) {
       endIndex = i;
       break;
     }
@@ -511,6 +525,7 @@ function parseŞokItems(lines: string[]): any[] {
   console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
 
   const processedItems = new Map<string, any>(); // Group identical items
+  let pendingProductName: string | null = null;
 
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
@@ -518,16 +533,16 @@ function parseŞokItems(lines: string[]): any[] {
 
     console.log(`Processing line ${i}: "${line}"`);
 
-    // Enhanced noise filtering for Şok receipts
+    // STRICT noise filtering for Şok receipts - exclude only clear admin lines
     const alphaLine = alphaNormalize(line);
-    if (/\b(bilgi\s*fisi|tur|mersis|vergi|tel|telefon|www|http)\b/i.test(alphaLine)) {
-      console.log(`  ❌ Skipping non-product line (noise)`);
+    if (/\b(bilgi\s*fisi|tur:|mersis\s*no|vergi\s*daire|tel:|telefon|www\.|http|v\.d\.|sicil|anadolu|kurumlar)\b/i.test(alphaLine)) {
+      console.log(`  ❌ Skipping admin/noise line`);
       continue;
     }
 
-    // Skip system codes, reference numbers, and pure numeric lines
-    if (/^[\d\s*#%-]+$/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
-      console.log(`  ❌ Skipping system line`);
+    // Skip pure system codes and reference numbers (but not product codes)
+    if (/^[#]\d+$/.test(line) || /^REF\s*NO:/i.test(line) || /^Z\s*NO:/i.test(line)) {
+      console.log(`  ❌ Skipping system reference line`);
       continue;
     }
 
@@ -539,16 +554,55 @@ function parseŞokItems(lines: string[]): any[] {
 
     let item: any = null;
 
-    // Pattern 1: Weight-based items - look for product name in PREVIOUS line
+    // CRITICAL PATTERN: ANY line ending with price format (…,XX or …,XX TL) = PRODUCT
+    const priceEndingMatch = line.match(/^(.+?)\s*[*]?\s*(\d{1,4}[.,]\d{2})(?:\s*TL)?$/i);
+    if (priceEndingMatch) {
+      const [, namepart, price] = priceEndingMatch;
+      const cleanName = namepart.trim();
+      const priceVal = parseFloat(price.replace(',', '.'));
+      
+      // ONLY exclude clear admin/total lines, NOT products
+      if (/\b(toplam|ara\s*toplam|topkdv|kdv|indirim|tutar\s*ind|satis|odeme|kart|pos|garanti)\b/i.test(cleanName)) {
+        console.log(`  ❌ Skipping admin/total line: "${cleanName}"`);
+        continue;
+      }
+      
+      // Check for quantity patterns
+      const qtyMatch = cleanName.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
+      if (qtyMatch) {
+        const [, productName, qty] = qtyMatch;
+        const quantity = parseInt(qty);
+        item = {
+          name: `${productName.trim()} x${quantity}`,
+          qty: quantity,
+          unit_price: Math.round((priceVal / quantity) * 100) / 100,
+          line_total: priceVal,
+          raw_line: line
+        };
+        console.log(`  ✅ Multi-quantity item: ${item.name} — ${item.line_total} TL`);
+      } else {
+        // Regular single item
+        item = {
+          name: cleanName,
+          qty: 1,
+          unit_price: priceVal,
+          line_total: priceVal,
+          raw_line: line
+        };
+        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
+      }
+    }
+
+    // Special Pattern: Weight-based items with KG information
     const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})/i);
-    if (weightMatch) {
+    if (!item && weightMatch) {
       const [, weight, unitPrice, total] = weightMatch;
       // Look for product name in previous line
       let productName = 'Ağırlıklı Ürün';
       if (i > 0 && lines[i-1]) {
         const prevLine = lines[i-1].trim();
         // Make sure previous line doesn't contain price or system info
-        if (prevLine && !/\d+[.,]\d{2}/.test(prevLine) && !/^%/.test(prevLine)) {
+        if (prevLine && !/\d+[.,]\d{2}/.test(prevLine) && !/^%/.test(prevLine) && !/\b(kdv|toplam)\b/i.test(prevLine)) {
           productName = prevLine;
         }
       }
@@ -562,90 +616,68 @@ function parseŞokItems(lines: string[]): any[] {
       };
       console.log(`  ✅ Weight item: ${item.name} — ${item.line_total} TL`);
     }
-    // Pattern 2: Regular items with explicit quantity (e.g., "ÜLKER ÇİKOLATA x3 12,75")
-    else if (/[x×]\s*(\d+)\s*[*]?\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
-      const match = line.match(/^(.+?)\s*[x×]\s*(\d+)\s*[*]?\s*(\d{1,4}[.,]\d{2})$/i);
-      if (match) {
-        const [, name, qty, total] = match;
-        const unitPrice = parseFloat(total.replace(',', '.')) / parseInt(qty);
-        
-        item = {
-          name: `${name.trim()} x${qty}`,
-          qty: parseInt(qty),
-          unit_price: Math.round(unitPrice * 100) / 100,
-          line_total: parseFloat(total.replace(',', '.')),
-          raw_line: line
-        };
-        console.log(`  ✅ Multi-quantity item: ${item.name} — ${item.line_total} TL`);
+
+    // Pattern for product name without price (save for next line)
+    if (!item && /[A-Za-zÇĞİÖŞÜçğıöşü]{3,}/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
+      const cleanName = line.replace(/^[^A-Za-zÇĞİÖŞÜçğıöşü]*/, '').replace(/[^A-Za-zÇĞİÖŞÜçğıöşü\s]*$/, '').trim();
+      if (cleanName.length > 2 && 
+          !/\b(tel|tarih|fis|kdv|toplam|mersis|v\.d|sicil)\b/i.test(cleanName)) {
+        pendingProductName = cleanName;
+        console.log(`  💾 Pending product name: "${pendingProductName}"`);
       }
+      continue;
     }
-    // Pattern 3: Standard product line ending with *PRICE
-    else if (/^(.+?)\s*[*]\s*(\d{1,4}[.,]\d{2})$/i.test(line)) {
-      const match = line.match(/^(.+?)\s*[*]\s*(\d{1,4}[.,]\d{2})$/i);
-      if (match) {
-        const [, name, price] = match;
-        const cleanName = name.trim();
-        
-        // Skip if it looks like a discount or total line
-        if (/\b(indirim|toplam|ara|tutar|kdv|satis|odeme)\b/i.test(cleanName)) {
-          console.log(`  ❌ Skipping total/discount line`);
-          continue;
+
+    // Pattern for price-only line (pair with pending name)
+    if (!item && pendingProductName) {
+      const priceOnlyMatch = line.match(/^\s*[*]?\s*(\d{1,4}[.,]\d{2})\s*$/);
+      if (priceOnlyMatch) {
+        const priceVal = parseFloat(priceOnlyMatch[1].replace(',', '.'));
+        if (priceVal > 0) {
+          item = {
+            name: pendingProductName,
+            qty: 1,
+            unit_price: priceVal,
+            line_total: priceVal,
+            raw_line: `${pendingProductName} *${priceOnlyMatch[1]}`
+          };
+          console.log(`  ✅ Paired item: ${item.name} — ${item.line_total} TL`);
+          pendingProductName = null;
         }
-        
-        item = {
-          name: cleanName,
-          qty: 1,
-          unit_price: parseFloat(price.replace(',', '.')),
-          line_total: parseFloat(price.replace(',', '.')),
-          raw_line: line
-        };
-        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
-      }
-    }
-    // Pattern 4: Simple items with price at end (no asterisk)
-    else if (/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i.test(line)) {
-      const match = line.match(/^(.+?)\s+(\d{1,4}[.,]\d{2})$/i);
-      if (match) {
-        const [, name, price] = match;
-        const cleanName = name.trim();
-        
-        // Skip if it looks like a discount or total line
-        if (/\b(indirim|toplam|ara|tutar|kdv|satis|odeme)\b/i.test(cleanName)) {
-          console.log(`  ❌ Skipping total/discount line`);
-          continue;
-        }
-        
-        item = {
-          name: cleanName,
-          qty: 1,
-          unit_price: parseFloat(price.replace(',', '.')),
-          line_total: parseFloat(price.replace(',', '.')),
-          raw_line: line
-        };
-        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
       }
     }
 
     // Add item to processed list (group identical items)
     if (item) {
-      const key = item.name.toLowerCase();
+      const key = item.name.toLowerCase().replace(/\s*x\d+$/i, ''); // Group without quantity suffix
       if (processedItems.has(key)) {
         const existing = processedItems.get(key);
-        existing.qty += item.qty;
+        const newQty = (typeof existing.qty === 'number' ? existing.qty : 1) + (typeof item.qty === 'number' ? item.qty : 1);
         existing.line_total += item.line_total;
-        existing.name = `${existing.name.replace(/ x\d+$/, '')} x${existing.qty}`;
+        existing.qty = newQty;
+        existing.name = existing.name.replace(/\s*x\d+$/i, '') + (newQty > 1 ? ` x${newQty}` : '');
+        existing.raw_line += ` + ${item.raw_line}`;
         console.log(`  🔄 Updated existing item: ${existing.name} — ${existing.line_total} TL`);
       } else {
-        processedItems.set(key, item);
-        items.push(item);
+        processedItems.set(key, {
+          name: item.name,
+          qty: item.qty,
+          unit_price: item.unit_price,
+          line_total: item.line_total,
+          raw_line: item.raw_line,
+          product_code: null
+        });
       }
+      pendingProductName = null; // Reset after successful item creation
     } else {
       console.log(`  ❓ Could not parse line as item`);
     }
   }
 
-  console.log(`=== ŞOK ITEMS PARSING COMPLETE: Found ${items.length} items ===\n`);
-  return items;
+  // Convert map to array
+  const finalItems = Array.from(processedItems.values());
+  console.log(`=== ŞOK ITEMS PARSING COMPLETE: Found ${finalItems.length} items ===\n`);
+  return finalItems;
 }
 
 /**
@@ -754,25 +786,47 @@ function extractŞokTotals(text: string): { grand_total: number | null } {
 
 /**
  * Extract card info for Şok Market receipts
+ * Always show last 4 digits when card was used
  */
 function extractŞokCardInfo(text: string): string | null {
   console.log(`\n=== ŞOK CARD INFO EXTRACTION ===`);
   
-  // Look for card patterns specific to Şok
+  // Enhanced card patterns for Şok Market receipts
   const cardPatterns = [
-    /(\d{4,6})\*+(\d{4})/,  // 528208******6309
-    /\*+(\d{4})/,           // ******6309
-    /(\d{4})\s*\*+\s*(\d{4})/,  // 5282 **** 6309
-    /KART.*?(\d{4})$/m      // KART ending with 4 digits
+    /(\d{6})\*+(\d{4})/,           // 521824******9016
+    /(\d{4,6})\*+(\d{4})/,         // 528208******6309
+    /\*+(\d{4})(?:\s+TEK\s+POS)?/i, // ******9016 TEK POS
+    /(\d{4})\s*\*+\s*(\d{4})/,     // 5218 **** 9016
+    /KART.*?(\d{4})$/m,            // Any line with KART ending with 4 digits
+    /POS.*?(\d{4})$/m,             // Any line with POS ending with 4 digits
+    /SATIS.*?(\d{6})\*+(\d{4})/i,  // SATIS with card number
+    /#(\d{6})\*+(\d{4})/           // #521824******9016
   ];
 
   for (const pattern of cardPatterns) {
     const match = text.match(pattern);
     if (match) {
+      // Get the last captured group (should be last 4 digits)
       const lastGroup = match[match.length - 1];
       if (lastGroup && /^\d{4}$/.test(lastGroup)) {
         console.log(`Found card last 4: ${lastGroup}`);
         return lastGroup;
+      }
+    }
+  }
+
+  // Fallback: look for any 4-digit sequence near payment-related keywords
+  const paymentLines = text.split('\n').filter(line => 
+    /\b(kart|pos|satis|odeme|garanti|onay)\b/i.test(line)
+  );
+  
+  for (const line of paymentLines) {
+    const digitMatch = line.match(/(\d{4})(?!\d)/g);
+    if (digitMatch) {
+      const lastDigits = digitMatch[digitMatch.length - 1];
+      if (lastDigits && /^\d{4}$/.test(lastDigits)) {
+        console.log(`Found card last 4 (fallback): ${lastDigits}`);
+        return lastDigits;
       }
     }
   }
@@ -783,6 +837,7 @@ function extractŞokCardInfo(text: string): string | null {
 
 /**
  * Extract store location for Şok Market receipts
+ * Extract full address up to building number, exclude contact info
  */
 function extractŞokStoreLocation(text: string): string | null {
   console.log(`\n=== ŞOK STORE LOCATION EXTRACTION ===`);
@@ -790,32 +845,54 @@ function extractŞokStoreLocation(text: string): string | null {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let addressLines: string[] = [];
 
-  for (const line of lines) {
-    // Stop at TARIH or FIS NO
-    if (/\b(tarih|fis\s*no)\b/i.test(line)) break;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Stop at TARIH or FIS NO or SAAT
+    if (/\b(tarih|fis\s*no|saat)\b/i.test(line)) break;
 
-    // Skip phone numbers, TEL, customer service, URLs, tax info, and company identifiers
-    if (/\b(tel|telefon|m[uü]steri|iletis[iı]m|kdv|vergi|mersis|v\.d\.|anadolu|kurumlar)\b/i.test(line)) continue;
-    if (/https?:\/\//i.test(line) || /\bwww\./i.test(line)) continue;
-    if (/^\d+$/.test(line.trim())) continue; // Skip pure numbers
-    if (/^[\d\s-]+$/.test(line.trim())) continue; // Skip number sequences
+    // Skip phone numbers, contact info, URLs, tax info, but be more precise
+    if (/\b(tel:|telefon|m[uü]steri|iletis[iı]m|mersis\s*no|v\.d\.|sicil|anadolu\s*kurumlar)\b/i.test(line)) {
+      console.log(`Skipping contact/admin line: ${line}`);
+      continue;
+    }
+    if (/^https?:\/\//i.test(line) || /^www\./i.test(line)) {
+      console.log(`Skipping URL line: ${line}`);
+      continue;
+    }
 
-    // Extract company name and address parts
-    if (/\b(şok\s*marketler|mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir|esenyurt|cumhuriyet|halilbey)\b/i.test(line)) {
-      // Clean the line and add to address
-      let cleanLine = line.replace(/^[\d-]+\s*/, ''); // Remove leading numbers
-      cleanLine = cleanLine.replace(/\s*TEL.*$/i, ''); // Remove TEL and everything after
+    // Include lines that contain address components or store info
+    if (/\b(şok\s*marketler|t\.a\.ş|mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no:|cumhuriyet|halilbey|esenyurt|istanbul|ankara|izmir)\b/i.test(line)) {
+      // Extract the actual address part, keeping building numbers
+      let cleanLine = line;
       
-      if (cleanLine.trim()) {
-        addressLines.push(cleanLine.trim());
+      // Remove leading store codes but keep address
+      cleanLine = cleanLine.replace(/^\d{4}-/, ''); // Remove store codes like "8654-"
+      
+      // Stop before TEL info if found in same line
+      cleanLine = cleanLine.replace(/\s*TEL[-:\s].*$/i, '');
+      
+      // Clean extra spaces
+      cleanLine = cleanLine.trim();
+      
+      if (cleanLine && cleanLine.length > 3) {
+        addressLines.push(cleanLine);
+        console.log(`Added address line: ${cleanLine}`);
       }
     }
   }
 
   if (addressLines.length > 0) {
+    // Join address parts and clean up
     let location = addressLines.join(' ').trim();
-    // Clean up extra spaces and normalize
+    
+    // Normalize spaces and punctuation
     location = location.replace(/\s+/g, ' ');
+    location = location.replace(/\s*-\s*/g, ' '); // Fix broken dashes
+    
+    // Stop before contact information if it somehow got included
+    location = location.replace(/\s*(TEL|TELEFON).*$/i, '');
+    
     console.log(`Found store location: ${location}`);
     return location;
   }
@@ -900,13 +977,19 @@ function parseReceiptText(rawText: string): any {
       console.log(`Found date: ${purchaseDate}`);
     }
     
-    // Extract time
+    // Extract time - ALWAYS in Turkish 24-hour format (HH:MM)
     const timePattern = /SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i;
     const timeMatch = rawText.match(timePattern);
     
     if (timeMatch) {
-      purchaseTime = `${timeMatch[1].padStart(2, '0')}:${(timeMatch[2] ?? '00')}`;
-      console.log(`Found time: ${purchaseTime}`);
+      const hour = parseInt(timeMatch[1]);
+      const minute = timeMatch[2] ?? '00';
+      
+      // Ensure 24-hour format (never AM/PM)
+      if (hour >= 0 && hour <= 23) {
+        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute}`;
+        console.log(`Found time (24-hour): ${purchaseTime}`);
+      }
     }
   }
   
@@ -921,13 +1004,19 @@ function parseReceiptText(rawText: string): any {
     }
   }
   
-  // Strategy 4: If still no time, look for any HH:MM pattern
+  // Strategy 4: If still no time, look for any HH:MM pattern (ALWAYS 24-hour format)
   if (!purchaseTime) {
     console.log('Primary time extraction failed, trying fallback...');
     const fallbackTimeMatch = rawText.match(/(\d{1,2}):(\d{2})/);
-    if (fallbackTimeMatch && parseInt(fallbackTimeMatch[1]) <= 23 && parseInt(fallbackTimeMatch[2]) <= 59) {
-      purchaseTime = `${fallbackTimeMatch[1].padStart(2, '0')}:${fallbackTimeMatch[2]}`;
-      console.log(`Fallback time found: ${purchaseTime}`);
+    if (fallbackTimeMatch) {
+      const hour = parseInt(fallbackTimeMatch[1]);
+      const minute = parseInt(fallbackTimeMatch[2]);
+      
+      // Validate and ensure 24-hour format
+      if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        console.log(`Fallback time found (24-hour): ${purchaseTime}`);
+      }
     }
   }
   
