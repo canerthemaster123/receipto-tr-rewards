@@ -124,374 +124,54 @@ function detectFormat(text: string): { format: string; confidence: number } {
 }
 
 /**
- * Enhanced Migros items parser following strict user requirements
- * NEVER leave items list empty if receipt has products
- * Filter ALL noise patterns and only include real products
+ * Preprocess and normalize Şok receipt text for better parsing
  */
-function parseItems(lines: string[], format: string): any[] {
-  const items: any[] = [];
+function preprocessŞokText(text: string): string {
+  console.log('\n=== ŞOK TEXT PREPROCESSING ===');
   
-  if (format === 'Şok') {
-    return parseŞokItems(lines);
-  } else if (format !== 'Migros') {
-    // Keep existing logic for other formats
-    return parseItemsOtherFormats(lines, format);
-  }
-
-  console.log(`\n=== MIGROS ITEMS PARSING ===`);
-  console.log('All lines:');
-  lines.forEach((line, idx) => {
-    console.log(`${idx}: "${line}"`);
-  });
-
-  // Find start: after FIS NO or TARIH
-  let startIndex = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const line = alphaNormalize(lines[i]);
-    if (/\b(fis\s*no|tarih)\b/i.test(line)) {
-      startIndex = i;
-      break;
-    }
-  }
-
-  // Find end: before payment details
-  let endIndex = lines.length;
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    const line = alphaNormalize(lines[i]);
-    if (/\b(topkdv|kdv|genel\s*toplam|tutar|ara\s*toplam|toplam)\b/i.test(line)) {
-      endIndex = i;
-      break;
-    }
-  }
-
-  console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
-
-  let pendingProductName: string | null = null;
-  const processedItems = new Map<string, any>(); // Group identical items
-
-  for (let i = startIndex + 1; i < endIndex; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    console.log(`Processing line ${i}: "${line}"`);
-
-    // Enhanced noise filtering - skip ALL non-product lines
-    const alphaLine = alphaNormalize(line);
-    if (/\b(bilgi\s*fisi|tur\s*e\s*arsiv\s*fatura|indirimlr|tutar\s*ind|kocailem|topkdv|kdv|dem|kg\s*x)\b/i.test(alphaLine)) {
-      console.log(`  ❌ Skipping non-product line (noise)`);
-      continue;
-    }
-
-    // Skip system codes, reference numbers, and pure numeric lines
-    if (/^[\d\s*#-]+$/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
-      console.log(`  ❌ Skipping system line`);
-      continue;
-    }
-
-    // Skip lines starting with # (barcode/system codes)
-    if (/^#/.test(line)) {
-      console.log(`  ❌ Skipping barcode/system code`);
-      continue;
-    }
-
-    let item: any = null;
-
-    // Pattern 1: Weight-based items (highest priority)
-    // e.g., "0,485 KG x 119,95 TL/KG PEPINO KG *58,18"
-    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2}).*?([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
-    if (weightMatch) {
-      const [, weight, unitPrice, name, total] = weightMatch;
-      const cleanName = name.trim().replace(/\s*KG\s*$/, '');
-      item = {
-        name: cleanName,
-        qty: parseFloat(weight.replace(',', '.')) + ' KG',
-        unit_price: parseFloat(unitPrice.replace(',', '.')),
-        line_total: parseFloat(total.replace(',', '.')),
-        raw_line: line
-      };
-      console.log(`  ✅ Weight item: ${JSON.stringify(item)}`);
-    }
-
-    // Pattern 2: Items with quantity multiplier (e.g., "NESQUIK ÇİLEKLİ SÜT x2 *47,00")
-    if (!item) {
-      const qtyMatch = line.match(/^([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?)\s*[x×](\d+)\s*.*?\*(\d{1,4}[.,]\d{2})$/i);
-      if (qtyMatch) {
-        const [, name, qty, total] = qtyMatch;
-        const quantity = parseInt(qty);
-        const totalPrice = parseFloat(total.replace(',', '.'));
-        if (name.length > 2 && quantity > 0 && totalPrice > 0) {
-          item = {
-            name: name.trim(),
-            qty: quantity,
-            unit_price: totalPrice / quantity,
-            line_total: totalPrice,
-            raw_line: line
-          };
-          console.log(`  ✅ Multi-qty item: ${JSON.stringify(item)}`);
-        }
-      }
-    }
-
-    // Pattern 3: Regular items with embedded price
-    // e.g., "CIF LIMONLU %20 *46,95"
-    if (!item) {
-      const regularMatch = line.match(/^([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
-      if (regularMatch) {
-        const [, name, price] = regularMatch;
-        const priceVal = parseFloat(price.replace(',', '.'));
-        const cleanName = name.trim();
-        // Additional filtering for known noise patterns
-        if (cleanName.length > 2 && priceVal > 0 && 
-            !/^(migros|tel|adres|saat|tarih|fis|dem|kg|kdv|toplam|tutar|bilgi)/i.test(cleanName)) {
-          item = {
-            name: cleanName,
-            qty: 1,
-            unit_price: priceVal,
-            line_total: priceVal,
-            raw_line: line
-          };
-          console.log(`  ✅ Regular item: ${JSON.stringify(item)}`);
-        }
-      }
-    }
-
-    // Pattern 4: Product name without price (save for next line)
-    if (!item && /[A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc]{3,}/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
-      // Clean the product name and filter noise
-      const cleanName = line.replace(/^[^A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc]*/, '').replace(/[^A-Za-z\u00c7\u011e\u0130\u00d6\u015e\u00dc\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]*$/, '').trim();
-      if (cleanName.length > 2 && 
-          !/^(migros|tel|adres|saat|tarih|fis|dem|kg|kdv|toplam|tutar|bilgi)/i.test(cleanName)) {
-        pendingProductName = cleanName;
-        console.log(`  💾 Pending product name: "${pendingProductName}"`);
-      }
-      continue;
-    }
-
-    // Pattern 5: Price-only line (pair with pending name)
-    if (!item && pendingProductName) {
-      const priceMatch = line.match(/^\s*[*]?\s*(\d{1,4}[.,]\d{2})\s*$/);
-      if (priceMatch) {
-        const priceVal = parseFloat(priceMatch[1].replace(',', '.'));
-        if (priceVal > 0) {
-          item = {
-            name: pendingProductName,
-            qty: 1,
-            unit_price: priceVal,
-            line_total: priceVal,
-            raw_line: `${pendingProductName} *${priceMatch[1]}`
-          };
-          console.log(`  ✅ Paired item: ${JSON.stringify(item)}`);
-          pendingProductName = null;
-        }
-      }
-    }
-
-    if (item) {
-      // Group identical items by name
-      const key = item.name.toLowerCase();
-      if (processedItems.has(key)) {
-        const existing = processedItems.get(key);
-        existing.qty = (typeof existing.qty === 'number' ? existing.qty : 1) + (typeof item.qty === 'number' ? item.qty : 1);
-        existing.line_total += item.line_total;
-        existing.raw_line += ` + ${item.raw_line}`;
-        console.log(`  🔄 Grouped with existing item: ${JSON.stringify(existing)}`);
-      } else {
-        processedItems.set(key, {
-          name: item.name,
-          qty: item.qty,
-          unit_price: item.unit_price,
-          line_total: item.line_total,
-          raw_line: item.raw_line,
-          product_code: null
-        });
-      }
-      pendingProductName = null; // Reset after successful item creation
-    } else {
-      console.log(`  ❌ No item pattern matched`);
-    }
-  }
-
-  // Convert map to array
-  const finalItems = Array.from(processedItems.values());
-  console.log(`=== MIGROS ITEMS COMPLETE: Found ${finalItems.length} items ===\n`);
-  return finalItems;
-}
-
-// Keep existing logic for other formats
-function parseItemsOtherFormats(lines: string[], format: string): any[] {
-  // Simplified version for BIM/Carrefour - not changing existing logic
-  return [];
+  let processed = text;
+  
+  // Fix common OCR issues for Turkish characters
+  processed = processed.replace(/İ/g, 'I').replace(/ı/g, 'i');
+  processed = processed.replace(/[Ğğ]/g, 'g').replace(/[Şş]/g, 's');
+  processed = processed.replace(/[Çç]/g, 'c').replace(/[Üü]/g, 'u');
+  processed = processed.replace(/[Öö]/g, 'o');
+  
+  // Normalize price formats
+  processed = processed.replace(/(\d+)\s*([,.]\s*\d{2})\s*TL/g, '$1$2');
+  processed = processed.replace(/(\d+)\s*,\s*(\d{2})/g, '$1,$2');
+  
+  // Fix broken KG patterns
+  processed = processed.replace(/(\d+[.,]\d{2,3})\s*K\s*G/gi, '$1 KG');
+  processed = processed.replace(/(\d+[.,]\d{2})\s*T\s*L\s*\/\s*K\s*G/gi, '$1 TL/KG');
+  
+  // Remove excessive whitespace but preserve structure
+  processed = processed.replace(/[ \t]+/g, ' ');
+  processed = processed.replace(/\n\s*\n/g, '\n');
+  
+  console.log('Text preprocessing complete');
+  return processed;
 }
 
 /**
- * Parse discounts with enhanced Migros support
- */
-function parseDiscounts(lines: string[], format: string): any[] {
-  const discounts: any[] = [];
-  
-  console.log(`\n=== DISCOUNT PARSING (${format}) ===`);
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    // KOCAILEM discount - look for "TUTAR İND. (KOCAILEM)" pattern
-    if (line.includes('TUTAR İND.') && line.includes('KOCAİLEM')) {
-      // Look for the discount amount in previous lines (typical Migros pattern)
-      for (let j = i - 3; j <= i + 1; j++) {
-        if (j >= 0 && j < lines.length) {
-          const discountLine = lines[j];
-          const discountMatch = discountLine.match(/[\*\s]*(-\d+[.,]\d+)/);
-          if (discountMatch) {
-            const discountAmount = parseFloat(discountMatch[1].replace(',', '.'));
-            discounts.push({
-              description: 'KOCAILEM İNDİRİMİ',
-              amount: discountAmount // Keep as negative
-            });
-            console.log(`Found KOCAILEM discount: ${discountAmount} TL`);
-            break;
-          }
-        }
-      }
-    }
-
-    // Other discount patterns
-    if (/\b(tutar\s*ind|indirim)\b/i.test(line) && !line.includes('KOCAİLEM')) {
-      const currentMatch = line.match(/[\*\s]*(-?\d+[.,]\d+)/);
-      if (currentMatch) {
-        const amount = parseFloat(currentMatch[1].replace(',', '.'));
-        if (amount < 0) {
-          const discountName = line.replace(/[\*\d\.,\s-]+$/, '').trim() || 'İNDİRİM';
-          discounts.push({
-            description: discountName,
-            amount: amount
-          });
-          console.log(`Found discount: ${discountName} = ${amount} TL`);
-        }
-      }
-    }
-  }
-
-  console.log(`=== DISCOUNTS COMPLETE: Found ${discounts.length} discounts ===\n`);
-  return discounts;
-}
-
-/**
- * Enhanced total extraction for Migros - strict TOPLAM prioritization
- * NEVER use TOPKDV as grand_total, only real payment amounts
- */
-function extractTotals(text: string, format: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
-  const result: any = {};
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  console.log('\n=== TOTAL EXTRACTION ===');
-  
-  if (format === 'Migros') {
-    // Priority 1: Direct "TOPLAM *XX.XX" pattern (most reliable)
-    const toplamDirectMatch = text.match(/TOPLAM\s*[*]\s*(\d{1,4}[.,]\d{2})/i);
-    if (toplamDirectMatch) {
-      result.grand_total = parseFloat(toplamDirectMatch[1].replace(',', '.'));
-      console.log(`Found direct TOPLAM pattern: ${result.grand_total}`);
-    }
-
-    // Priority 2: Multi-line TOPLAM search
-    if (!result.grand_total) {
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (/^TOPLAM$/i.test(line.trim()) && i + 1 < lines.length) {
-          const nextLine = lines[i + 1];
-          const amountMatch = nextLine.match(/[*]?\s*(\d{1,4}[.,]\d{2})/);
-          if (amountMatch) {
-            result.grand_total = parseFloat(amountMatch[1].replace(',', '.'));
-            console.log(`Found multi-line TOPLAM: ${result.grand_total}`);
-            break;
-          }
-        }
-      }
-    }
-
-    // Priority 3: Look for final payment amount in POS section
-    if (!result.grand_total) {
-      const posAmountMatch = text.match(/ORTAK\s*POS[\s\S]*?\*(\d{1,4}[.,]\d{2})/i);
-      if (posAmountMatch) {
-        result.grand_total = parseFloat(posAmountMatch[1].replace(',', '.'));
-        console.log(`Found POS payment amount: ${result.grand_total}`);
-      }
-    }
-
-    // Priority 4: "KDV'LI TOPLAM" only as last resort
-    if (!result.grand_total) {
-      const kdvliToplamMatch = text.match(/KDV['']?L[\u0131I]\s*TOPLAM\s*[*]?\s*(\d{1,4}[.,]\d{2})/i);
-      if (kdvliToplamMatch) {
-        result.grand_total = parseFloat(kdvliToplamMatch[1].replace(',', '.'));
-        console.log(`Found KDV'LI TOPLAM: ${result.grand_total}`);
-      }
-    }
-
-    // Extract subtotal (before discounts)
-    const araToplamMatch = text.match(/ARA\s*TOPLAM\s*[*]?\s*(\d{1,4}[.,]\d{2})/i);
-    if (araToplamMatch) {
-      result.subtotal = parseFloat(araToplamMatch[1].replace(',', '.'));
-      console.log(`Found ARA TOPLAM (subtotal): ${result.subtotal}`);
-    }
-
-    // Extract TOPKDV (VAT total) - NEVER use as grand_total
-    const topkdvMatch = text.match(/TOPKDV\s*[*]?\s*(\d{1,4}[.,]\d{2})/i);
-    if (topkdvMatch) {
-      result.vat_total = parseFloat(topkdvMatch[1].replace(',', '.'));
-      console.log(`Found TOPKDV (VAT): ${result.vat_total}`);
-    }
-  }
-
-  console.log(`Final extracted total: ${result.grand_total}`);
-  console.log('=== TOTAL EXTRACTION COMPLETE ===\n');
-
-  return result;
-}
-
-/**
- * Extract card info - get last 4 digits, not "ORTAK POS"
- */
-function extractCardInfo(text: string): string | null {
-  // Look for masked card patterns
-  const cardPatterns = [
-    /(\d{4,6})\*+(\d{4})/,  // 528208******6309
-    /\*+(\d{4})/,           // ******6309
-    /(\d{4})\s*\*+\s*(\d{4})/  // 5282 **** 6309
-  ];
-
-  for (const pattern of cardPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      // Return the last captured group (last 4 digits)
-      const lastGroup = match[match.length - 1];
-      if (lastGroup && /^\d{4}$/.test(lastGroup)) {
-        console.log(`Found card last 4: ${lastGroup}`);
-        return lastGroup;
-      }
-    }
-  }
-
-  console.log('No card last 4 digits found');
-  return null;
-}
-
-/**
- * Parse Şok Market items following strict user requirements
- * CRITICAL: Rule - ANY line ending with a price must be treated as a product
- * NEVER leave items empty if receipt has products
+ * Parse Şok Market items with comprehensive two-pass approach
+ * CRITICAL: Every individual product must appear in items list
+ * NEVER collapse or group items - list each product separately
  */
 function parseŞokItems(lines: string[]): any[] {
   const items: any[] = [];
   
-  console.log(`\n=== ŞOK ITEMS PARSING ===`);
-  console.log('All lines:');
+  console.log(`\n=== ŞOK ITEMS PARSING (TWO-PASS) ===`);
+  console.log('All input lines:');
   lines.forEach((line, idx) => {
     console.log(`${idx}: "${line}"`);
   });
 
-  // Find start: after FIS NO or TARIH but be more flexible
+  // PASS 1: Identify parsing boundaries
   let startIndex = -1;
+  let endIndex = lines.length;
+  
+  // Find start: after header but before items
   for (let i = 0; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
     if (/\b(fis\s*no|tarih|saat)\b/i.test(line)) {
@@ -499,123 +179,127 @@ function parseŞokItems(lines: string[]): any[] {
       break;
     }
   }
-
-  // If no clear start found, start from beginning but skip header
+  
+  // Fallback: start after store info
   if (startIndex === -1) {
-    startIndex = 0;
-    // Skip first few lines which are usually headers
-    for (let i = 0; i < Math.min(5, lines.length); i++) {
+    for (let i = 0; i < Math.min(8, lines.length); i++) {
       if (/\b(şok|marketler|t\.a\.ş)\b/i.test(lines[i])) {
-        startIndex = i;
+        startIndex = i + 1;
         break;
       }
     }
   }
-
-  // Find end: before payment details/totals but be more conservative
-  let endIndex = lines.length;
+  
+  // Find end: before payment/total section
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = alphaNormalize(lines[i]);
-    if (/\b(topkdv|ara\s*toplam|genel\s*toplam|satis|odeme|kart|pos|nakit|garanti|onay\s*kodu)\b/i.test(line)) {
+    if (/\b(topkdv|ara\s*toplam|genel\s*toplam|satis|odeme|kart.*pos|nakit|garanti|onay\s*kodu|toplam.*tl)\b/i.test(line)) {
       endIndex = i;
       break;
     }
   }
+  
+  console.log(`PASS 1: Items parsing range: ${startIndex + 1} to ${endIndex - 1}`);
 
-  console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
-
-  // Process each line individually - NO grouping, NO collapsing
+  // PASS 2: Extract items with strict individual parsing
   let pendingProductName: string | null = null;
+  let consecutiveNonItems = 0;
 
   for (let i = startIndex + 1; i < endIndex; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
-    console.log(`Processing line ${i}: "${line}"`);
+    console.log(`PASS 2: Processing line ${i}: "${line}"`);
 
-    // STRICT noise filtering for Şok receipts - exclude only clear admin lines
+    // Noise filtering - exclude ONLY clear administrative lines
     const alphaLine = alphaNormalize(line);
-    if (/\b(bilgi\s*fisi|tur:|mersis\s*no|vergi\s*daire|tel:|telefon|www\.|http|v\.d\.|sicil|anadolu|kurumlar)\b/i.test(alphaLine)) {
-      console.log(`  ❌ Skipping admin/noise line`);
+    const isNoiseLine = /\b(bilgi\s*fisi|tur:|mersis\s*no|vergi\s*daire|tel:|telefon|www\.|http|v\.d\.|sicil\s*no|anadolu|kurumlar|topkdv|kdv\s*orani)\b/i.test(alphaLine);
+    
+    if (isNoiseLine) {
+      console.log(`  ❌ NOISE: Administrative line`);
+      consecutiveNonItems++;
       continue;
     }
 
-    // Skip pure system codes and reference numbers (but not product codes)
-    if (/^[#]\d+$/.test(line) || /^REF\s*NO:/i.test(line) || /^Z\s*NO:/i.test(line)) {
-      console.log(`  ❌ Skipping system reference line`);
-      continue;
-    }
-
-    // Skip lines starting with % (tax lines)
-    if (/^%/.test(line)) {
-      console.log(`  ❌ Skipping tax line`);
+    // Skip pure system reference codes
+    if (/^(#\d+|REF\s*NO:|Z\s*NO:|%\d+)$/i.test(line)) {
+      console.log(`  ❌ NOISE: System reference`);
+      consecutiveNonItems++;
       continue;
     }
 
     let item: any = null;
+    consecutiveNonItems = 0; // Reset on potential item
 
-    // CRITICAL PATTERN: ANY line ending with price format (…,XX or …,XX TL) = PRODUCT
-    const priceEndingMatch = line.match(/^(.+?)\s*[*]?\s*(\d{1,4}[.,]\d{2})(?:\s*TL)?$/i);
-    if (priceEndingMatch) {
-      const [, namepart, price] = priceEndingMatch;
+    // PATTERN 1: Complete item on single line (text + price)
+    const singleLineMatch = line.match(/^(.+?)\s*[*]?\s*(\d{1,4}[.,]\d{2})(?:\s*TL)?$/i);
+    if (singleLineMatch) {
+      const [, namepart, price] = singleLineMatch;
       const cleanName = namepart.trim();
       const priceVal = parseFloat(price.replace(',', '.'));
       
-      // ONLY exclude clear admin/total lines, NOT products
-      if (/\b(toplam|ara\s*toplam|topkdv|kdv|indirim|tutar\s*ind|satis|odeme|kart|pos|garanti)\b/i.test(cleanName)) {
-        console.log(`  ❌ Skipping admin/total line: "${cleanName}"`);
+      // Exclude only clear total/admin lines - be very specific
+      if (/\b(toplam|ara\s*toplam|topkdv|kdv|indirim|tutar\s*ind|satis\s*tutari|odeme|kart\s*ile|pos\s*ile|garanti|nakit)\b/i.test(cleanName)) {
+        console.log(`  ❌ SKIP: Admin/total line: "${cleanName}"`);
+      } else if (cleanName.length > 1 && priceVal > 0) {
+        item = {
+          name: cleanName,
+          qty: 1,
+          unit_price: priceVal,
+          line_total: priceVal,
+          raw_line: line,
+          product_code: null
+        };
+        console.log(`  ✅ ITEM: Single-line product: ${item.name} — ${item.line_total} TL`);
+      }
+    }
+
+    // PATTERN 2: Weight-based items (KG pricing)
+    if (!item) {
+      const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})/i);
+      if (weightMatch) {
+        const [, weight, unitPrice, total] = weightMatch;
+        
+        // Look for product name in previous line(s)
+        let productName = 'Ağırlıklı Ürün';
+        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+          const prevLine = lines[j]?.trim();
+          if (prevLine && 
+              /[A-Za-zÇĞİÖŞÜçğıöşü]{3,}/.test(prevLine) && 
+              !/\d+[.,]\d{2}/.test(prevLine) && 
+              !/\b(kdv|toplam|fis|tarih)\b/i.test(prevLine)) {
+            productName = prevLine;
+            break;
+          }
+        }
+        
+        item = {
+          name: `${productName}`,
+          qty: parseFloat(weight.replace(',', '.')),
+          unit_price: parseFloat(unitPrice.replace(',', '.')),
+          line_total: parseFloat(total.replace(',', '.')),
+          raw_line: `${productName} ${line}`,
+          product_code: null
+        };
+        console.log(`  ✅ ITEM: Weight-based: ${item.name} (${item.qty} KG x ${item.unit_price} = ${item.line_total} TL)`);
+      }
+    }
+
+    // PATTERN 3: Product name without price (prepare for next line)
+    if (!item && 
+        /[A-Za-zÇĞİÖŞÜçğıöşü]{3,}/.test(line) && 
+        !/\d+[.,]\d{2}/.test(line) &&
+        !/\b(tel|tarih|fis|kdv|toplam|mersis|v\.d|sicil|saat|onay)\b/i.test(line)) {
+      
+      const cleanName = line.replace(/^[^\p{L}]*/u, '').replace(/[^\p{L}\s]*$/u, '').trim();
+      if (cleanName.length > 2) {
+        pendingProductName = cleanName;
+        console.log(`  💾 PENDING: Product name: "${pendingProductName}"`);
         continue;
       }
-      
-      // Create individual item (NO grouping or collapsing)
-      item = {
-        name: cleanName,
-        qty: 1,
-        unit_price: priceVal,
-        line_total: priceVal,
-        raw_line: line,
-        product_code: null
-      };
-      console.log(`  ✅ Product item: ${item.name} — ${item.line_total} TL`);
     }
 
-    // Special Pattern: Weight-based items with KG information  
-    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})/i);
-    if (!item && weightMatch) {
-      const [, weight, unitPrice, total] = weightMatch;
-      // Look for product name in previous line
-      let productName = 'Ağırlıklı Ürün';
-      if (i > 0 && lines[i-1]) {
-        const prevLine = lines[i-1].trim();
-        // Make sure previous line doesn't contain price or system info
-        if (prevLine && !/\d+[.,]\d{2}/.test(prevLine) && !/^%/.test(prevLine) && !/\b(kdv|toplam)\b/i.test(prevLine)) {
-          productName = prevLine;
-        }
-      }
-      
-      item = {
-        name: `${productName} — ${weight.replace(',', '.')} KG x ${unitPrice.replace(',', '.')} TL/KG`,
-        qty: parseFloat(weight.replace(',', '.')),
-        unit_price: parseFloat(unitPrice.replace(',', '.')),
-        line_total: parseFloat(total.replace(',', '.')),
-        raw_line: line,
-        product_code: null
-      };
-      console.log(`  ✅ Weight item: ${item.name} — ${item.line_total} TL`);
-    }
-
-    // Pattern for product name without price (save for next line)
-    if (!item && /[A-Za-zÇĞİÖŞÜçğıöşü]{3,}/.test(line) && !/\d+[.,]\d{2}/.test(line)) {
-      const cleanName = line.replace(/^[^A-Za-zÇĞİÖŞÜçğıöşü]*/, '').replace(/[^A-Za-zÇĞİÖŞÜçğıöşü\s]*$/, '').trim();
-      if (cleanName.length > 2 && 
-          !/\b(tel|tarih|fis|kdv|toplam|mersis|v\.d|sicil)\b/i.test(cleanName)) {
-        pendingProductName = cleanName;
-        console.log(`  💾 Pending product name: "${pendingProductName}"`);
-      }
-      continue;
-    }
-
-    // Pattern for price-only line (pair with pending name)
+    // PATTERN 4: Price-only line (pair with pending name)
     if (!item && pendingProductName) {
       const priceOnlyMatch = line.match(/^\s*[*]?\s*(\d{1,4}[.,]\d{2})\s*$/);
       if (priceOnlyMatch) {
@@ -626,21 +310,63 @@ function parseŞokItems(lines: string[]): any[] {
             qty: 1,
             unit_price: priceVal,
             line_total: priceVal,
-            raw_line: `${pendingProductName} *${priceOnlyMatch[1]}`,
+            raw_line: `${pendingProductName} ${line}`,
             product_code: null
           };
-          console.log(`  ✅ Paired item: ${item.name} — ${item.line_total} TL`);
+          console.log(`  ✅ ITEM: Paired item: ${item.name} — ${item.line_total} TL`);
           pendingProductName = null;
         }
       }
     }
 
-    // Add item directly to array (NO grouping)
+    // Add item to list (NO grouping, NO collapsing)
     if (item) {
       items.push(item);
-      pendingProductName = null; // Reset after successful item creation
+      pendingProductName = null;
+      console.log(`  📝 ADDED: Item ${items.length}: ${item.name}`);
     } else {
-      console.log(`  ❓ Could not parse line as item`);
+      console.log(`  ❓ UNMATCHED: Could not parse as item`);
+    }
+
+    // Safety check: if too many consecutive non-items, we might be in wrong section
+    if (consecutiveNonItems > 5) {
+      console.log(`  ⚠️  WARNING: Too many consecutive non-items, may have reached end of items section`);
+      break;
+    }
+  }
+
+  // Validation: ensure we found items
+  if (items.length === 0) {
+    console.log('⚠️  WARNING: No items found! Attempting fallback parsing...');
+    
+    // Fallback: scan entire text for any line ending with price
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const fallbackMatch = line.match(/^(.+?)\s*(\d{1,4}[.,]\d{2})$/i);
+      if (fallbackMatch) {
+        const [, name, price] = fallbackMatch;
+        const cleanName = name.trim();
+        
+        // Only exclude very obvious non-products
+        if (!/\b(toplam|kdv|indirim|tarih|fis|tel|garanti|satis\s*tutari)\b/i.test(cleanName) && 
+            cleanName.length > 2) {
+          
+          const priceVal = parseFloat(price.replace(',', '.'));
+          if (priceVal > 0) {
+            items.push({
+              name: cleanName,
+              qty: 1,
+              unit_price: priceVal,
+              line_total: priceVal,
+              raw_line: line,
+              product_code: null
+            });
+            console.log(`  🔄 FALLBACK ITEM: ${cleanName} — ${priceVal} TL`);
+          }
+        }
+      }
     }
   }
 
@@ -663,7 +389,7 @@ function parseŞokDiscounts(lines: string[]): any[] {
     const alphaLine = alphaNormalize(line);
     
     // Look for discount patterns
-    if (/\b(indirim|tutar\s*ind)\b/i.test(alphaLine)) {
+    if (/\b(indirim|tutar\s*ind|kocailem)\b/i.test(alphaLine)) {
       console.log(`Found discount line: "${line}"`);
       
       // Extract discount amount
@@ -696,7 +422,7 @@ function parseŞokDiscounts(lines: string[]): any[] {
 }
 
 /**
- * Extract totals for Şok Market receipts
+ * Extract totals for Şok Market receipts with enhanced validation
  */
 function extractŞokTotals(text: string): { grand_total: number | null } {
   console.log(`\n=== ŞOK TOTAL EXTRACTION ===`);
@@ -753,8 +479,7 @@ function extractŞokTotals(text: string): { grand_total: number | null } {
 }
 
 /**
- * Extract card info for Şok Market receipts
- * Always show last 4 digits when card was used
+ * Extract card info for Şok Market receipts - always show last 4 digits when card was used
  */
 function extractŞokCardInfo(text: string): string | null {
   console.log(`\n=== ŞOK CARD INFO EXTRACTION ===`);
@@ -819,7 +544,7 @@ function extractŞokStoreLocation(text: string): string | null {
     // Stop at TARIH or FIS NO or SAAT
     if (/\b(tarih|fis\s*no|saat)\b/i.test(line)) break;
 
-    // Skip phone numbers, contact info, URLs, tax info, but be more precise
+    // Skip phone numbers, contact info, URLs, tax info
     if (/\b(tel:|telefon|m[uü]steri|iletis[iı]m|mersis\s*no|v\.d\.|sicil|anadolu\s*kurumlar)\b/i.test(line)) {
       console.log(`Skipping contact/admin line: ${line}`);
       continue;
@@ -869,39 +594,177 @@ function extractŞokStoreLocation(text: string): string | null {
   return null;
 }
 
-/**
- * Extract store location - physical address only, stop at TARIH/FIS NO
- */
+// Enhanced general parsing functions for other formats
+function parseItems(lines: string[], format: string): any[] {
+  const items: any[] = [];
+  
+  if (format !== 'Migros') {
+    return [];
+  }
+
+  console.log(`\n=== MIGROS ITEMS PARSING ===`);
+  
+  // Find start: after FIS NO or TARIH
+  let startIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = alphaNormalize(lines[i]);
+    if (/\b(fis\s*no|tarih)\b/i.test(line)) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  // Find end: before payment details
+  let endIndex = lines.length;
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = alphaNormalize(lines[i]);
+    if (/\b(topkdv|kdv|genel\s*toplam|tutar|ara\s*toplam|toplam)\b/i.test(line)) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  let pendingProductName: string | null = null;
+
+  for (let i = startIndex + 1; i < endIndex; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Enhanced noise filtering
+    const alphaLine = alphaNormalize(line);
+    if (/\b(bilgi\s*fisi|tur\s*e\s*arsiv|indirimlr|tutar\s*ind|kocailem|topkdv|kdv)\b/i.test(alphaLine)) {
+      continue;
+    }
+
+    let item: any = null;
+
+    // Weight-based items
+    const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2}).*?([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
+    if (weightMatch) {
+      const [, weight, unitPrice, name, total] = weightMatch;
+      const cleanName = name.trim().replace(/\s*KG\s*$/, '');
+      item = {
+        name: cleanName,
+        qty: parseFloat(weight.replace(',', '.')) + ' KG',
+        unit_price: parseFloat(unitPrice.replace(',', '.')),
+        line_total: parseFloat(total.replace(',', '.')),
+        raw_line: line
+      };
+    }
+
+    // Regular items with price
+    if (!item) {
+      const regularMatch = line.match(/^([A-Z\u00c7\u011e\u0130\u00d6\u015e\u00dca-z\u00e7\u011f\u0131\u00f6\u015f\u00fc\s]+?).*?\*(\d{1,4}[.,]\d{2})$/i);
+      if (regularMatch) {
+        const [, name, price] = regularMatch;
+        const priceVal = parseFloat(price.replace(',', '.'));
+        const cleanName = name.trim();
+        if (cleanName.length > 2 && priceVal > 0 && 
+            !/^(migros|tel|adres|saat|tarih|fis|dem|kg|kdv|toplam|tutar|bilgi)/i.test(cleanName)) {
+          item = {
+            name: cleanName,
+            qty: 1,
+            unit_price: priceVal,
+            line_total: priceVal,
+            raw_line: line
+          };
+        }
+      }
+    }
+
+    if (item) {
+      items.push(item);
+    }
+  }
+
+  console.log(`=== MIGROS ITEMS COMPLETE: Found ${items.length} items ===\n`);
+  return items;
+}
+
+function parseDiscounts(lines: string[], format: string): any[] {
+  const discounts: any[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.includes('TUTAR İND.') && line.includes('KOCAİLEM')) {
+      for (let j = i - 3; j <= i + 1; j++) {
+        if (j >= 0 && j < lines.length) {
+          const discountLine = lines[j];
+          const discountMatch = discountLine.match(/[\*\s]*(-\d+[.,]\d+)/);
+          if (discountMatch) {
+            const discountAmount = parseFloat(discountMatch[1].replace(',', '.'));
+            discounts.push({
+              description: 'KOCAILEM İNDİRİMİ',
+              amount: discountAmount
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return discounts;
+}
+
+function extractTotals(text: string, format: string): { subtotal?: number; vat_total?: number; grand_total?: number } {
+  const result: any = {};
+  
+  if (format === 'Migros') {
+    const toplamDirectMatch = text.match(/TOPLAM\s*[*]\s*(\d{1,4}[.,]\d{2})/i);
+    if (toplamDirectMatch) {
+      result.grand_total = parseFloat(toplamDirectMatch[1].replace(',', '.'));
+    }
+  }
+
+  return result;
+}
+
+function extractCardInfo(text: string): string | null {
+  const cardPatterns = [
+    /(\d{4,6})\*+(\d{4})/,
+    /\*+(\d{4})/,
+    /(\d{4})\s*\*+\s*(\d{4})/
+  ];
+
+  for (const pattern of cardPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const lastGroup = match[match.length - 1];
+      if (lastGroup && /^\d{4}$/.test(lastGroup)) {
+        return lastGroup;
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractStoreLocation(text: string): string | null {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let addressLines: string[] = [];
 
   for (const line of lines) {
-    // Stop at TARIH or FIS NO
     if (/\b(tarih|fis\s*no)\b/i.test(line)) break;
-
-    // Skip phone numbers, TEL, customer service, and URLs
     if (/\b(tel|telefon|m[uü]steri|iletis[iı]m)\b/i.test(line)) continue;
     if (/https?:\/\//i.test(line) || /\bwww\./i.test(line)) continue;
 
-    // Collect address-like lines (contain location keywords)
     if (/\b(mah|mahalle|sok|sokak|cad|cadde|blv|bulvar|no|istanbul|ankara|izmir)\b/i.test(line)) {
       addressLines.push(line);
     }
   }
 
   if (addressLines.length > 0) {
-    const location = addressLines.join(' ').trim();
-    console.log(`Found store location: ${location}`);
-    return location;
+    return addressLines.join(' ').trim();
   }
 
-  console.log('No store location found');
   return null;
 }
 
 /**
- * Main receipt parsing function following user requirements
+ * Main receipt parsing function with comprehensive enhancements
  */
 function parseReceiptText(rawText: string): any {
   console.log('=== RECEIPT PARSING START ===');
@@ -911,14 +774,14 @@ function parseReceiptText(rawText: string): any {
   
   console.log(`Detected format: ${formatDetection.format} (confidence: ${formatDetection.confidence})`);
 
-  // Extract basic info - STRICT DATE/TIME FORMATTING for Migros
+  // Extract basic info - STRICT DATE/TIME FORMATTING
   console.log('\n=== DATE & TIME EXTRACTION ===');
   
   let purchaseDate = null;
   let purchaseTime = null;
   
   // Strategy 1: Look for combined date and time patterns
-  const combinedMatch = rawText.match(/TAR[İI]H[:.\s]*(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})[\s\S]*?SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i);
+  const combinedMatch = rawText.match(/TAR[İI]H[:.]\s*(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})[\s\S]*?SAAT[:.]\s*(\d{1,2})(?::(\d{2}))?/i);
   if (combinedMatch) {
     purchaseDate = `${combinedMatch[1].padStart(2, '0')}/${combinedMatch[2].padStart(2, '0')}/${combinedMatch[3]}`;
     purchaseTime = `${combinedMatch[4].padStart(2, '0')}:${(combinedMatch[5] ?? '00')}`;
@@ -927,8 +790,8 @@ function parseReceiptText(rawText: string): any {
   
   // Strategy 2: Separate date and time extraction
   if (!purchaseDate || !purchaseTime) {
-    // Extract date - support various separators and formats
-    const datePattern = /TAR[İI]H[:.\s]*(\d{1,2})[\/.:-](\d{1,2})[\/.:-](\d{2,4})/i;
+    // Extract date
+    const datePattern = /TAR[İI]H[:.]\s*(\d{1,2})[\/.:-](\d{1,2})[\/.:-](\d{2,4})/i;
     const dateMatch = rawText.match(datePattern);
     
     if (dateMatch) {
@@ -936,7 +799,6 @@ function parseReceiptText(rawText: string): any {
       let month = dateMatch[2].padStart(2, '0');
       let year = dateMatch[3];
       
-      // Handle 2-digit years (assume 20xx)
       if (year.length === 2) {
         year = '20' + year;
       }
@@ -945,243 +807,181 @@ function parseReceiptText(rawText: string): any {
       console.log(`Found date: ${purchaseDate}`);
     }
     
-    // Extract time - ALWAYS in Turkish 24-hour format (HH:MM)
-    const timePattern = /SAAT[:.\s]*(\d{1,2})(?::(\d{2}))?/i;
+    // Extract time - ALWAYS in Turkish 24-hour format (HH:MM), handle PM conversion
+    const timePattern = /SAAT[:.]\s*(\d{1,2})(?::(\d{2}))?\s*(PM|AM)?/i;
     const timeMatch = rawText.match(timePattern);
-    
     if (timeMatch) {
-      const hour = parseInt(timeMatch[1]);
-      const minute = timeMatch[2] ?? '00';
+      let hour = parseInt(timeMatch[1]);
+      let minute = parseInt(timeMatch[2] || '0');
+      const ampm = timeMatch[3];
       
-      // Ensure 24-hour format (never AM/PM)
-      if (hour >= 0 && hour <= 23) {
-        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute}`;
-        console.log(`Found time (24-hour): ${purchaseTime}`);
+      // Convert to 24-hour format if AM/PM is present
+      if (ampm) {
+        if (ampm.toUpperCase() === 'PM' && hour !== 12) {
+          hour += 12;
+        } else if (ampm.toUpperCase() === 'AM' && hour === 12) {
+          hour = 0;
+        }
       }
+      
+      // Ensure Turkish 24-hour format (HH:MM)
+      purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      console.log(`Found time: ${purchaseTime} (converted from ${timeMatch[0]})`);
     }
   }
-  
-  // Strategy 3: Fallback - extract any date-like numbers if primary patterns fail
-  if (!purchaseDate) {
-    console.log('Primary date extraction failed, trying fallback...');
-    // Look for any DD/MM/YYYY or DD.MM.YYYY pattern in the text
-    const fallbackDateMatch = rawText.match(/(\d{1,2})[\/.:](\d{1,2})[\/.:](\d{4})/);
-    if (fallbackDateMatch) {
-      purchaseDate = `${fallbackDateMatch[1].padStart(2, '0')}/${fallbackDateMatch[2].padStart(2, '0')}/${fallbackDateMatch[3]}`;
-      console.log(`Fallback date found: ${purchaseDate}`);
-    }
-  }
-  
-  // Strategy 4: If still no time, look for any HH:MM pattern (ALWAYS 24-hour format)
-  if (!purchaseTime) {
-    console.log('Primary time extraction failed, trying fallback...');
-    const fallbackTimeMatch = rawText.match(/(\d{1,2}):(\d{2})/);
-    if (fallbackTimeMatch) {
-      const hour = parseInt(fallbackTimeMatch[1]);
-      const minute = parseInt(fallbackTimeMatch[2]);
-      
-      // Validate and ensure 24-hour format
-      if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
-        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        console.log(`Fallback time found (24-hour): ${purchaseTime}`);
-      } else if (hour > 12) {
-        // Already in 24-hour format, just fix PM times that might be misread
-        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        console.log(`Fallback time found (24-hour): ${purchaseTime}`);
-      }
-    }
+
+  // Format-specific parsing with enhanced validation
+  let items: any[] = [];
+  let discounts: any[] = [];
+  let totals: any = {};
+  let cardInfo: string | null = null;
+  let storeLocation: string | null = null;
+
+  if (formatDetection.format.includes('Şok')) {
+    console.log('\n=== USING ŞOK-SPECIFIC PARSING ===');
     
-    // Strategy 5: Look for any time with AM/PM and convert to 24-hour
-    const ampmTimeMatch = rawText.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (!purchaseTime && ampmTimeMatch) {
-      const [, hours, minutes, ampm] = ampmTimeMatch;
-      let hour24 = parseInt(hours);
-      if (ampm.toUpperCase() === 'PM' && hour24 !== 12) {
-        hour24 += 12;
-      } else if (ampm.toUpperCase() === 'AM' && hour24 === 12) {
-        hour24 = 0;
-      }
-      purchaseTime = `${hour24.toString().padStart(2, '0')}:${minutes}`;
-      console.log(`Converted AM/PM time to 24-hour: ${purchaseTime}`);
-    }
-  }
-  
-  // Ensure we always have some date (use current date as last resort)
-  if (!purchaseDate) {
-    const now = new Date();
-    purchaseDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-    console.log(`Using current date as fallback: ${purchaseDate}`);
-  }
-  
-  // Default time if not found
-  if (!purchaseTime) {
-    purchaseTime = '00:00';
-    console.log(`Using default time: ${purchaseTime}`);
-  }
-  
-  const fullDateTime = `${purchaseDate} ${purchaseTime}`;
-  console.log(`Final Date/Time: ${fullDateTime}`);
-  console.log('=== DATE & TIME EXTRACTION COMPLETE ===\n');
-
-  // Parse items (NEVER leave empty)
-  const items = parseItems(lines, formatDetection.format);
-  
-  // Parse discounts
-  let discounts = [];
-  if (formatDetection.format === 'Şok') {
-    discounts = parseŞokDiscounts(lines);
+    // Preprocess text for better Şok parsing
+    const preprocessedText = preprocessŞokText(rawText);
+    const preprocessedLines = preprocessedText.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    items = parseŞokItems(preprocessedLines);
+    discounts = parseŞokDiscounts(preprocessedLines);
+    totals = extractŞokTotals(preprocessedText);
+    cardInfo = extractŞokCardInfo(preprocessedText);
+    storeLocation = extractŞokStoreLocation(preprocessedText);
   } else {
+    console.log('\n=== USING GENERAL PARSING ===');
+    
+    items = parseItems(lines, formatDetection.format);
     discounts = parseDiscounts(lines, formatDetection.format);
-  }
-  
-  // Extract totals
-  let totals;
-  if (formatDetection.format === 'Şok') {
-    totals = extractŞokTotals(rawText);
-  } else {
     totals = extractTotals(rawText, formatDetection.format);
-  }
-  
-  // Calculate grand total: sum(items) + sum(discounts) with strict ±0.05 TL tolerance
-  let grandTotal = totals.grand_total;
-  
-  console.log(`\n=== GRAND TOTAL CALCULATION ===`);
-  console.log(`OCR extracted total: ${grandTotal}`);
-  
-  if (items.length > 0) {
-    const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
-    const discountSum = discounts.reduce((sum, d) => sum + (d.amount || 0), 0); // discounts are negative
-    const computedTotal = itemsSum + discountSum; // discounts reduce the total
-
-    console.log(`Items sum: ${itemsSum} TL`);
-    console.log(`Discount sum: ${discountSum} TL (negative)`);
-    console.log(`Computed total: ${computedTotal} TL`);
-
-    const computedRounded = Math.round(computedTotal * 100) / 100;
-
-    // Use strict tolerance of ±0.05 TL as requested
-    if (!grandTotal) {
-      grandTotal = computedRounded;
-      console.log(`Using computed total (no OCR total): ${grandTotal} TL`);
-    } else if (Math.abs(computedRounded - grandTotal) <= 0.05) {
-      grandTotal = computedRounded;
-      console.log(`Using computed total (within ±0.05 TL tolerance): ${grandTotal} TL`);
-    } else {
-      console.log(`OCR total: ${grandTotal} TL vs Computed: ${computedRounded} TL`);
-      console.log(`Difference: ${Math.abs(computedRounded - grandTotal)} TL (>0.05 tolerance)`);
-      // Prefer computed total if it makes more sense (items + discounts)
-      if (computedRounded > 0 && computedRounded < grandTotal * 2) {
-        grandTotal = computedRounded;
-        console.log(`Using computed total (more reliable): ${grandTotal} TL`);
-      } else {
-        console.log(`Keeping OCR total: ${grandTotal} TL`);
-      }
-    }
-  }
-  
-  console.log(`Final grand total: ${grandTotal} TL`);
-  console.log(`=== GRAND TOTAL CALCULATION COMPLETE ===\n`);
-
-  // Extract card info and store location
-  let cardLast4, storeLocation;
-  if (formatDetection.format === 'Şok') {
-    cardLast4 = extractŞokCardInfo(rawText);
-    storeLocation = extractŞokStoreLocation(rawText);
-  } else {
-    cardLast4 = extractCardInfo(rawText);
+    cardInfo = extractCardInfo(rawText);
     storeLocation = extractStoreLocation(rawText);
   }
 
-  // Ensure proper formatting for Turkish requirements
-  const formattedDateTime = `${purchaseDate} ${purchaseTime}`;
+  // Enhanced total validation with precise calculation for Şok receipts
+  const itemsSum = items.reduce((sum, item) => sum + (item.line_total || 0), 0);
+  const discountsSum = discounts.reduce((sum, discount) => sum + (discount.amount || 0), 0);
+  const calculatedTotal = itemsSum + discountsSum;
   
-  const result = {
-    store_location: storeLocation,
-    purchase_time: purchaseTime, // Time only in Turkish 24-hour format (HH:MM)
-    items: items,
-    discounts: discounts,
-    grand_total: grandTotal,
-    card_last4: cardLast4,
+  console.log(`\n=== TOTAL VALIDATION ===`);
+  console.log(`Items sum: ${itemsSum.toFixed(2)}`);
+  console.log(`Discounts sum: ${discountsSum.toFixed(2)}`);
+  console.log(`Calculated total: ${calculatedTotal.toFixed(2)}`);
+  console.log(`Detected grand total: ${totals.grand_total}`);
+  
+  // Strict validation for Şok receipts (±0.05 tolerance)
+  if (totals.grand_total) {
+    const difference = Math.abs(totals.grand_total - calculatedTotal);
+    console.log(`Total difference: ${difference.toFixed(2)}`);
     
-    // Additional fields for compatibility
+    if (difference > 0.05) {
+      console.log(`⚠️  TOTAL MISMATCH (${difference.toFixed(2)})! Checking if items were missed...`);
+      
+      // For Şok receipts, this suggests items were missed - use detected total and warn
+      if (formatDetection.format.includes('Şok')) {
+        console.log(`⚠️  Şok receipt: Using detected total ${totals.grand_total} but items may be incomplete`);
+      } else {
+        console.log(`⚠️  Using calculated total: ${calculatedTotal.toFixed(2)}`);
+        totals.grand_total = calculatedTotal;
+      }
+    } else {
+      console.log(`✅ Total validation passed (difference: ${difference.toFixed(2)})`);
+    }
+  } else if (calculatedTotal > 0) {
+    console.log(`ℹ️  No detected total, using calculated: ${calculatedTotal.toFixed(2)}`);
+    totals.grand_total = calculatedTotal;
+  }
+
+  // Format payment method with enhanced detection
+  let formattedPaymentMethod = 'Unknown';
+  if (cardInfo) {
+    formattedPaymentMethod = `Credit Card (****${cardInfo})`;
+    console.log(`✅ Payment method: Credit card ending in ${cardInfo}`);
+  } else if (/nakit|cash/i.test(rawText)) {
+    formattedPaymentMethod = 'Cash';
+    console.log(`✅ Payment method: Cash`);
+  } else if (/kart|pos/i.test(rawText)) {
+    formattedPaymentMethod = 'Credit Card';
+    console.log(`ℹ️  Payment method: Credit card (no digits found)`);
+  }
+
+  const result = {
     merchant_raw: formatDetection.format,
     merchant_brand: formatDetection.format,
-    purchase_date: purchaseDate, // Date only in DD/MM/YYYY format
+    purchase_date: purchaseDate || '',
+    purchase_time: purchaseTime,
     store_address: storeLocation,
-    total: grandTotal || 0,
-    payment_method: cardLast4 ? `Credit Card (****${cardLast4})` : 'Cash',
+    total: totals.grand_total || 0,
+    items: items,
+    payment_method: formattedPaymentMethod,
     receipt_unique_no: null,
     fis_no: null,
     barcode_numbers: [],
-    raw_text: rawText,
-    
-    // Combined date/time field for backward compatibility
-    date_time: formattedDateTime
+    raw_text: rawText
   };
 
-  console.log('=== FINAL RESULT ===');
+  console.log('\n=== FINAL RESULT ===');
+  console.log(`Merchant: ${result.merchant_brand}`);
+  console.log(`Date: ${result.purchase_date}`);
+  console.log(`Time: ${result.purchase_time}`);
+  console.log(`Total: ${result.total}`);
   console.log(`Items: ${result.items.length}`);
-  console.log(`Discounts: ${result.discounts.length}`);
-  console.log(`Grand total: ${result.grand_total}`);
-  console.log(`Card last 4: ${result.card_last4}`);
-  console.log('=== RECEIPT PARSING COMPLETE ===\n');
+  console.log(`Payment: ${result.payment_method}`);
+  console.log('=== RECEIPT PARSING COMPLETE ===');
 
   return result;
 }
 
-// Main handler
-serve(async (req: Request) => {
-  // Handle CORS preflight
+serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: getCorsHeaders(req) });
+    return new Response(null, { headers: corsHeaders });
   }
-  
-  if (req.method !== 'POST') {
-    return new Response('Method not allowed', { 
-      status: 405, 
-      headers: getCorsHeaders(req) 
-    });
-  }
-  
+
   try {
     const { imageUrl } = await req.json();
     
     if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Missing imageUrl' }),
-        { 
-          status: 400, 
-          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-        }
-      );
+      throw new Error('Image URL is required');
     }
-    
+
     console.log('Processing OCR for image:', imageUrl);
     
-    // Process OCR
     const rawText = await processOCR(imageUrl);
-    console.log('OCR completed, raw text length:', rawText.length);
+    const parsedResult = parseReceiptText(rawText);
     
-    // Parse to structured format
-    const result = parseReceiptText(rawText);
-    console.log('Parsing completed successfully');
-    
-    return new Response(JSON.stringify(result), {
-      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+    return new Response(JSON.stringify(parsedResult), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
     });
-    
+
   } catch (error) {
-    console.error('OCR processing error:', error);
+    console.error('OCR function error:', error);
     
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message || 'Unknown error occurred' 
-      }),
-      { 
-        status: 500, 
-        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      }
-    );
+    return new Response(JSON.stringify({ 
+      error: error.message,
+      merchant_raw: 'Error',
+      merchant_brand: 'Error',
+      purchase_date: '',
+      purchase_time: null,
+      store_address: null,
+      total: 0,
+      items: [],
+      payment_method: null,
+      receipt_unique_no: null,
+      fis_no: null,
+      barcode_numbers: [],
+      raw_text: ''
+    }), {
+      status: 500,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+    });
   }
 });

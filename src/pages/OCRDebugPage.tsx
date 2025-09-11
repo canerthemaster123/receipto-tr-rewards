@@ -36,7 +36,7 @@ const OCRDebugPage: React.FC = () => {
   const [parsedResult, setParsedResult] = useState<ParsedOCRResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Sample Turkish receipt for testing
+  // Sample receipts for testing
   const MIGROS_SAMPLE = `MİGROS TİCARET A.Ş.
 GÜNEY MEGA STORE
 Barbaros Mah. Begonya Sk. No:3/A
@@ -68,6 +68,79 @@ ONAY KODU: 123456
 TERMINAL: 12345678
 
 4039592837461029583947261
+`;
+
+  const SOK_SAMPLE = `ŞOK MARKETLER TİCARET A.Ş.
+8654-CUMHURIYET MAHALLESİ HALİLBEY BULVARI NO:91B-91C
+ESENYURT/İSTANBUL
+TARİH: 09.01.2025
+SAAT: 17:28
+FİŞ NO: 1234
+
+ÜLKER ÇİKOLATA
+*4,25
+
+NESTLE SU 1.5L
+*2,50
+
+UZUM RED GLOBE
+0.550 KG x 245,00 TL/KG
+*134,75
+
+KOCAILEM İNDİRİM
+*-5,00
+
+TOPLAM
+*136,50
+
+#521824******9016 TEK POS
+ONAY KODU: 789456
+`;
+
+  const SOK_SAMPLE_COMPLEX = `ŞOK MARKETLER TİCARET A.Ş.
+8654-CUMHURIYET MAHALLESİ
+HALİLBEY BULVARI NO:91B-91C
+ESENYURT/İSTANBUL
+VD: 1234567890
+TARİH: 09.01.2025
+SAAT: 5:28 PM
+FİŞ NO: 5678
+
+COCA COLA 330ML
+*8,50
+
+LAYS PEYNİRLİ
+*12,75
+
+ÜLKER ÇİKOLATA
+*4,25
+
+NESTLE SU 1.5L
+*2,50
+
+EKMEK TAZE
+*3,00
+
+DOMATES
+1.200 KG x 45,00 TL/KG
+*54,00
+
+PATATES
+0.750 KG x 25,00 TL/KG
+*18,75
+
+KOCAILEM İNDİRİM
+*-8,25
+
+TUTAR İND.
+*-2,50
+
+TOPLAM
+*93,00
+
+#521824******9016 TEK POS
+ONAY KODU: 456789
+TİCARET UNVANI: ŞOK MARKETLER A.Ş.
 `;
 
   // Since we can't directly import OCR functions in frontend, 
