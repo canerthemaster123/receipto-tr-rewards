@@ -524,7 +524,7 @@ function parseŞokItems(lines: string[]): any[] {
 
   console.log(`Items parsing range: ${startIndex + 1} to ${endIndex}`);
 
-  const processedItems = new Map<string, any>(); // Group identical items
+  // Process each line individually - NO grouping, NO collapsing
   let pendingProductName: string | null = null;
 
   for (let i = startIndex + 1; i < endIndex; i++) {
@@ -567,33 +567,19 @@ function parseŞokItems(lines: string[]): any[] {
         continue;
       }
       
-      // Check for quantity patterns
-      const qtyMatch = cleanName.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
-      if (qtyMatch) {
-        const [, productName, qty] = qtyMatch;
-        const quantity = parseInt(qty);
-        item = {
-          name: `${productName.trim()} x${quantity}`,
-          qty: quantity,
-          unit_price: Math.round((priceVal / quantity) * 100) / 100,
-          line_total: priceVal,
-          raw_line: line
-        };
-        console.log(`  ✅ Multi-quantity item: ${item.name} — ${item.line_total} TL`);
-      } else {
-        // Regular single item
-        item = {
-          name: cleanName,
-          qty: 1,
-          unit_price: priceVal,
-          line_total: priceVal,
-          raw_line: line
-        };
-        console.log(`  ✅ Regular item: ${item.name} — ${item.line_total} TL`);
-      }
+      // Create individual item (NO grouping or collapsing)
+      item = {
+        name: cleanName,
+        qty: 1,
+        unit_price: priceVal,
+        line_total: priceVal,
+        raw_line: line,
+        product_code: null
+      };
+      console.log(`  ✅ Product item: ${item.name} — ${item.line_total} TL`);
     }
 
-    // Special Pattern: Weight-based items with KG information
+    // Special Pattern: Weight-based items with KG information  
     const weightMatch = line.match(/^(\d+[.,]\d{2,3})\s*KG\s*[x×]\s*(\d{1,4}[.,]\d{2})\s*TL\/KG.*?(\d{1,4}[.,]\d{2})/i);
     if (!item && weightMatch) {
       const [, weight, unitPrice, total] = weightMatch;
@@ -612,7 +598,8 @@ function parseŞokItems(lines: string[]): any[] {
         qty: parseFloat(weight.replace(',', '.')),
         unit_price: parseFloat(unitPrice.replace(',', '.')),
         line_total: parseFloat(total.replace(',', '.')),
-        raw_line: line
+        raw_line: line,
+        product_code: null
       };
       console.log(`  ✅ Weight item: ${item.name} — ${item.line_total} TL`);
     }
@@ -639,7 +626,8 @@ function parseŞokItems(lines: string[]): any[] {
             qty: 1,
             unit_price: priceVal,
             line_total: priceVal,
-            raw_line: `${pendingProductName} *${priceOnlyMatch[1]}`
+            raw_line: `${pendingProductName} *${priceOnlyMatch[1]}`,
+            product_code: null
           };
           console.log(`  ✅ Paired item: ${item.name} — ${item.line_total} TL`);
           pendingProductName = null;
@@ -647,37 +635,17 @@ function parseŞokItems(lines: string[]): any[] {
       }
     }
 
-    // Add item to processed list (group identical items)
+    // Add item directly to array (NO grouping)
     if (item) {
-      const key = item.name.toLowerCase().replace(/\s*x\d+$/i, ''); // Group without quantity suffix
-      if (processedItems.has(key)) {
-        const existing = processedItems.get(key);
-        const newQty = (typeof existing.qty === 'number' ? existing.qty : 1) + (typeof item.qty === 'number' ? item.qty : 1);
-        existing.line_total += item.line_total;
-        existing.qty = newQty;
-        existing.name = existing.name.replace(/\s*x\d+$/i, '') + (newQty > 1 ? ` x${newQty}` : '');
-        existing.raw_line += ` + ${item.raw_line}`;
-        console.log(`  🔄 Updated existing item: ${existing.name} — ${existing.line_total} TL`);
-      } else {
-        processedItems.set(key, {
-          name: item.name,
-          qty: item.qty,
-          unit_price: item.unit_price,
-          line_total: item.line_total,
-          raw_line: item.raw_line,
-          product_code: null
-        });
-      }
+      items.push(item);
       pendingProductName = null; // Reset after successful item creation
     } else {
       console.log(`  ❓ Could not parse line as item`);
     }
   }
 
-  // Convert map to array
-  const finalItems = Array.from(processedItems.values());
-  console.log(`=== ŞOK ITEMS PARSING COMPLETE: Found ${finalItems.length} items ===\n`);
-  return finalItems;
+  console.log(`=== ŞOK ITEMS PARSING COMPLETE: Found ${items.length} items ===\n`);
+  return items;
 }
 
 /**
@@ -1016,7 +984,25 @@ function parseReceiptText(rawText: string): any {
       if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
         purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         console.log(`Fallback time found (24-hour): ${purchaseTime}`);
+      } else if (hour > 12) {
+        // Already in 24-hour format, just fix PM times that might be misread
+        purchaseTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        console.log(`Fallback time found (24-hour): ${purchaseTime}`);
       }
+    }
+    
+    // Strategy 5: Look for any time with AM/PM and convert to 24-hour
+    const ampmTimeMatch = rawText.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!purchaseTime && ampmTimeMatch) {
+      const [, hours, minutes, ampm] = ampmTimeMatch;
+      let hour24 = parseInt(hours);
+      if (ampm.toUpperCase() === 'PM' && hour24 !== 12) {
+        hour24 += 12;
+      } else if (ampm.toUpperCase() === 'AM' && hour24 === 12) {
+        hour24 = 0;
+      }
+      purchaseTime = `${hour24.toString().padStart(2, '0')}:${minutes}`;
+      console.log(`Converted AM/PM time to 24-hour: ${purchaseTime}`);
     }
   }
   
