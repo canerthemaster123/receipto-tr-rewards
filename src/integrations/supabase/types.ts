@@ -267,7 +267,6 @@ export type Database = {
           points: number
           public_name: string
           rank: number
-          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -276,7 +275,6 @@ export type Database = {
           points: number
           public_name: string
           rank: number
-          user_id: string
         }
         Update: {
           created_at?: string | null
@@ -285,17 +283,8 @@ export type Database = {
           points?: number
           public_name?: string
           rank?: number
-          user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "leaderboard_snapshots_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users_profile"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       merchant_map: {
         Row: {
@@ -321,6 +310,27 @@ export type Database = {
           id?: string
           priority?: number | null
           raw_merchant?: string
+        }
+        Relationships: []
+      }
+      operation_throttle: {
+        Row: {
+          created_at: string | null
+          id: string
+          operation_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          operation_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          operation_type?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -882,6 +892,10 @@ export type Database = {
       claim_challenge_reward: {
         Args: { p_challenge_id: string }
         Returns: Json
+      }
+      cleanup_operation_throttle: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
       cleanup_throttle_records: {
         Args: Record<PropertyKey, never>
