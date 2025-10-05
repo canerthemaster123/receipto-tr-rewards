@@ -9,6 +9,7 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { useUserRole } from "./hooks/useUserRole";
 import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n';
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import AuthPage from "./pages/AuthPage";
 import AuthCallback from "./components/AuthCallback";
@@ -91,15 +92,16 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const App = () => (
-  <I18nextProvider i18n={i18n}>
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RealtimeNotifications />
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-          <Routes>
+  <ErrorBoundary>
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RealtimeNotifications />
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+            <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route 
               path="/auth" 
@@ -224,6 +226,7 @@ const App = () => (
     </AuthProvider>
   </QueryClientProvider>
   </I18nextProvider>
+  </ErrorBoundary>
 );
 
 export default App;

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthContext';
+import { handleError } from '@/utils/errorHandling';
+import { measureAsync } from '@/utils/performance';
 
 interface ReceiptData {
   id: string;
@@ -48,19 +50,21 @@ export const useReceiptData = (): UseReceiptDataReturn => {
     try {
       setLoading(true);
       
-      const { data: receiptsData, error } = await supabase
-        .from('receipts')
-        .select('id, merchant, merchant_brand, total, purchase_date, purchase_time, store_address, payment_method, status, points, items, image_url, receipt_unique_no, fis_no, barcode_numbers, created_at, updated_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      await measureAsync(async () => {
+        const { data: receiptsData, error } = await supabase
+          .from('receipts')
+          .select('id, merchant, merchant_brand, total, purchase_date, purchase_time, store_address, payment_method, status, points, items, image_url, receipt_unique_no, fis_no, barcode_numbers, created_at, updated_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      setReceipts(receiptsData || []);
+        setReceipts(receiptsData || []);
+      }, 'Fetch Receipts');
     } catch (error) {
-      console.error('Error fetching receipts:', error);
+      handleError(error, 'Fetch Receipts');
     } finally {
       setLoading(false);
     }

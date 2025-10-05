@@ -10,6 +10,8 @@ import { Textarea } from '../components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { validateImageFile, generateSecureFileName } from '../utils/fileValidation';
 import { validateReceiptData } from '../utils/inputSanitization';
+import { showErrorToast } from '../utils/errorHandling';
+import { measureAsync } from '../utils/performance';
 import { 
   Upload, 
   Camera, 
@@ -96,8 +98,9 @@ const UploadReceipt: React.FC = () => {
     setIsProcessing(true);
     
     try {
-      // First upload the image to get a public URL for OCR
-      const fileName = generateSecureFileName(file.name, user.id);
+      await measureAsync(async () => {
+        // First upload the image to get a public URL for OCR
+        const fileName = generateSecureFileName(file.name, user.id);
       
       // Check if file already exists, if so delete it first
       const { error: deleteError } = await supabase.storage
@@ -220,20 +223,14 @@ const UploadReceipt: React.FC = () => {
       setReceiptData(extractedData);
       setIsProcessed(true);
       
-      toast({
-        title: t('toast.receiptProcessed'),
-        description: t('toast.receiptProcessedDesc'),
-      });
+        toast({
+          title: t('toast.receiptProcessed'),
+          description: t('toast.receiptProcessedDesc'),
+        });
+      }, 'OCR Processing');
 
     } catch (error) {
-      console.error('OCR processing error:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack trace',
-        type: typeof error,
-        error: error
-      });
-      
+      showErrorToast(error, 'OCR Processing');
       // Fall back to manual entry
       setReceiptData({
         storeName: '',
@@ -245,12 +242,6 @@ const UploadReceipt: React.FC = () => {
         items: ''
       });
       setIsProcessed(true);
-      
-      toast({
-        title: t('toast.ocrFailed'),
-        description: error instanceof Error ? error.message : t('toast.enterManually'),
-        variant: "destructive",
-      });
     } finally {
       setIsProcessing(false);
     }
@@ -357,7 +348,8 @@ const UploadReceipt: React.FC = () => {
     setIsProcessing(true);
     
     try {
-      // Use the already uploaded image from OCR processing
+      await measureAsync(async () => {
+        // Use the already uploaded image from OCR processing
       let imageUrl = '';
       
       // Check if we already have a processed image URL, if not upload it
@@ -426,10 +418,11 @@ const UploadReceipt: React.FC = () => {
         throw new Error(`Database error: ${dbError.message}`);
       }
 
-      toast({
-        title: t('toast.receiptSubmitted'),
-        description: t('toast.receiptSubmittedDesc'),
-      });
+        toast({
+          title: t('toast.receiptSubmitted'),
+          description: t('toast.receiptSubmittedDesc'),
+        });
+      }, 'Receipt Submission');
       
       // Reset form state
       setFile(null);
@@ -448,19 +441,7 @@ const UploadReceipt: React.FC = () => {
       
       navigate('/dashboard');
     } catch (error) {
-      console.error('Error submitting receipt:', error);
-      console.error('Submission error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : 'No stack trace',
-        receiptData: receiptData,
-        user: user?.id
-      });
-      
-      toast({
-        title: t('toast.submissionFailed'),
-        description: error instanceof Error ? error.message : t('toast.unexpectedError'),
-        variant: "destructive",
-      });
+      showErrorToast(error, 'Receipt Submission');
     } finally {
       setIsProcessing(false);
     }
