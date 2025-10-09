@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthContext';
+import { handleError } from '@/utils/errorHandling';
+import { measureAsync } from '@/utils/performance';
 
 interface Challenge {
   id: string;
@@ -43,37 +45,39 @@ export const useChallenges = (): UseChallengesReturn => {
     try {
       setLoading(true);
       
-      const now = new Date().toISOString();
-      
-      // Fetch active challenges
-      const { data: challengesData, error: challengesError } = await supabase
-        .from('challenges')
-        .select('*')
-        .eq('active', true)
-        .lte('starts_at', now)
-        .gte('ends_at', now)
-        .order('created_at', { ascending: false });
+      await measureAsync(async () => {
+        const now = new Date().toISOString();
+        
+        // Fetch active challenges
+        const { data: challengesData, error: challengesError } = await supabase
+          .from('challenges')
+          .select('*')
+          .eq('active', true)
+          .lte('starts_at', now)
+          .gte('ends_at', now)
+          .order('created_at', { ascending: false });
 
-      if (challengesError) throw challengesError;
+        if (challengesError) throw challengesError;
 
-      setActiveChallenges(challengesData || []);
+        setActiveChallenges(challengesData || []);
 
-      // Fetch user progress if user is logged in
-      if (user) {
-        const { data: progressData, error: progressError } = await supabase
-          .from('challenge_progress')
-          .select(`
-            *,
-            challenge:challenges(*)
-          `)
-          .eq('user_id', user.id);
+        // Fetch user progress if user is logged in
+        if (user) {
+          const { data: progressData, error: progressError } = await supabase
+            .from('challenge_progress')
+            .select(`
+              *,
+              challenge:challenges(*)
+            `)
+            .eq('user_id', user.id);
 
-        if (progressError) throw progressError;
+          if (progressError) throw progressError;
 
-        setUserProgress(progressData || []);
-      }
+          setUserProgress(progressData || []);
+        }
+      }, 'Fetch Challenges');
     } catch (error) {
-      console.error('Error fetching challenges:', error);
+      handleError(error, 'Fetch Challenges');
     } finally {
       setLoading(false);
     }

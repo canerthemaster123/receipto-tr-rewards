@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { handleError } from '@/utils/errorHandling';
+import { measureAsync } from '@/utils/performance';
 
 interface Reward {
   id: string;
@@ -25,19 +27,21 @@ export const useRewards = (): UseRewardsReturn => {
     try {
       setLoading(true);
       
-      const { data: rewardsData, error } = await supabase
-        .from('rewards')
-        .select('*')
-        .eq('active', true)
-        .order('cost', { ascending: true });
+      await measureAsync(async () => {
+        const { data: rewardsData, error } = await supabase
+          .from('rewards')
+          .select('*')
+          .eq('active', true)
+          .order('cost', { ascending: true });
 
-      if (error) {
-        throw error;
-      }
+        if (error) {
+          throw error;
+        }
 
-      setRewards(rewardsData || []);
+        setRewards(rewardsData || []);
+      }, 'Fetch Rewards');
     } catch (error) {
-      console.error('Error fetching rewards:', error);
+      handleError(error, 'Fetch Rewards');
     } finally {
       setLoading(false);
     }

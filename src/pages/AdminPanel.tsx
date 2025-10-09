@@ -31,6 +31,8 @@ import GamificationAdmin from '../components/GamificationAdmin';
 import { Switch } from '../components/ui/switch';
 import { Label } from '../components/ui/label';
 import { config, setQAConfig } from '../config';
+import { handleError } from '@/utils/errorHandling';
+import { measureAsync } from '@/utils/performance';
 
 interface ReceiptSubmission {
   id: string;
@@ -139,148 +141,150 @@ const AdminPanel: React.FC = () => {
     try {
       setIsLoading(true);
       
-      // Fetch pending receipts with user info
-      const { data: receiptsData, error: receiptsError } = await supabase
-        .from('receipts')
-        .select(`
-          id,
-          user_id,
-          merchant,
-          total,
-          purchase_date,
-          payment_method,
-          status,
-          created_at,
-          points
-        `)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+      await measureAsync(async () => {
+        // Fetch pending receipts with user info
+        const { data: receiptsData, error: receiptsError } = await supabase
+          .from('receipts')
+          .select(`
+            id,
+            user_id,
+            merchant,
+            total,
+            purchase_date,
+            payment_method,
+            status,
+            created_at,
+            points
+          `)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
 
-      if (receiptsError) throw receiptsError;
+        if (receiptsError) throw receiptsError;
 
-      // Get user info for each receipt
-      const userIds = [...new Set(receiptsData?.map(r => r.user_id) || [])];
-      const { data: usersInfo } = await supabase
-        .from('users_profile')
-        .select('id, display_name')
-        .in('id', userIds);
+        // Get user info for each receipt
+        const userIds = [...new Set(receiptsData?.map(r => r.user_id) || [])];
+        const { data: usersInfo } = await supabase
+          .from('users_profile')
+          .select('id, display_name')
+          .in('id', userIds);
 
-      const userMap = new Map(usersInfo?.map(u => [u.id, u.display_name]) || []);
+        const userMap = new Map(usersInfo?.map(u => [u.id, u.display_name]) || []);
 
-      // Transform data
-      const transformedReceipts: ReceiptSubmission[] = (receiptsData || []).map(receipt => ({
-        id: receipt.id,
-        userId: receipt.user_id,
-        userName: userMap.get(receipt.user_id) || 'Unknown User',
-        storeName: receipt.merchant || 'Unknown Store',
-        amount: receipt.total || 0,
-        date: receipt.purchase_date || receipt.created_at.split('T')[0],
-        paymentMethod: receipt.payment_method,
-        status: receipt.status as 'pending',
-        submitDate: receipt.created_at
-      }));
+        // Transform data
+        const transformedReceipts: ReceiptSubmission[] = (receiptsData || []).map(receipt => ({
+          id: receipt.id,
+          userId: receipt.user_id,
+          userName: userMap.get(receipt.user_id) || 'Unknown User',
+          storeName: receipt.merchant || 'Unknown Store',
+          amount: receipt.total || 0,
+          date: receipt.purchase_date || receipt.created_at.split('T')[0],
+          paymentMethod: receipt.payment_method,
+          status: receipt.status as 'pending',
+          submitDate: receipt.created_at
+        }));
 
-      setPendingReceipts(transformedReceipts);
+        setPendingReceipts(transformedReceipts);
 
-      // Fetch user stats  
-      const { data: usersData, error: usersError } = await supabase
-        .from('users_profile')
-        .select('id, display_name, total_points, created_at')
-        .order('total_points', { ascending: false })
-        .limit(50);
+        // Fetch user stats  
+        const { data: usersData, error: usersError } = await supabase
+          .from('users_profile')
+          .select('id, display_name, total_points, created_at')
+          .order('total_points', { ascending: false })
+          .limit(50);
 
-      if (usersError) throw usersError;
+        if (usersError) throw usersError;
 
-      // Get receipt counts for each user
-      const { data: receiptCounts } = await supabase
-        .from('receipts')
-        .select('user_id')
-        .in('user_id', usersData?.map(u => u.id) || []);
+        // Get receipt counts for each user
+        const { data: receiptCounts } = await supabase
+          .from('receipts')
+          .select('user_id')
+          .in('user_id', usersData?.map(u => u.id) || []);
 
-      const receiptCountMap = new Map();
-      receiptCounts?.forEach(receipt => {
-        const count = receiptCountMap.get(receipt.user_id) || 0;
-        receiptCountMap.set(receipt.user_id, count + 1);
-      });
+        const receiptCountMap = new Map();
+        receiptCounts?.forEach(receipt => {
+          const count = receiptCountMap.get(receipt.user_id) || 0;
+          receiptCountMap.set(receipt.user_id, count + 1);
+        });
 
 
-      // Get user roles
-      const { data: userRoles } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-        .in('user_id', usersData?.map(u => u.id) || []);
+        // Get user roles
+        const { data: userRoles } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', usersData?.map(u => u.id) || []);
 
-      const roleMap = new Map(userRoles?.map(ur => [ur.user_id, ur.role]) || []);
+        const roleMap = new Map(userRoles?.map(ur => [ur.user_id, ur.role]) || []);
 
-      const transformedUsers: UserStats[] = (usersData || []).map(user => ({
-        id: user.id,
-        name: user.display_name || 'Unknown User',
-        email: '', // Email not available in profiles table for privacy
-        totalReceipts: receiptCountMap.get(user.id) || 0,
-        totalPoints: user.total_points || 0,
-        joinDate: user.created_at.split('T')[0],
-        status: 'active' as const,
-        current_role: roleMap.get(user.id) || 'user'
-      }));
+        const transformedUsers: UserStats[] = (usersData || []).map(user => ({
+          id: user.id,
+          name: user.display_name || 'Unknown User',
+          email: '', // Email not available in profiles table for privacy
+          totalReceipts: receiptCountMap.get(user.id) || 0,
+          totalPoints: user.total_points || 0,
+          joinDate: user.created_at.split('T')[0],
+          status: 'active' as const,
+          current_role: roleMap.get(user.id) || 'user'
+        }));
 
-      setUsers(transformedUsers);
+        setUsers(transformedUsers);
 
-      // ----- Analytics (dynamic) -----
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      start.setMonth(start.getMonth() - 2, 1); // first day of month, 3-month window
-      const startISO = start.toISOString().split('T')[0];
+        // ----- Analytics (dynamic) -----
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        start.setMonth(start.getMonth() - 2, 1); // first day of month, 3-month window
+        const startISO = start.toISOString().split('T')[0];
 
-      const { data: recentReceipts, error: recentErr } = await supabase
-        .from('receipts')
-        .select('purchase_date, merchant, merchant_brand, status')
-        .gte('purchase_date', startISO)
-        .eq('status', 'approved');
+        const { data: recentReceipts, error: recentErr } = await supabase
+          .from('receipts')
+          .select('purchase_date, merchant, merchant_brand, status')
+          .gte('purchase_date', startISO)
+          .eq('status', 'approved');
 
-      if (!recentErr && recentReceipts) {
-        // Prepare month keys for 3 months range
-        const monthKeys: { key: string; label: string }[] = [];
-        const tmp = new Date(start);
-        for (let i = 0; i < 3; i++) {
-          const key = `${tmp.getFullYear()}-${String(tmp.getMonth() + 1).padStart(2, '0')}`;
-          const label = tmp.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-          monthKeys.push({ key, label });
-          tmp.setMonth(tmp.getMonth() + 1, 1);
+        if (!recentErr && recentReceipts) {
+          // Prepare month keys for 3 months range
+          const monthKeys: { key: string; label: string }[] = [];
+          const tmp = new Date(start);
+          for (let i = 0; i < 3; i++) {
+            const key = `${tmp.getFullYear()}-${String(tmp.getMonth() + 1).padStart(2, '0')}`;
+            const label = tmp.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+            monthKeys.push({ key, label });
+            tmp.setMonth(tmp.getMonth() + 1, 1);
+          }
+
+          const counts = new Map<string, number>();
+          recentReceipts.forEach((r: any) => {
+            const d = new Date(r.purchase_date);
+            const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            counts.set(mk, (counts.get(mk) || 0) + 1);
+          });
+
+          const maxVal = Math.max(1, ...monthKeys.map((m) => counts.get(m.key) || 0));
+          const monthly = monthKeys
+            .slice() // copy
+            .reverse() // show newest first
+            .map((m) => ({
+              label: m.label.charAt(0).toUpperCase() + m.label.slice(1),
+              count: counts.get(m.key) || 0,
+              ratio: Math.round(((counts.get(m.key) || 0) / maxVal) * 100),
+            }));
+          setMonthlyReceipts(monthly);
+
+          // Top retailers
+          const brandCounts = new Map<string, number>();
+          recentReceipts.forEach((r: any) => {
+            const name = r.merchant_brand || r.merchant || 'Unknown';
+            brandCounts.set(name, (brandCounts.get(name) || 0) + 1);
+          });
+          const total = Array.from(brandCounts.values()).reduce((a, b) => a + b, 0) || 1;
+          const top = Array.from(brandCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([name, count]) => ({ name, count, percentage: Math.round((count / total) * 100) }));
+          setTopRetailers(top);
         }
-
-        const counts = new Map<string, number>();
-        recentReceipts.forEach((r: any) => {
-          const d = new Date(r.purchase_date);
-          const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          counts.set(mk, (counts.get(mk) || 0) + 1);
-        });
-
-        const maxVal = Math.max(1, ...monthKeys.map((m) => counts.get(m.key) || 0));
-        const monthly = monthKeys
-          .slice() // copy
-          .reverse() // show newest first
-          .map((m) => ({
-            label: m.label.charAt(0).toUpperCase() + m.label.slice(1),
-            count: counts.get(m.key) || 0,
-            ratio: Math.round(((counts.get(m.key) || 0) / maxVal) * 100),
-          }));
-        setMonthlyReceipts(monthly);
-
-        // Top retailers
-        const brandCounts = new Map<string, number>();
-        recentReceipts.forEach((r: any) => {
-          const name = r.merchant_brand || r.merchant || 'Unknown';
-          brandCounts.set(name, (brandCounts.get(name) || 0) + 1);
-        });
-        const total = Array.from(brandCounts.values()).reduce((a, b) => a + b, 0) || 1;
-        const top = Array.from(brandCounts.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5)
-          .map(([name, count]) => ({ name, count, percentage: Math.round((count / total) * 100) }));
-        setTopRetailers(top);
-      }
+      }, 'Admin Panel Data Fetch');
     } catch (error) {
-      console.error('Error fetching admin data:', error);
+      handleError(error, 'Admin Panel Data Fetch');
       toast({
         title: "Error",
         description: "Failed to load admin data. Please try again.",
