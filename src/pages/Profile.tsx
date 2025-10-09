@@ -21,6 +21,9 @@ import { normalizeMerchant, getCleanMerchantName } from '../utils/merchantNormal
 import { formatTRY } from '../utils/currency';
 import { format } from 'date-fns';
 import StreaksAndBadges from '@/components/StreaksAndBadges';
+import { handleError, showErrorToast } from '@/utils/errorHandling';
+import { measureAsync } from '@/utils/performance';
+import { useAsyncOperation } from '@/hooks/useAsyncOperation';
 
 interface PointsLedgerEntry {
   id: string;
@@ -119,62 +122,68 @@ const Profile: React.FC = () => {
     maxAmount: ''
   });
 
+  const { execute: executeReferralFetch, loading: loadingReferrals } = useAsyncOperation(
+    'Fetch Referral Data',
+    {
+      measurePerformance: true,
+      onSuccess: (data) => {
+        if (!data) return;
+        
+        setMyReferrals(data.referrals || []);
+        setReferralStats({
+          totalReferred: data.referrals?.length || 0,
+          totalEarned: (data.referrals?.length || 0) * 200,
+        });
+      },
+    }
+  );
+
   useEffect(() => {
     if (user && showReferralDetails) {
-      fetchReferralData();
+      executeReferralFetch(async () => {
+        // Fetch referrals where current user is the referrer
+        const { data: referrals, error } = await supabase
+          .from('referrals')
+          .select(`
+            id,
+            referrer_id,
+            referred_id,
+            created_at,
+            points_awarded
+          `)
+          .eq('referrer_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Get display names for referred users
+        if (referrals && referrals.length > 0) {
+          const referredIds = referrals.map(r => r.referred_id);
+          const { data: profiles } = await supabase
+            .from('users_profile')
+            .select('id, display_name')
+            .in('id', referredIds);
+
+          const profileMap = new Map(profiles?.map(p => [p.id, p.display_name]) || []);
+          
+          const enrichedReferrals = referrals.map(r => ({
+            ...r,
+            referred_user: {
+              display_name: profileMap.get(r.referred_id) || 'Unknown User'
+            }
+          }));
+
+          return { referrals: enrichedReferrals };
+        }
+
+        return { referrals };
+      });
     }
-  }, [user, showReferralDetails]);
+  }, [user, showReferralDetails, executeReferralFetch]);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filters]);
-
-  const fetchReferralData = async () => {
-    if (!user) return;
-
-    try {
-      // Fetch referrals where current user is the referrer
-      const { data: referrals, error } = await supabase
-        .from('referrals')
-        .select(`
-          id,
-          referrer_id,
-          referred_id,
-          created_at,
-          points_awarded
-        `)
-        .eq('referrer_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Get referred users' names
-      if (referrals && referrals.length > 0) {
-        const referredIds = referrals.map(r => r.referred_id);
-        const { data: users } = await supabase
-          .from('users_profile')
-          .select('id, display_name')
-          .in('id', referredIds);
-
-        const userMap = new Map(users?.map(u => [u.id, u.display_name]) || []);
-
-        const referralsWithNames = referrals.map(ref => ({
-          ...ref,
-          referred_user: {
-            display_name: userMap.get(ref.referred_id) || 'Unknown User'
-          }
-        }));
-
-        setMyReferrals(referralsWithNames);
-        setReferralStats({
-          totalReferred: referrals.length,
-          totalEarned: referrals.reduce((sum, r) => sum + r.points_awarded, 0)
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching referral data:', error);
-    }
-  };
 
   // Receipt filtering and helper functions
   const getItemsArray = (items: string): string[] => {
